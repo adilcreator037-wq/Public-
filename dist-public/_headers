@@ -1,0 +1,11 @@
+/moreinfo*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+  Cache-Control: private, no-store, no-cache, must-revalidate
+  Referrer-Policy: no-referrer
+/download*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+  Cache-Control: private, no-store, no-cache, must-revalidate
+  Referrer-Policy: no-referrer
+/api/v1/app/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: private, no-store, no-cache, must-revalidate

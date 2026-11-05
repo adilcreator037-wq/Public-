@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin.html
+Disallow: /moreinfo
+Disallow: /moreinfo/
+Disallow: /download
+Disallow: /download/
+Disallow: /api/v1/app/
+
+Sitemap: https://apexmobile.example.com/sitemap.xml

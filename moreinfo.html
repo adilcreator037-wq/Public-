@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet" />
+  <title>Official Download</title>
+  <link rel="icon" id="gateway-favicon" href="/assets/app-icon.svg" />
+  <style>
+    :root {
+      --accent-color: #EF4444;
+      --bg-page: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --border-color: #E2E8F0;
+      --text-main: #1F2937;
+      --heading-color: #0F172A;
+      --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: clip;
+      overscroll-behavior-x: none;
+      touch-action: pan-y;
+      font-family: var(--font-stack);
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    .gateway-viewport {
+      width: 100%;
+      max-width: 520px;
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+
+    .gateway-header {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .gateway-brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+      color: var(--heading-color);
+      font-weight: 800;
+      font-size: 17px;
+      min-width: 0;
+    }
+
+    .gateway-brand-logo {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .back-home-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #475569;
+      text-decoration: none;
+      padding: 6px 11px;
+      border-radius: 8px;
+      background-color: #FFFFFF;
+      border: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .back-home-pill:hover {
+      color: var(--heading-color);
+      border-color: #CBD5E1;
+    }
+
+    .gateway-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 28px 0;
+    }
+
+    .security-card {
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      background-color: var(--bg-surface);
+      padding: 26px 22px;
+      box-shadow: 0 8px 24px -6px rgba(15, 23, 42, 0.06);
+      text-align: center;
+    }
+
+    .app-summary-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .app-summary-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
+      object-fit: contain;
+      background-color: #F8FAFC;
+      border: 1px solid var(--border-color);
+      padding: 8px;
+    }
+
+    .app-summary-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--heading-color);
+      line-height: 1.25;
+    }
+
+    .app-summary-meta {
+      display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      align-items: center;
+      font-size: 13px;
+      color: #64748B;
+    }
+
+    .custom-note-box {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #334155;
+      background-color: #F8FAFC;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 18px;
+      text-align: left;
+    }
+
+    .turnstile-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 68px;
+      margin-bottom: 18px;
+      overflow: hidden;
+    }
+
+    .clearance-btn {
+      width: 100%;
+      min-height: 52px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease, opacity 0.2s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    .clearance-btn.state-wait {
+      background-color: #94A3B8;
+      color: #FFFFFF;
+      cursor: not-allowed;
+      opacity: 0.9;
+    }
+
+    .clearance-btn.state-ready {
+      background-color: #16A34A;
+      color: #FFFFFF;
+      box-shadow: 0 6px 16px rgba(22, 163, 74, 0.25);
+    }
+
+    .clearance-btn.state-ready:active {
+      transform: scale(0.99);
+    }
+
+    .clearance-btn.state-busy {
+      background-color: #0F172A;
+      color: #FFFFFF;
+      cursor: wait;
+    }
+
+    .spinner-ring {
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #FFFFFF;
+      border-radius: 50%;
+      animation: gateway-spin 0.75s linear infinite;
+    }
+
+    @keyframes gateway-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .gateway-notice-box {
+      margin-top: 14px;
+      padding: 13px 15px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      text-align: left;
+    }
+
+    .gateway-notice-box.amber {
+      background-color: #FFFBEB;
+      border: 1px solid #FDE68A;
+      color: #92400E;
+    }
+
+    .gateway-notice-box.emerald {
+      background-color: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      color: #065F46;
+    }
+
+    .helpline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .helpline-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      color: #FFFFFF;
+    }
+
+    .helpline-btn.whatsapp {
+      background-color: #16A34A;
+    }
+
+    .helpline-btn.telegram {
+      background-color: #0284C7;
+    }
+
+    .specs-card {
+      margin-top: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      background-color: #FFFFFF;
+    }
+
+    .specs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .specs-table th,
+    .specs-table td {
+      border: 1px solid #E2E8F0;
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    .specs-table th {
+      width: 38%;
+      background-color: #F8FAFC;
+      color: #334155;
+      font-weight: 600;
+    }
+
+    .specs-table code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11.5px;
+      word-break: break-all;
+    }
+
+    .disguised-404-view {
+      min-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+      text-align: center;
+    }
+
+    .disguised-404-code {
+      font-size: 64px;
+      font-weight: 900;
+      color: #E2E8F0;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+
+    .disguised-404-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 8px;
+    }
+
+    .disguised-404-desc {
+      font-size: 14px;
+      color: #64748B;
+      max-width: 340px;
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+
+    .gateway-footer {
+      padding: 18px 0;
+      text-align: center;
+      font-size: 12.5px;
+      color: #64748B;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="gateway-viewport" id="gateway-root">
+    <div id="gateway-active-view" style="display:flex; flex-direction:column; min-height:100vh; justify-content:space-between;">
+      <header class="gateway-header">
+        <a href="/" class="gateway-brand-link" id="gw-brand-link">
+          <img id="gw-brand-logo" class="gateway-brand-logo" src="/assets/app-icon.svg" alt="Logo" width="30" height="30" />
+          <span id="gw-brand-name">ApexMobile</span>
+        </a>
+        <a href="/" class="back-home-pill" id="gw-back-home">← Back</a>
+      </header>
+
+      <main class="gateway-main">
+        <section class="security-card">
+          <div class="app-summary-col">
+            <img id="gw-app-icon" class="app-summary-icon" src="/assets/app-icon.svg" alt="Icon" width="64" height="64" />
+            <h1 class="app-summary-title" id="gw-app-title">ApexMobile</h1>
+            <div class="app-summary-meta">
+              <span id="gw-app-version">v4.8.2</span>
+              <span>·</span>
+              <span id="gw-app-size">64.2 MB</span>
+            </div>
+          </div>
+
+          <div id="gw-custom-note" class="custom-note-box hidden"></div>
+
+          <div class="turnstile-box" id="gw-turnstile-box">
+            <div id="turnstile-widget-slot"></div>
+          </div>
+
+          <button
+            type="button"
+            id="gw-clearance-btn"
+            class="clearance-btn state-wait"
+            disabled
+            aria-busy="true"
+          >
+            <span class="spinner-ring" id="gw-btn-spinner"></span>
+            <span id="gw-btn-label">PLEASE WAIT…</span>
+          </button>
+
+          <div id="gw-notice-box" class="gateway-notice-box amber hidden">
+            <div id="gw-notice-text"></div>
+            <div id="gw-helpline-row" class="helpline-actions hidden"></div>
+          </div>
+        </section>
+
+        <section class="specs-card hidden" id="gw-specs-card">
+          <table class="specs-table">
+            <tbody>
+              <tr>
+                <th>Application</th>
+                <td id="gw-spec-name">ApexMobile</td>
+              </tr>
+              <tr>
+                <th>Version &amp; Size</th>
+                <td id="gw-spec-ver-size">v4.8.2 · 64.2 MB</td>
+              </tr>
+              <tr>
+                <th>System</th>
+                <td id="gw-spec-os">Android 9.0+ / iOS 15.0+</td>
+              </tr>
+              <tr>
+                <th>SHA-256</th>
+                <td><code id="gw-spec-sha256"></code></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+
+      <footer class="gateway-footer">
+        <span id="gw-footer-copyright">© 2026 ApexMobile. All rights reserved.</span>
+      </footer>
+    </div>
+
+    <div id="gateway-disguised-404" class="disguised-404-view hidden">
+      <div class="disguised-404-code">404</div>
+      <h1 class="disguised-404-title">Page Not Found</h1>
+      <p class="disguised-404-desc">
+        The page you are looking for doesn't exist, has expired, or has been moved.
+      </p>
+      <a href="/" class="back-home-pill">← Return to Home Page</a>
+    </div>
+  </div>
+
+  <script type="module" src="/moreinfo.js"></script>
+</body>
+</html>

@@ -1,0 +1,450 @@
+{
+  "brand": {
+    "name": "ApexMobile",
+    "shortName": "ApexMobile",
+    "tagline": "Verified Mobile Release Portal",
+    "logoUrl": "/assets/app-icon.svg",
+    "faviconUrl": "/assets/app-icon.svg",
+    "searchLogoUrl": "/assets/app-icon.svg",
+    "appleTouchIconUrl": "/assets/app-icon.svg",
+    "accentColor": "#EF4444",
+    "themeColor": "#EF4444",
+    "contactEmail": "support@apexmobile.example.com"
+  },
+  "uiConfig": {
+    "maxContainerWidth": "768px",
+    "pageBackgroundColor": "#F8FAFC",
+    "surfaceBackgroundColor": "#FFFFFF",
+    "headerBackgroundColor": "#FFFFFF",
+    "headerTextColor": "#111827",
+    "footerBackgroundColor": "#0F172A",
+    "footerTextColor": "#F8FAFC",
+    "borderColor": "#E2E8F0",
+    "cardBorderRadius": "12px",
+    "buttonTextColor": "#FFFFFF",
+    "textColor": "#1F2937",
+    "headingColor": "#111827",
+    "fontFamily": "system",
+    "baseFontSize": "16px",
+    "showHeaderNewsButton": true,
+    "headerNewsButtonLabel": "News",
+    "showNewsCountInHeader": true,
+    "autoIncludeSectionsInDrawer": true,
+    "showNewsInDrawer": true,
+    "showLegalLinksInDrawer": true,
+    "showCtaInDrawer": true,
+    "showHeroSection": true,
+    "showHeroCtaButtons": true,
+    "homepageNewsLimit": 5,
+    "newsReadMoreLabel": "Read Full News Article →",
+    "newsViewAllLabel": "View All Daily News →",
+    "backToHomeLabel": "← Back to Main Page",
+    "allNewsBreadcrumbLabel": "All Daily News →",
+    "showSubpageSwitcherPills": true,
+    "showFooterDisclaimer": true,
+    "showFooterLinksHeading": true,
+    "homepageSectionOrder": [
+      "specs",
+      "sections",
+      "rawHtml",
+      "news",
+      "faqs"
+    ]
+  },
+  "domainConfig": {
+    "primaryDomain": "https://apexmobile.example.com",
+    "forceHttps": true,
+    "googleSiteVerification": "",
+    "bingSiteVerification": "",
+    "googleAnalyticsId": "",
+    "enableSitemapXml": true,
+    "enableImageSitemap": true,
+    "enableWebManifest": true,
+    "enableRssFeed": true,
+    "enableAutoInternalLinks": true,
+    "internalLinks": [
+      {
+        "id": "il-1",
+        "keyword": "installation guide",
+        "targetUrl": "/#install-guide",
+        "title": "Step-by-Step Installation Guide"
+      },
+      {
+        "id": "il-2",
+        "keyword": "SHA-256 cryptographic checksum",
+        "targetUrl": "/#technical-specifications",
+        "title": "Official Technical Specifications & SHA-256 Hash"
+      },
+      {
+        "id": "il-3",
+        "keyword": "daily news",
+        "targetUrl": "/news",
+        "title": "Official Daily News & Release Changelogs"
+      }
+    ],
+    "customRobotsTxt": "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin.html"
+  },
+  "githubConfig": {
+    "repoOwner": "",
+    "repoName": "",
+    "branch": "main",
+    "targetDirectory": "dist-public",
+    "fineGrainedToken": "",
+    "commitMessageTemplate": "chore(static-publish): update compiled static public pages from Admin Studio",
+    "autoPushOnPublish": false,
+    "deployHistory": []
+  },
+  "securityGate": {
+    "enabled": true,
+    "gatewayPath": "/moreinfo",
+    "appSlug": "apexmobile",
+    "appSerialId": "APM-482",
+    "devicePolicyMode": "universal_human",
+    "primaryDownloadUrl": "http://localhost:3000/news",
+    "encryptedPrimaryUrl": "v2.LGFew0Vgc8bF3pQR.kNLEvrSzUEzgSIgEq8zGy6NDEfgLVxon6eApxyCbjvZNrZiRuPSR8RIP",
+    "turnstileSiteKey": "",
+    "turnstileSecretKey": "",
+    "proceedButtonLabel": "PROCEED",
+    "unavailableMessage": "Official download mirror is undergoing scheduled maintenance. Please check back shortly.",
+    "isPaused": false,
+    "isComingSoon": false,
+    "dailyIssueCap": 0,
+    "helplineWhatsapp": "",
+    "helplineTelegram": "",
+    "customHeading": "",
+    "customNoteHtml": "",
+    "showSpecsOnGateway": false
+  },
+  "hero": {
+    "h1": "ApexMobile v4.8.2 — Fast, Secure & Cryptographically Verified Mobile Utility",
+    "metaTitle": "ApexMobile v4.8.2 Official Release — Fast, Verified Mobile Platform",
+    "metaDescription": "Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.",
+    "introHtml": "<p>Welcome to the verified release portal for <strong>ApexMobile</strong>. Engineered for uncompromising speed, strict privacy controls, and cross-platform compatibility, this release introduces next-generation compression algorithms and seamless mobile performance.</p>",
+    "bannerImageUrl": "/assets/hero-banner.svg",
+    "bannerAlt": "ApexMobile v4.8.2 Performance and Security Architecture Showcase",
+    "bannerCaption": "",
+    "showBanner": true,
+    "secondaryCta": {
+      "label": "Installation Guide",
+      "url": "#install-guide",
+      "relSponsored": false
+    },
+    "primaryCta": {
+      "label": "Download Official Package",
+      "url": "/moreinfo",
+      "relSponsored": true
+    },
+    "floatingCta": {
+      "enabled": true,
+      "label": "⚡ Download v4.8.2",
+      "url": "/moreinfo"
+    }
+  },
+  "packageSpecs": {
+    "enabled": true,
+    "heading": "Technical Package Specifications & Checksum",
+    "metaTitle": "ApexMobile v4.8.2 Technical Specifications & SHA-256 Checksum",
+    "metaDescription": "Official technical specifications, file size, Android/iOS compatibility, and SHA-256 cryptographic verification hash for ApexMobile v4.8.2.",
+    "appName": "ApexMobile Official Release",
+    "version": "v4.8.2 (Stable Build)",
+    "fileSize": "64.2 MB",
+    "operatingSystem": "Android 9.0+ / iOS 15.0+",
+    "packageFormat": "Signed APK / Universal Package",
+    "sha256": "8f94e2c1a7b3d6f09e12c4a8b5d7e3f19a02c4b6d8e1f3a5c7b9d0e2f4a6b8c1",
+    "license": "Freeware (100% Clean, No Ads)",
+    "lastUpdated": "November 4, 2026",
+    "securityStatus": "Verified Clean (0/72 Engines)",
+    "customRows": []
+  },
+  "sections": [
+    {
+      "id": "sec-features",
+      "heading": "Why Choose ApexMobile?",
+      "slug": "core-features",
+      "visible": true,
+      "badgeText": "",
+      "metaTitle": "Core Features & Architecture | ApexMobile",
+      "metaDescription": "Explore ApexMobile's zero-latency architecture, cryptographic SHA-256 verification, and 45% lower RAM optimization.",
+      "imageUrl": "",
+      "imageAlt": "Why Choose ApexMobile?",
+      "imageCaption": "",
+      "imagePosition": "none",
+      "ctaLabel": "",
+      "ctaUrl": "",
+      "htmlContent": "<p>Designed from the ground up for high-traffic environments, ApexMobile eliminates bloated dependencies in favor of native-speed memory management and low-latency network tunnels.</p>\n\n<h3>Zero-Latency Architecture</h3>\n<p>Leverages stale-while-revalidate caching and edge routing to deliver responsive interaction times (INP &lt; 50ms) across all mobile devices.</p>\n\n<h3>End-to-End Cryptographic Verification</h3>\n<p>Every compiled binary is signed with SHA-256 cryptographic hashes and scanned automatically across 70+ security engines prior to release.</p>\n\n<h3>Battery &amp; RAM Optimization</h3>\n<p>Consumes up to 45% less system memory compared to legacy alternatives, running smoothly even on entry-level Android and iOS hardware.</p>"
+    },
+    {
+      "id": "sec-install",
+      "heading": "Step-by-Step Installation Guide",
+      "slug": "install-guide",
+      "visible": true,
+      "badgeText": "",
+      "metaTitle": "How to Install ApexMobile on Android & iOS | Step-by-Step Guide",
+      "metaDescription": "Follow our 3-step installation guide to configure and launch ApexMobile safely on your Android or iOS device in under two minutes.",
+      "imageUrl": "",
+      "imageAlt": "Step-by-Step Installation Guide",
+      "imageCaption": "",
+      "imagePosition": "none",
+      "ctaLabel": "",
+      "ctaUrl": "",
+      "htmlContent": "<p>Follow these quick steps to install and configure ApexMobile on your device in under two minutes:</p>\n\n<h3>Step 1: Enable Unknown Sources (Android only)</h3>\n<p>Navigate to <em>Settings &gt; Security &gt; Install Unknown Apps</em> and toggle permission for your preferred mobile browser.</p>\n\n<h3>Step 2: Download the Official Package</h3>\n<p>Tap the primary download button above to retrieve the signed <code>.apk</code> package directly from our high-speed Cloudflare edge network.</p>\n\n<h3>Step 3: Verify and Launch</h3>\n<p>Open your file manager, tap the downloaded package, review system permissions, and select <strong>Install</strong>. Once complete, launch ApexMobile and complete the quick onboarding setup.</p>"
+    }
+  ],
+  "newsSection": {
+    "enabled": true,
+    "heading": "Daily News & Release Updates",
+    "metaTitle": "Daily News, Changelogs & Release Updates | ApexMobile",
+    "metaDescription": "Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.",
+    "articles": [
+      {
+        "id": "news-1",
+        "title": "ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine",
+        "slug": "apexmobile-v4-8-2-release-notes",
+        "date": "November 4, 2026",
+        "category": "Release Update",
+        "author": "ApexMobile Core Engineering",
+        "readTime": "2 min read",
+        "featured": true,
+        "summary": "Version 4.8.2 introduces our new lightweight memory allocator, reducing app launch time to under 180ms across Android 9+ and iOS 15+ devices.",
+        "coverImageUrl": "/assets/hero-banner.svg",
+        "coverImageAlt": "ApexMobile v4.8.2 Release Benchmark Overview",
+        "coverImageCaption": "ApexMobile v4.8.2 cold-start and memory allocation telemetry across Android and iOS devices.",
+        "ctaLabel": "Download v4.8.2 Package",
+        "ctaUrl": "/#technical-specifications",
+        "metaTitle": "ApexMobile v4.8.2 Release Notes — 45% Faster Cold-Start Engine",
+        "metaDescription": "Read the official changelog for ApexMobile v4.8.2 featuring a 45% faster cold-start engine, DNS-over-HTTPS encryption, and battery optimizations.",
+        "htmlContent": "<p>We are pleased to announce the immediate availability of <strong>ApexMobile v4.8.2</strong> across all official edge mirrors. This update focuses on raw responsiveness, memory efficiency, and hardened transport security.</p>\n\n<h3>Key Highlights in v4.8.2</h3>\n<ul>\n  <li><strong>Sub-180ms Cold Start:</strong> Re-engineered initialization pipeline defers non-critical modules until after the first frame is painted.</li>\n  <li><strong>Automatic Cache Compaction:</strong> Reduces local storage usage by 32% on devices with limited free space.</li>\n  <li><strong>Hardened TLS 1.3 Handshakes:</strong> Improved connection resilience on unstable cellular networks.</li>\n</ul>\n\n<h3>How to Upgrade</h3>\n<p>Existing users can install the v4.8.2 package directly over their current installation without losing saved preferences or local configurations.</p>"
+      },
+      {
+        "id": "news-2",
+        "title": "Security Audit Complete: 100% Clean SHA-256 Verification Report",
+        "slug": "security-audit-sha256-verification-report",
+        "date": "October 28, 2026",
+        "category": "Security Advisory",
+        "author": "Security & Compliance Desk",
+        "readTime": "2 min read",
+        "featured": false,
+        "summary": "Our quarterly independent security audit confirmed zero vulnerabilities and 0/72 clean multi-engine verification across all official distribution mirrors.",
+        "coverImageUrl": "",
+        "coverImageAlt": "Security Audit Complete: 100% Clean SHA-256 Verification Report",
+        "coverImageCaption": "",
+        "ctaLabel": "",
+        "ctaUrl": "",
+        "metaTitle": "Quarterly Security Audit & SHA-256 Verification Report | ApexMobile",
+        "metaDescription": "Review the findings of our independent security audit confirming 100% cryptographic package integrity and zero malware detections.",
+        "htmlContent": "<p>Transparency and verifiable user safety are core to the <strong>ApexMobile</strong> release process. Every build undergoes automated and manual binary inspection before publication.</p>\n\n<h3>Audit Summary</h3>\n<p>All release packages were tested against 72 independent security scanners with zero flags. Additionally, reproducible build verification confirms that the downloadable binary matches our source tree bit-for-bit.</p>"
+      },
+      {
+        "id": "news-3",
+        "title": "Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live",
+        "slug": "global-edge-cdn-upgrade-low-latency-nodes",
+        "date": "October 21, 2026",
+        "category": "Infrastructure News",
+        "author": "Network Operations Team",
+        "readTime": "3 min read",
+        "featured": false,
+        "summary": "We have expanded our Cloudflare & multi-region edge mirror network across Asia-Pacific, Europe, and North America for instant package delivery.",
+        "coverImageUrl": "",
+        "coverImageAlt": "Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live",
+        "coverImageCaption": "",
+        "ctaLabel": "",
+        "ctaUrl": "",
+        "metaTitle": "Global Edge CDN Upgrade: 14 New Download Nodes | ApexMobile News",
+        "metaDescription": "ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.",
+        "htmlContent": "<p>To ensure users worldwide experience instant download speeds regardless of peak traffic, we have deployed 14 additional edge caching nodes across key metropolitan regions.</p>\n\n<h3>Regional Performance Gains</h3>\n<ul>\n  <li><strong>Asia-Pacific &amp; India:</strong> Average download throughput increased by 62% with direct Singapore, Tokyo, and Mumbai routing.</li>\n  <li><strong>Europe &amp; UK:</strong> Redundant failover mirrors active in Frankfurt, London, and Amsterdam.</li>\n  <li><strong>Automatic Mirror Selection:</strong> The primary download button automatically routes requests to the geographically closest verified node.</li>\n</ul>"
+      }
+    ]
+  },
+  "faqsSection": {
+    "enabled": true,
+    "heading": "Frequently Asked Questions",
+    "metaTitle": "Frequently Asked Questions (FAQs) | ApexMobile Help Center",
+    "metaDescription": "Find instant answers to common questions about downloading, installing, updating, and verifying ApexMobile on Android and iOS.",
+    "items": [
+      {
+        "id": "faq-1",
+        "question": "Is ApexMobile completely free to download and use?",
+        "answer": "Yes. The official release is 100% free with zero hidden subscriptions, paywalls, or forced advertisements. All core performance and security features are unlocked out of the box.",
+        "metaTitle": "Is ApexMobile Free to Download and Use? | FAQ",
+        "metaDescription": "Yes, ApexMobile is 100% free to download and use with no hidden subscriptions or paywalls."
+      },
+      {
+        "id": "faq-2",
+        "question": "Does this application require root access or device jailbreaking?",
+        "answer": "No. ApexMobile runs inside the standard operating system security sandbox on both Android and iOS. Root access or custom firmware is never required.",
+        "metaTitle": "Does ApexMobile Require Root or Jailbreak? | FAQ",
+        "metaDescription": "No, ApexMobile runs safely in standard user-space on Android and iOS without root or jailbreak."
+      },
+      {
+        "id": "faq-3",
+        "question": "How can I verify that the downloaded file is authentic and safe?",
+        "answer": "Every release listed on our portal includes its exact SHA-256 cryptographic hash in the Technical Package Specifications table. You can compare this checksum using any standard hash utility before installing.",
+        "metaTitle": "How to Verify ApexMobile SHA-256 Checksum | FAQ",
+        "metaDescription": "Learn how to verify the SHA-256 cryptographic checksum of your ApexMobile download."
+      },
+      {
+        "id": "faq-4",
+        "question": "How do I update to a newer version without losing my settings?",
+        "answer": "Simply install the new release package directly over your existing installation. Your local preferences and saved state are preserved automatically across version upgrades.",
+        "metaTitle": "How to Update ApexMobile Without Losing Data | FAQ",
+        "metaDescription": "Install the latest ApexMobile package over your existing version to preserve all settings and data."
+      }
+    ]
+  },
+  "content": {
+    "rawHtml": ""
+  },
+  "navigation": {
+    "headerLinks": [
+      {
+        "id": "nav-1",
+        "label": "Core Features",
+        "url": "#core-features",
+        "metaTitle": "Core Features & Architecture | ApexMobile",
+        "metaDescription": "Explore the core features and low-latency performance of ApexMobile."
+      },
+      {
+        "id": "nav-2",
+        "label": "Specs & Checksum",
+        "url": "#technical-specifications",
+        "metaTitle": "Technical Specifications & SHA-256 | ApexMobile",
+        "metaDescription": "View version specifications and SHA-256 verification checksums."
+      },
+      {
+        "id": "nav-3",
+        "label": "Installation Guide",
+        "url": "#install-guide",
+        "metaTitle": "Installation Guide | ApexMobile",
+        "metaDescription": "Step-by-step installation guide for Android and iOS."
+      },
+      {
+        "id": "nav-4",
+        "label": "Daily News (/news)",
+        "url": "/news",
+        "metaTitle": "Daily News & Release Updates | ApexMobile",
+        "metaDescription": "Browse all daily news updates, changelogs, and announcements."
+      },
+      {
+        "id": "nav-5",
+        "label": "FAQs",
+        "url": "#frequently-asked-questions",
+        "metaTitle": "Frequently Asked Questions | ApexMobile",
+        "metaDescription": "Answers to common questions about ApexMobile."
+      }
+    ],
+    "footerSummary": "Official release portal providing cryptographically verified mobile packages, SHA-256 checksums, step-by-step installation guides, and daily changelog updates.",
+    "showFooterBrandSummary": true,
+    "showFooterContactEmail": true,
+    "footerQuickLinks": [
+      {
+        "id": "fql-1",
+        "label": "Official Download & Checksums",
+        "url": "/#technical-specifications",
+        "openInNewTab": false
+      },
+      {
+        "id": "fql-2",
+        "label": "Installation Guide",
+        "url": "/#install-guide",
+        "openInNewTab": false
+      },
+      {
+        "id": "fql-3",
+        "label": "Daily News Archive",
+        "url": "/news",
+        "openInNewTab": false
+      }
+    ],
+    "disclaimerHeading": "Legal & Trademark Disclaimer",
+    "disclaimerMetaTitle": "Legal Disclaimer & Trademark Notice | ApexMobile",
+    "disclaimerMetaDescription": "Official legal disclaimer and third-party trademark attribution notice for ApexMobile.",
+    "disclaimer": "ApexMobile is an independent software documentation and verified distribution portal. All third-party trademarks, operating system names, and brand insignias remain the property of their respective owners. Packages are provided with cryptographic SHA-256 checksums for user verification.",
+    "siteLinksHeading": "Official Legal & Support Pages",
+    "copyright": "© 2026 ApexMobile. All rights reserved.",
+    "showAdminLink": false
+  },
+  "pages": [
+    {
+      "id": "page-privacy",
+      "label": "Privacy Policy",
+      "slug": "privacy-policy",
+      "showInFooter": true,
+      "showInHeader": false,
+      "openInNewTab": false,
+      "h1": "Privacy Policy",
+      "subtitle": "Official Data Protection & Zero-Tracking Compliance Document",
+      "bannerImageUrl": "",
+      "bannerImageAlt": "Privacy Policy",
+      "metaTitle": "Privacy Policy — Data Protection & Zero-Tracking | ApexMobile",
+      "metaDescription": "Read the official ApexMobile Privacy Policy covering data protection, local browser caching, and GDPR/CCPA compliance.",
+      "lastUpdated": "November 2026",
+      "htmlContent": "<h2>1. Privacy Policy &amp; Data Protection Overview</h2>\n<p>Welcome to <strong>ApexMobile</strong> (<a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a>). Protecting your privacy and keeping your browsing experience secure is our top priority. This Privacy Policy explains how information is handled when you visit our website and download our software packages.</p>\n\n<h3>Information We Collect</h3>\n<p>We do not require account registration or collect personal identity documents to browse our guides or download public releases. Standard edge server logs (such as anonymized IP region, browser user-agent, and referring URLs) are processed strictly to maintain network security, DDoS mitigation, and service reliability.</p>\n\n<h3>Local Browser Caching &amp; Zero-Tracking Architecture</h3>\n<p>Our website uses browser <code>localStorage</code> to cache configuration data locally on your device so repeat visits render with zero latency. We do not sell, rent, or trade user data to third-party data brokers.</p>\n\n<h3>Cryptographic Package Verification</h3>\n<p>All files distributed through ApexMobile are verified with SHA-256 checksums. Users are encouraged to verify package hashes prior to installation.</p>\n\n<h3>Your Privacy Rights &amp; Contact Information</h3>\n<p>If you have any questions about this Privacy Policy, GDPR/CCPA compliance, or wish to contact our data protection officer, please email us directly at <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a>.</p>\n<p><em>Effective &amp; Last Updated: November 2026</em></p>"
+    },
+    {
+      "id": "page-terms",
+      "label": "Terms and Conditions",
+      "slug": "terms-and-conditions",
+      "showInFooter": true,
+      "showInHeader": false,
+      "openInNewTab": false,
+      "h1": "Terms and Conditions",
+      "subtitle": "Official Portal Terms of Service & Usage Agreement",
+      "bannerImageUrl": "",
+      "bannerImageAlt": "Terms and Conditions",
+      "metaTitle": "Terms and Conditions — Official Usage Agreement | ApexMobile",
+      "metaDescription": "Review the official Terms and Conditions for accessing guides, documentation, and downloads on ApexMobile.",
+      "lastUpdated": "November 2026",
+      "htmlContent": "<h2>1. Acceptance of Terms &amp; Conditions</h2>\n<p>By accessing and using <strong>ApexMobile</strong> (<a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a>), you agree to comply with and be bound by these Terms and Conditions. If you disagree with any part of these terms, please discontinue use of our website immediately.</p>\n\n<h3>Use of Content, Software Guides &amp; Mirrors</h3>\n<p>All content published on ApexMobile, including installation tutorials, technical specifications, daily news updates, and FAQs, is provided for informational and educational purposes. You may not scrape, mirror, or redistribute our original articles without prior written consent.</p>\n\n<h3>Device Compatibility &amp; User Responsibility</h3>\n<p>Users are responsible for verifying that their smartphone or tablet meets the minimum operating system requirements outlined in our Technical Specifications table before installing any package.</p>\n\n<h3>Limitation of Liability</h3>\n<p>ApexMobile provides software documentation and distribution mirrors on an \"as-is\" basis without warranties of any kind. In no event shall ApexMobile or its contributors be liable for any direct or indirect damages arising from the use of materials on this site.</p>\n\n<h3>Contact &amp; Legal Notices</h3>\n<p>We may update these Terms &amp; Conditions periodically. For legal inquiries, please contact <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a>.</p>"
+    },
+    {
+      "id": "page-dmca",
+      "label": "DMCA Disclaimer",
+      "slug": "dmca-disclaimer",
+      "showInFooter": true,
+      "showInHeader": false,
+      "openInNewTab": false,
+      "h1": "DMCA Copyright & Trademark Disclaimer",
+      "subtitle": "Digital Millennium Copyright Act (DMCA) & Intellectual Property Notice",
+      "bannerImageUrl": "",
+      "bannerImageAlt": "DMCA Copyright & Trademark Disclaimer",
+      "metaTitle": "DMCA Notice & Copyright Takedown Policy | ApexMobile",
+      "metaDescription": "Official Digital Millennium Copyright Act (DMCA) compliance policy and copyright inquiry procedure for ApexMobile.",
+      "lastUpdated": "November 2026",
+      "htmlContent": "<h2>1. DMCA Copyright &amp; Intellectual Property Policy</h2>\n<p><strong>ApexMobile</strong> (<a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a>) respects the intellectual property rights of software developers and content creators and complies fully with the Digital Millennium Copyright Act (DMCA).</p>\n\n<h3>Trademark &amp; Attribution Notice</h3>\n<p>All third-party product names, operating system names (including Android and iOS), logos, and brands mentioned on this website are the property of their respective trademark owners. ApexMobile operates as an independent technical documentation and verification portal.</p>\n\n<h3>How to Submit a Formal DMCA Notice</h3>\n<p>If you believe that any material hosted or linked on ApexMobile infringes upon your copyright, please send a written DMCA notice to our designated agent at <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a> containing:</p>\n<ul>\n  <li>Identification of the copyrighted work claimed to have been infringed.</li>\n  <li>The exact URL(s) on <code>https://apexmobile.example.com</code> where the material is located.</li>\n  <li>Your full legal name, organization, mailing address, telephone number, and email address.</li>\n  <li>A statement made under penalty of perjury that you are the copyright owner or authorized to act on the owner's behalf.</li>\n</ul>\n<p>We review and act upon all valid copyright notices within 24 to 48 hours.</p>"
+    },
+    {
+      "id": "page-contact",
+      "label": "Contact Support",
+      "slug": "contact-support",
+      "showInFooter": true,
+      "showInHeader": false,
+      "openInNewTab": false,
+      "h1": "Contact & Technical Support",
+      "subtitle": "Direct Engineering, Editorial & Verification Support Desk",
+      "bannerImageUrl": "",
+      "bannerImageAlt": "Contact & Technical Support",
+      "metaTitle": "Contact Support & Editorial Desk | ApexMobile",
+      "metaDescription": "Get in touch with the ApexMobile technical support and editorial team for assistance or inquiries.",
+      "lastUpdated": "November 2026",
+      "htmlContent": "<h2>1. Official Contact &amp; Technical Support Desk</h2>\n<p>Need assistance with an installation guide, SHA-256 checksum verification, or press inquiry on <strong>ApexMobile</strong>? Our technical and editorial team is ready to help.</p>\n\n<h3>Direct Communication Channels</h3>\n<ul>\n  <li><strong>Technical &amp; Editorial Support:</strong> <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a></li>\n  <li><strong>Official Portal Domain:</strong> <a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a></li>\n  <li><strong>DMCA &amp; Legal Compliance:</strong> <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a></li>\n  <li><strong>Standard Response Window:</strong> Within 24 hours (Monday – Sunday)</li>\n</ul>\n\n<h3>Reporting a Broken Mirror or Bug</h3>\n<p>When reporting a technical issue, please include your device model, operating system version, and the release version number (e.g., <code>v4.8.2</code>) so our engineering team can reproduce and resolve the issue rapidly.</p>"
+    }
+  ],
+  "seo": {
+    "metaTitle": "ApexMobile v4.8.2 Official Release — Fast, Verified Mobile Platform",
+    "metaDescription": "Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.",
+    "canonicalUrl": "https://apexmobile.example.com",
+    "ogImageUrl": "/assets/hero-banner.svg",
+    "enableSoftwareSchema": true,
+    "softwareDetails": {
+      "name": "ApexMobile",
+      "operatingSystem": "Android 9.0+, iOS 15.0+",
+      "applicationCategory": "UtilitiesApplication",
+      "ratingValue": "4.9",
+      "reviewCount": "18420",
+      "price": "0.00",
+      "priceCurrency": "USD"
+    },
+    "rawJsonLd": ""
+  },
+  "updatedAt": 1793897560079
+}

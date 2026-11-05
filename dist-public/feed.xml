@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>ApexMobile — Daily News &amp; Release Feed</title>
+    <link>https://apexmobile.example.com/news</link>
+    <description>Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.</description>
+    <language>en-us</language>
+    <item>
+      <title>ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine</title>
+      <link>https://apexmobile.example.com/news/apexmobile-v4-8-2-release-notes</link>
+      <guid isPermaLink="true">https://apexmobile.example.com/news/apexmobile-v4-8-2-release-notes</guid>
+      <category>Release Update</category>
+      <description>Read the official changelog for ApexMobile v4.8.2 featuring a 45% faster cold-start engine, DNS-over-HTTPS encryption, and battery optimizations.</description>
+    </item>
+    <item>
+      <title>Security Audit Complete: 100% Clean SHA-256 Verification Report</title>
+      <link>https://apexmobile.example.com/news/security-audit-sha256-verification-report</link>
+      <guid isPermaLink="true">https://apexmobile.example.com/news/security-audit-sha256-verification-report</guid>
+      <category>Security Advisory</category>
+      <description>Review the findings of our independent security audit confirming 100% cryptographic package integrity and zero malware detections.</description>
+    </item>
+    <item>
+      <title>Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live</title>
+      <link>https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes</link>
+      <guid isPermaLink="true">https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes</guid>
+      <category>Infrastructure News</category>
+      <description>ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.</description>
+    </item>
+  </channel>
+</rss>

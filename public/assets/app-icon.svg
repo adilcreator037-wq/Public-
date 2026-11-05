@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="40" y1="32" x2="216" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F87171"/>
+      <stop offset="50%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#B91C1C"/>
+    </linearGradient>
+    <linearGradient id="rimLight" x1="0" y1="0" x2="0" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.03"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#EF4444" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Squircle Base -->
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bgGrad)" stroke="url(#rimLight)" stroke-width="4"/>
+  <!-- Subtle Grid Geometry -->
+  <circle cx="128" cy="128" r="88" stroke="#334155" stroke-width="1.5" stroke-dasharray="6 6" opacity="0.5"/>
+  <!-- Shield Outer Frame -->
+  <path d="M128 38L198 68V126C198 172.5 168.2 211.8 128 224C87.8 211.8 58 172.5 58 126V68L128 38Z" fill="#1E293B" stroke="url(#accentGrad)" stroke-width="6" filter="url(#glow)"/>
+  <!-- Precision Lightning Core -->
+  <path d="M138 66L88 134H126L116 190L168 122H130L138 66Z" fill="url(#accentGrad)"/>
+  <path d="M138 66L88 134H126L116 190L168 122H130L138 66Z" stroke="#FFF" stroke-width="1.5" stroke-opacity="0.4"/>
+</svg>

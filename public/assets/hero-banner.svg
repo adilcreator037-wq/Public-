@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" fill="none">
+  <defs>
+    <linearGradient id="canvasBg" x1="0" y1="0" x2="1200" y2="675" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="55%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#090D16"/>
+    </linearGradient>
+    <radialGradient id="crimsonSpot" cx="75%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#EF4444" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#EF4444" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardSurface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="redPill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base 16:9 Canvas -->
+  <rect width="1200" height="675" fill="url(#canvasBg)"/>
+  <rect width="1200" height="675" fill="url(#crimsonSpot)"/>
+
+  <!-- Subtle Architectural Grid -->
+  <g stroke="#334155" stroke-opacity="0.28" stroke-width="1">
+    <line x1="0" y1="135" x2="1200" y2="135"/>
+    <line x1="0" y1="270" x2="1200" y2="270"/>
+    <line x1="0" y1="405" x2="1200" y2="405"/>
+    <line x1="0" y1="540" x2="1200" y2="540"/>
+    <line x1="240" y1="0" x2="240" y2="675"/>
+    <line x1="480" y1="0" x2="480" y2="675"/>
+    <line x1="720" y1="0" x2="720" y2="675"/>
+    <line x1="960" y1="0" x2="960" y2="675"/>
+  </g>
+
+  <!-- Left Feature Callout Panel -->
+  <g transform="translate(80, 125)">
+    <rect x="0" y="0" width="190" height="36" rx="8" fill="#EF4444" fill-opacity="0.15" stroke="#EF4444" stroke-opacity="0.4"/>
+    <text x="20" y="23" fill="#FCA5A5" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="0.06em">SHA-256 VERIFIED</text>
+
+    <text x="0" y="96" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="44" font-weight="800" letter-spacing="-0.02em">Next-Gen Mobile</text>
+    <text x="0" y="150" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="44" font-weight="800" letter-spacing="-0.02em">Performance Engine</text>
+
+    <text x="0" y="205" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="19" font-weight="400">Zero-latency edge delivery, cryptographic package signing,</text>
+    <text x="0" y="234" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="19" font-weight="400">and multi-engine security verification for Android &amp; iOS.</text>
+
+    <!-- Metric Cards -->
+    <g transform="translate(0, 285)">
+      <rect x="0" y="0" width="160" height="92" rx="12" fill="url(#cardSurface)" stroke="#334155" stroke-width="1.5"/>
+      <text x="20" y="42" fill="#FFFFFF" font-family="monospace" font-size="28" font-weight="800">99.98%</text>
+      <text x="20" y="68" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">Clean Scan Score</text>
+
+      <rect x="180" y="0" width="160" height="92" rx="12" fill="url(#cardSurface)" stroke="#334155" stroke-width="1.5"/>
+      <text x="200" y="42" fill="#34D399" font-family="monospace" font-size="28" font-weight="800">&lt; 35ms</text>
+      <text x="200" y="68" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">Edge Response</text>
+
+      <rect x="360" y="0" width="160" height="92" rx="12" fill="url(#cardSurface)" stroke="#334155" stroke-width="1.5"/>
+      <text x="380" y="42" fill="#F87171" font-family="monospace" font-size="28" font-weight="800">v4.8.2</text>
+      <text x="380" y="68" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">Stable Build</text>
+    </g>
+  </g>
+
+  <!-- Right Device Mockup Showcase -->
+  <g transform="translate(700, 68)">
+    <!-- Phone Outer Bezel -->
+    <rect x="0" y="0" width="400" height="540" rx="40" fill="#0B0F19" stroke="#475569" stroke-width="4"/>
+    <rect x="14" y="14" width="372" height="512" rx="30" fill="#111827" stroke="#1E293B" stroke-width="2"/>
+    <!-- Speaker Notch -->
+    <rect x="150" y="28" width="100" height="8" rx="4" fill="#334155"/>
+
+    <!-- App Header Inside Phone -->
+    <rect x="36" y="60" width="64" height="64" rx="16" fill="url(#redPill)"/>
+    <path d="M72 74L54 96H68L64 112L84 90H70L72 74Z" fill="#FFFFFF"/>
+    <text x="116" y="88" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="800">ApexMobile</text>
+    <text x="116" y="112" fill="#34D399" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">✓ Official Signed Package</text>
+
+    <!-- Status Card Inside Phone -->
+    <rect x="36" y="146" width="328" height="110" rx="16" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+    <text x="56" y="178" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">CRYPTOGRAPHIC INTEGRITY</text>
+    <text x="56" y="210" fill="#F8FAFC" font-family="monospace" font-size="18" font-weight="700">SHA256: 8F94...E21B</text>
+    <rect x="56" y="226" width="288" height="10" rx="5" fill="#0F172A"/>
+    <rect x="56" y="226" width="288" height="10" rx="5" fill="#10B981"/>
+
+    <!-- Feature Rows Inside Phone -->
+    <rect x="36" y="274" width="328" height="62" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <circle cx="68" cy="305" r="14" fill="#EF4444" fill-opacity="0.2"/>
+    <path d="M63 305L67 309L75 301" stroke="#F87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="96" y="301" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700">Zero-Latency CDN Mirror</text>
+    <text x="96" y="320" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="12">Multi-region Cloudflare Edge</text>
+
+    <rect x="36" y="350" width="328" height="62" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <circle cx="68" cy="381" r="14" fill="#10B981" fill-opacity="0.2"/>
+    <path d="M63 381L67 385L75 377" stroke="#34D399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="96" y="377" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700">Sandbox &amp; Privacy Guard</text>
+    <text x="96" y="396" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="12">No root or invasive permissions</text>
+
+    <!-- Action Button Inside Phone -->
+    <rect x="36" y="436" width="328" height="58" rx="14" fill="url(#redPill)"/>
+    <text x="200" y="471" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="17" font-weight="800">VERIFIED RELEASE READY</text>
+  </g>
+</svg>

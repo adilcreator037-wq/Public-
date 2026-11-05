@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en" style="--accent-color:#EF4444;--button-text-color:#FFFFFF;--max-container-width:768px;--bg-page:#F8FAFC;--bg-surface:#FFFFFF;--bg-header:#FFFFFF;--text-header:#111827;--bg-footer:#0F172A;--text-footer:#F8FAFC;--border-color:#E2E8F0;--card-radius:12px;--text-main:#1F2937;--heading-color:#111827;--base-font-size:16px;--font-stack:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  
+  <!-- Dynamic SEO & Metadata (Populated by Server SSR & app.js) -->
+  <title>Daily News, Changelogs &amp; Release Updates | ApexMobile</title>
+  <meta name="description" content="Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team." />
+  <link rel="canonical" href="https://apexmobile.example.com/news" />
+  <link rel="icon" href="/assets/app-icon.svg" />
+  
+  <!-- OpenGraph / Social Cards -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Daily News, Changelogs &amp; Release Updates | ApexMobile" />
+  <meta property="og:description" content="Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team." />
+  <meta property="og:url" content="https://apexmobile.example.com/news" />
+  <meta property="og:image" content="/assets/hero-banner.svg" />
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Daily News, Changelogs &amp; Release Updates | ApexMobile" />
+  <meta name="twitter:description" content="Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team." />
+  <meta name="twitter:image" content="/assets/hero-banner.svg" />
+
+  <style>
+    :root {
+      --accent-color: #EF4444;
+      --button-text-color: #FFFFFF;
+      --accent-hover: #DC2626;
+      --accent-soft: #FEF2F2;
+      --max-container-width: 768px;
+      --bg-page: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-header: #FFFFFF;
+      --text-header: #111827;
+      --bg-footer: #0F172A;
+      --text-footer: #F8FAFC;
+      --border-color: #E2E8F0;
+      --card-radius: 12px;
+      --text-main: #1F2937;
+      --heading-color: #111827;
+      --base-font-size: 16px;
+      --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Strict Mobile & Desktop Viewport Lock — Zero Horizontal Wobble & Sticky Header Safe */
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: clip;
+      overscroll-behavior-x: none;
+      overflow-anchor: none;
+      touch-action: pan-y;
+      font-family: var(--font-stack);
+      font-size: var(--base-font-size);
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      -webkit-font-smoothing: antialiased;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Plain, Clean Single-Column Container (overflow-x: clip keeps position: sticky working 100%!) */
+    .app-viewport {
+      width: 100%;
+      max-width: var(--max-container-width);
+      margin: 0 auto;
+      background-color: var(--bg-surface);
+      min-height: 100vh;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      overflow-x: clip;
+    }
+
+    /* Sticky Top Navbar (height: 60px — Always stays pinned at top: 0 while scrolling) */
+    .sticky-header {
+      height: 60px;
+      background-color: var(--bg-header, var(--bg-surface));
+      background-color: color-mix(in srgb, var(--bg-header, var(--bg-surface)) 96%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-color, #E5E7EB);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      width: 100%;
+      gap: 10px;
+    }
+
+    .brand-logo-container {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      height: 100%;
+      text-decoration: none;
+      color: var(--text-header, var(--heading-color));
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      min-width: 0;
+    }
+
+    .brand-logo-img {
+      max-height: 36px;
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      display: block;
+      flex-shrink: 0;
+    }
+
+    .brand-logo-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .header-right-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .header-news-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #E5E7EB;
+      background-color: #F9FAFB;
+      color: var(--heading-color);
+      font-size: 13.5px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .header-news-link:hover,
+    .header-news-link.is-active {
+      border-color: var(--accent-color);
+      background-color: var(--accent-soft);
+      color: var(--accent-color);
+    }
+
+    .header-news-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--accent-color);
+    }
+
+    /* Animated Hamburger Menu Toggle */
+    .hamburger-button {
+      background: #F9FAFB;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      width: 42px;
+      height: 40px;
+      padding: 9px 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      cursor: pointer;
+      flex-shrink: 0;
+      z-index: 105;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .hamburger-button:hover {
+      background-color: var(--accent-soft);
+      border-color: var(--accent-color);
+    }
+
+    .hamburger-bar {
+      width: 100%;
+      height: 2.5px;
+      background-color: var(--accent-color);
+      border-radius: 9999px;
+      transition: transform 0.25s ease, opacity 0.2s ease;
+      transform-origin: center;
+    }
+
+    .hamburger-button.is-active .hamburger-bar:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+    }
+    .hamburger-button.is-active .hamburger-bar:nth-child(2) {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+    .hamburger-button.is-active .hamburger-bar:nth-child(3) {
+      transform: translateY(-7px) rotate(-45deg);
+    }
+
+    /* Sticky Slide-Down Navigation Drawer (Anchored right under the 60px sticky header!) */
+    .nav-drawer {
+      background-color: var(--bg-surface);
+      border-bottom: 2px solid #E5E7EB;
+      width: 100%;
+      position: sticky;
+      top: 60px;
+      z-index: 95;
+      max-height: calc(100vh - 60px);
+      overflow-y: auto;
+      box-shadow: 0 20px 32px -8px rgba(15, 23, 42, 0.16);
+    }
+
+    .nav-drawer-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .drawer-section-header {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6B7280;
+      background-color: #F8FAFC;
+      padding: 9px 18px;
+      border-bottom: 1px solid #E5E7EB;
+      border-top: 1px solid #E5E7EB;
+    }
+
+    .drawer-section-header:first-child {
+      border-top: none;
+    }
+
+    .nav-drawer-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 18px;
+      border-bottom: 1px solid #F3F4F6;
+      text-decoration: none;
+      color: var(--text-main);
+      font-size: 14.5px;
+      font-weight: 600;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .nav-drawer-link:hover {
+      background-color: #F9FAFB;
+      color: var(--accent-color);
+    }
+
+    .nav-drawer-link.active-nav-link {
+      background-color: var(--accent-soft);
+      border-left: 4px solid var(--accent-color);
+      color: var(--accent-color);
+      font-weight: 700;
+    }
+
+    .drawer-link-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background-color: #F3F4F6;
+      color: #4B5563;
+      flex-shrink: 0;
+    }
+
+    .drawer-link-arrow {
+      font-size: 13px;
+      color: #9CA3AF;
+      flex-shrink: 0;
+    }
+
+    .drawer-news-sublink {
+      padding: 10px 18px;
+      background-color: #FAFAFA;
+    }
+
+    .drawer-news-cat {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accent-color);
+      margin-bottom: 2px;
+    }
+
+    .drawer-news-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--heading-color);
+      line-height: 1.35;
+    }
+
+    .drawer-legal-grid-item {
+      padding: 12px 18px;
+      background-color: #FAFAFA;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    .drawer-legal-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .drawer-legal-chip {
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 11px;
+      border-radius: 6px;
+      background-color: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      color: #374151;
+      text-decoration: none;
+    }
+
+    .drawer-legal-chip:hover,
+    .drawer-legal-chip.active {
+      border-color: var(--accent-color);
+      color: var(--accent-color);
+      background-color: var(--accent-soft);
+    }
+
+    .drawer-cta-footer {
+      padding: 14px 18px;
+      background-color: #F8FAFC;
+    }
+
+    .drawer-cta-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      background-color: var(--accent-color);
+      color: #FFFFFF !important;
+      text-decoration: none !important;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 11px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    .drawer-cta-ver {
+      font-size: 11.5px;
+      background-color: rgba(255, 255, 255, 0.2);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .cv-auto-section {
+      content-visibility: auto;
+      contain-intrinsic-size: 1px 320px;
+    }
+
+    /* Above-the-Fold Hero Block */
+    .hero-container {
+      padding: 24px 20px 4px 20px;
+    }
+
+    .hero-title {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--heading-color);
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+
+    /* 2-Column Action Button Grid */
+    .hero-action-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 12px;
+      margin: 20px 0;
+    }
+
+    .btn-secondary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--bg-surface);
+      border: 1.5px solid var(--accent-color);
+      color: var(--accent-color);
+      font-weight: 700;
+      font-size: 14.5px;
+      border-radius: 8px;
+      padding: 12px 12px;
+      text-decoration: none;
+      text-align: center;
+      line-height: 1.25;
+      transition: background-color 0.15s ease;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--accent-soft);
+    }
+
+    .btn-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--accent-color);
+      border: 1.5px solid var(--accent-color);
+      color: var(--button-text-color, #FFFFFF);
+      font-weight: 700;
+      font-size: 14.5px;
+      border-radius: var(--card-radius, 8px);
+      padding: 12px 12px;
+      text-decoration: none;
+      text-align: center;
+      line-height: 1.25;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.15);
+      transition: opacity 0.15s ease;
+      cursor: pointer;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.92;
+    }
+
+    .internal-seo-link {
+      color: var(--accent-color) !important;
+      font-weight: 600 !important;
+      text-decoration: underline dotted var(--accent-color) !important;
+      text-underline-offset: 3px;
+    }
+
+    /* Main Content Container */
+    .content-container {
+      padding: 0 20px 40px 20px;
+      flex: 1;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    /* ==========================================================================
+       RAW HTML TYPOGRAPHY & RICH COMPONENT ENGINE (.prose-container)
+       ========================================================================== */
+    .prose-container {
+      width: 100%;
+      max-width: 100%;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    .prose-container h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--heading-color);
+      line-height: 1.3;
+      margin-bottom: 16px;
+    }
+
+    .prose-container h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--heading-color);
+      margin-top: 32px;
+      margin-bottom: 12px;
+      line-height: 1.35;
+      scroll-margin-top: 72px;
+    }
+
+    .prose-container h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--heading-color);
+      margin-top: 20px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #E5E7EB;
+      padding-bottom: 6px;
+      line-height: 1.4;
+      scroll-margin-top: 72px;
+    }
+
+    .prose-container p,
+    .prose-container li {
+      font-size: var(--base-font-size);
+      color: var(--text-main);
+      line-height: 1.65;
+      margin-bottom: 14px;
+    }
+
+    .prose-container a {
+      color: #2563EB;
+      text-decoration: underline;
+      font-weight: 500;
+    }
+
+    .prose-container a:hover {
+      color: #1D4ED8;
+    }
+
+    /* Media Figures, Section Images & News Cover Images */
+    .media-figure {
+      margin: 20px 0;
+      width: 100%;
+    }
+
+    .prose-container img {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+      margin: 16px 0;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+      display: block;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background-color: #E5E7EB;
+    }
+
+    .media-figure img {
+      margin: 0;
+    }
+
+    .media-caption {
+      font-size: 13px;
+      color: #6B7280;
+      text-align: center;
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+
+    .section-eyebrow-badge {
+      display: inline-block;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent-color);
+      background-color: var(--accent-soft);
+      padding: 3px 9px;
+      border-radius: 4px;
+      margin-top: 28px;
+      margin-bottom: -20px;
+    }
+
+    .section-inline-cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background-color: var(--accent-color);
+      color: #FFFFFF !important;
+      text-decoration: none !important;
+      font-weight: 700 !important;
+      font-size: 14.5px;
+      padding: 11px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.12);
+    }
+
+    .section-inline-cta:hover {
+      opacity: 0.92;
+    }
+
+    /* Rich Admin Component Blocks (Callout, Step Cards, Feature Grid, Accordion) */
+    .cms-callout-box {
+      border-left: 4px solid var(--accent-color);
+      background-color: #F8FAFC;
+      border-top: 1px solid #E5E7EB;
+      border-right: 1px solid #E5E7EB;
+      border-bottom: 1px solid #E5E7EB;
+      padding: 14px 16px;
+      border-radius: 0 8px 8px 0;
+      margin: 18px 0;
+    }
+
+    .cms-feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 16px 0 22px 0;
+    }
+
+    .cms-feature-item {
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      padding: 14px;
+      background-color: #FAFAFA;
+    }
+
+    .cms-accordion {
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      background-color: #FAFAFA;
+    }
+
+    .cms-accordion summary {
+      font-weight: 700;
+      color: var(--heading-color);
+      cursor: pointer;
+      font-size: 15.5px;
+    }
+
+    .prose-container ul,
+    .prose-container ol {
+      margin: 14px 0 18px 24px;
+      padding: 0;
+    }
+
+    .prose-container li {
+      margin-bottom: 6px;
+    }
+
+    .prose-container blockquote {
+      border-left: 3px solid var(--accent-color);
+      background-color: #F9FAFB;
+      padding: 12px 16px;
+      margin: 18px 0;
+      color: var(--text-main);
+      border-radius: 0 6px 6px 0;
+    }
+
+    .prose-container table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px 0;
+      font-size: 14.5px;
+    }
+
+    .prose-container th,
+    .prose-container td {
+      border: 1px solid #E5E7EB;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .prose-container th {
+      background-color: #F9FAFB;
+      font-weight: 600;
+      color: var(--heading-color);
+      width: 38%;
+    }
+
+    .prose-container code {
+      background-color: #F3F4F6;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13.5px;
+      color: var(--heading-color);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      word-break: break-all;
+    }
+
+    /* Editorial News Item inside .prose-container */
+    .news-item-block {
+      padding: 18px 0;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    .news-item-block:last-child {
+      border-bottom: none;
+    }
+
+    .news-card-media-link {
+      display: block;
+      margin-bottom: 12px;
+      text-decoration: none;
+    }
+
+    .news-card-cover-img {
+      margin: 0 !important;
+      max-height: 280px;
+    }
+
+    .news-meta-line {
+      font-size: 13px;
+      color: #6B7280;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .news-category-tag {
+      display: inline-block;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--accent-color);
+      background-color: var(--accent-soft);
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .news-featured-tag {
+      display: inline-block;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #B45309;
+      background-color: #FEF3C7;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .news-title-link {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--heading-color) !important;
+      text-decoration: none !important;
+      display: inline-block;
+      margin-bottom: 6px;
+      line-height: 1.35;
+    }
+
+    .news-title-link:hover {
+      color: var(--accent-color) !important;
+      text-decoration: underline !important;
+    }
+
+    .news-read-more {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent-color) !important;
+      text-decoration: none !important;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .news-read-more:hover {
+      text-decoration: underline !important;
+    }
+
+    /* News Hub Filter Bar (/news) */
+    .news-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 20px 0;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    .news-filter-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #E5E7EB;
+      background-color: #F9FAFB;
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .news-filter-btn.active {
+      background-color: var(--heading-color);
+      color: #FFFFFF;
+      border-color: var(--heading-color);
+    }
+
+    /* Standalone Page Breadcrumb & Quick Switcher Bar */
+    .back-home-bar {
+      padding: 16px 20px 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .back-home-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .back-home-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent-color);
+      text-decoration: none;
+    }
+
+    .back-home-link:hover {
+      text-decoration: underline;
+    }
+
+    .subpage-tabs-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    .subpage-pill {
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid #E5E7EB;
+      background-color: #F9FAFB;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .subpage-pill:hover {
+      border-color: #D1D5DB;
+      background-color: #F3F4F6;
+    }
+
+    .subpage-pill.active {
+      background-color: var(--accent-color);
+      border-color: var(--accent-color);
+      color: #FFFFFF;
+    }
+
+    /* Customizable Public Footer Section */
+    .site-footer {
+      background-color: var(--bg-footer, #0F172A);
+      color: var(--text-footer, #F8FAFC);
+      padding: 36px 20px 92px 20px;
+      border-top: 1px solid var(--border-color, #E5E7EB);
+      width: 100%;
+    }
+
+    .footer-brand-summary-box {
+      text-align: center;
+      max-width: 600px;
+      margin: 0 auto 24px auto;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+    }
+
+    .footer-brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-footer, #F8FAFC);
+      margin-bottom: 6px;
+    }
+
+    .footer-summary-text {
+      font-size: 13.5px;
+      line-height: 1.55;
+      opacity: 0.85;
+      margin-bottom: 8px;
+    }
+
+    .footer-contact-pill {
+      display: inline-block;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-footer, #F8FAFC);
+      opacity: 0.9;
+      text-decoration: underline;
+    }
+
+    .footer-heading {
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--text-footer, #F8FAFC);
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .footer-disclaimer-text {
+      font-size: 13.5px;
+      color: var(--text-footer, #F8FAFC);
+      opacity: 0.82;
+      text-align: center;
+      line-height: 1.6;
+      max-width: 600px;
+      margin: 0 auto 24px auto;
+      word-break: break-word;
+    }
+
+    .footer-links-stack {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px 18px;
+      margin-bottom: 20px;
+    }
+
+    .footer-link {
+      font-size: 14px;
+      color: var(--accent-color);
+      text-decoration: none;
+      font-weight: 600;
+      padding: 5px 4px;
+      transition: opacity 0.15s;
+      cursor: pointer;
+    }
+
+    .footer-link:hover {
+      opacity: 0.85;
+      text-decoration: underline;
+    }
+
+    .footer-divider {
+      height: 1px;
+      background-color: rgba(148, 163, 184, 0.22);
+      margin: 18px 0;
+      border: none;
+    }
+
+    .footer-copyright-text {
+      font-size: 13px;
+      color: var(--text-footer, #F8FAFC);
+      opacity: 0.75;
+      text-align: center;
+    }
+
+    /* Floating Bottom Pill CTA */
+    .floating-cta-wrapper {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 40;
+      max-width: calc(100vw - 40px);
+    }
+
+    .floating-cta-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background-color: var(--accent-color);
+      color: #FFFFFF;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 12px 24px;
+      border-radius: 10px;
+      text-decoration: none;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+      transition: transform 0.15s ease;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .floating-cta-button:hover {
+      transform: translateY(-2px);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+
+  <meta name="theme-color" content="#EF4444" />
+  <meta name="application-name" content="ApexMobile" />
+  <meta name="apple-mobile-web-app-title" content="ApexMobile" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/app-icon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
+  <link rel="alternate" type="application/rss+xml" title="ApexMobile News RSS" href="/feed.xml" />
+  <script id="dynamic-jsonld-schema" type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://apexmobile.example.com/#website","url":"https://apexmobile.example.com","name":"ApexMobile","alternateName":"ApexMobile","description":"Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.","publisher":{"@id":"https://apexmobile.example.com/#organization"},"inLanguage":"en-US"},{"@type":"Organization","@id":"https://apexmobile.example.com/#organization","name":"ApexMobile","url":"https://apexmobile.example.com","email":"support@apexmobile.example.com","logo":{"@type":"ImageObject","@id":"https://apexmobile.example.com/#logo","url":"https://apexmobile.example.com/assets/app-icon.svg","contentUrl":"https://apexmobile.example.com/assets/app-icon.svg","width":512,"height":512,"caption":"ApexMobile"},"image":{"@id":"https://apexmobile.example.com/#logo"}},{"@type":"BreadcrumbList","@id":"https://apexmobile.example.com/news/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"ApexMobile","item":"https://apexmobile.example.com"},{"@type":"ListItem","position":2,"name":"Daily News & Release Updates","item":"https://apexmobile.example.com/news"}]},{"@type":"CollectionPage","@id":"https://apexmobile.example.com/news/#news-collection","url":"https://apexmobile.example.com/news","name":"Daily News, Changelogs & Release Updates | ApexMobile","description":"Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.","isPartOf":{"@id":"https://apexmobile.example.com/#website"},"breadcrumb":{"@id":"https://apexmobile.example.com/news/#breadcrumb"},"mainEntity":{"@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"url":"https://apexmobile.example.com/news/apexmobile-v4-8-2-release-notes","name":"ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine"},{"@type":"ListItem","position":2,"url":"https://apexmobile.example.com/news/security-audit-sha256-verification-report","name":"Security Audit Complete: 100% Clean SHA-256 Verification Report"},{"@type":"ListItem","position":3,"url":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes","name":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live"}]}}]}</script>
+  <script>
+    window.__INITIAL_ROUTE_PAYLOAD__ = {"path":"/news","canonicalPath":"/news","viewType":"news-hub","metaTitle":"Daily News, Changelogs & Release Updates | ApexMobile","metaDescription":"Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.","ogImage":"/assets/hero-banner.svg","heroH1":"Daily News & Release Updates","showHeroSection":true,"showHeroCtaGrid":false,"renderedMainHtml":"\n    <p style=\"color:#4B5563; margin-bottom:12px;\">\n      Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.\n    <\/p>\n    <div class=\"news-filter-bar\">\n      <button type=\"button\" class=\"news-filter-btn active\" data-news-cat=\"ALL\">\n        All News (3)\n      <\/button>\n    \n      <button type=\"button\" class=\"news-filter-btn \" data-news-cat=\"Release Update\">\n        Release Update\n      <\/button>\n    \n      <button type=\"button\" class=\"news-filter-btn \" data-news-cat=\"Security Advisory\">\n        Security Advisory\n      <\/button>\n    \n      <button type=\"button\" class=\"news-filter-btn \" data-news-cat=\"Infrastructure News\">\n        Infrastructure News\n      <\/button>\n    <\/div>\n    <div id=\"news-hub-articles-container\">\n              <article class=\"news-item-block\">\n                <a href=\"/news/apexmobile-v4-8-2-release-notes\" data-spa-link class=\"news-card-media-link\">\n                  <img src=\"/assets/hero-banner.svg\" alt=\"ApexMobile v4.8.2 Release Benchmark Overview\" width=\"1200\" height=\"675\" loading=\"lazy\" decoding=\"async\" class=\"news-card-cover-img\" />\n                <\/a>\n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Release Update<\/span>\n                  <span class=\"news-featured-tag\">★ Featured<\/span>\n                  <span>November 4, 2026<\/span>\n                  <span>· By ApexMobile Core Engineering<\/span>\n                  <span>· 2 min read<\/span>\n                <\/div>\n                <h3 style=\"margin-top:6px; border-bottom:none; padding-bottom:0;\">\n                  <a href=\"/news/apexmobile-v4-8-2-release-notes\" data-spa-link class=\"news-title-link\">ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine<\/a>\n                <\/h3>\n                <p style=\"margin-bottom:10px;\">Version 4.8.2 introduces our new lightweight memory allocator, reducing app launch time to under 180ms across Android 9+ and iOS 15+ devices.<\/p>\n                <a href=\"/news/apexmobile-v4-8-2-release-notes\" data-spa-link class=\"news-read-more\">Read Full News Article →<\/a>\n              <\/article>\n            \n\n              <article class=\"news-item-block\">\n                \n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Security Advisory<\/span>\n                  \n                  <span>October 28, 2026<\/span>\n                  <span>· By Security &amp; Compliance Desk<\/span>\n                  <span>· 2 min read<\/span>\n                <\/div>\n                <h3 style=\"margin-top:6px; border-bottom:none; padding-bottom:0;\">\n                  <a href=\"/news/security-audit-sha256-verification-report\" data-spa-link class=\"news-title-link\">Security Audit Complete: 100% Clean SHA-256 Verification Report<\/a>\n                <\/h3>\n                <p style=\"margin-bottom:10px;\">Our quarterly independent security audit confirmed zero vulnerabilities and 0/72 clean multi-engine verification across all official distribution mirrors.<\/p>\n                <a href=\"/news/security-audit-sha256-verification-report\" data-spa-link class=\"news-read-more\">Read Full News Article →<\/a>\n              <\/article>\n            \n\n              <article class=\"news-item-block\">\n                \n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Infrastructure News<\/span>\n                  \n                  <span>October 21, 2026<\/span>\n                  <span>· By Network Operations Team<\/span>\n                  <span>· 3 min read<\/span>\n                <\/div>\n                <h3 style=\"margin-top:6px; border-bottom:none; padding-bottom:0;\">\n                  <a href=\"/news/global-edge-cdn-upgrade-low-latency-nodes\" data-spa-link class=\"news-title-link\">Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live<\/a>\n                <\/h3>\n                <p style=\"margin-bottom:10px;\">We have expanded our Cloudflare &amp; multi-region edge mirror network across Asia-Pacific, Europe, and North America for instant package delivery.<\/p>\n                <a href=\"/news/global-edge-cdn-upgrade-low-latency-nodes\" data-spa-link class=\"news-read-more\">Read Full News Article →<\/a>\n              <\/article>\n            <\/div>\n  ","jsonLd":{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://apexmobile.example.com/#website","url":"https://apexmobile.example.com","name":"ApexMobile","alternateName":"ApexMobile","description":"Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.","publisher":{"@id":"https://apexmobile.example.com/#organization"},"inLanguage":"en-US"},{"@type":"Organization","@id":"https://apexmobile.example.com/#organization","name":"ApexMobile","url":"https://apexmobile.example.com","email":"support@apexmobile.example.com","logo":{"@type":"ImageObject","@id":"https://apexmobile.example.com/#logo","url":"https://apexmobile.example.com/assets/app-icon.svg","contentUrl":"https://apexmobile.example.com/assets/app-icon.svg","width":512,"height":512,"caption":"ApexMobile"},"image":{"@id":"https://apexmobile.example.com/#logo"}},{"@type":"BreadcrumbList","@id":"https://apexmobile.example.com/news/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"ApexMobile","item":"https://apexmobile.example.com"},{"@type":"ListItem","position":2,"name":"Daily News & Release Updates","item":"https://apexmobile.example.com/news"}]},{"@type":"CollectionPage","@id":"https://apexmobile.example.com/news/#news-collection","url":"https://apexmobile.example.com/news","name":"Daily News, Changelogs & Release Updates | ApexMobile","description":"Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.","isPartOf":{"@id":"https://apexmobile.example.com/#website"},"breadcrumb":{"@id":"https://apexmobile.example.com/news/#breadcrumb"},"mainEntity":{"@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"url":"https://apexmobile.example.com/news/apexmobile-v4-8-2-release-notes","name":"ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine"},{"@type":"ListItem","position":2,"url":"https://apexmobile.example.com/news/security-audit-sha256-verification-report","name":"Security Audit Complete: 100% Clean SHA-256 Verification Report"},{"@type":"ListItem","position":3,"url":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes","name":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live"}]}}]},"shell":{"brand":{"name":"ApexMobile","shortName":"ApexMobile","tagline":"Verified Mobile Release Portal","logoUrl":"/assets/app-icon.svg","faviconUrl":"/assets/app-icon.svg","searchLogoUrl":"/assets/app-icon.svg","appleTouchIconUrl":"/assets/app-icon.svg","accentColor":"#EF4444","themeColor":"#EF4444","contactEmail":"support@apexmobile.example.com"},"uiConfig":{"maxContainerWidth":"768px","pageBackgroundColor":"#F8FAFC","surfaceBackgroundColor":"#FFFFFF","headerBackgroundColor":"#FFFFFF","headerTextColor":"#111827","footerBackgroundColor":"#0F172A","footerTextColor":"#F8FAFC","borderColor":"#E2E8F0","cardBorderRadius":"12px","buttonTextColor":"#FFFFFF","textColor":"#1F2937","headingColor":"#111827","fontFamily":"system","baseFontSize":"16px","showHeaderNewsButton":true,"headerNewsButtonLabel":"News","showNewsCountInHeader":true,"autoIncludeSectionsInDrawer":true,"showNewsInDrawer":true,"showLegalLinksInDrawer":true,"showCtaInDrawer":true,"showHeroSection":true,"showHeroCtaButtons":true,"homepageNewsLimit":5,"newsReadMoreLabel":"Read Full News Article →","newsViewAllLabel":"View All Daily News →","backToHomeLabel":"← Back to Main Page","allNewsBreadcrumbLabel":"All Daily News →","showSubpageSwitcherPills":true,"showFooterDisclaimer":true,"showFooterLinksHeading":true,"homepageSectionOrder":["specs","sections","rawHtml","news","faqs"]},"heroCtas":{"secondaryCta":{"label":"Installation Guide","url":"#install-guide","relSponsored":false},"primaryCta":{"label":"Download Official Package","url":"/moreinfo","relSponsored":true},"floatingCta":{"enabled":true,"label":"⚡ Download v4.8.2","url":"/moreinfo"}},"packageVersion":"v4.8.2 (Stable Build)","headerLinks":[{"id":"nav-1","label":"Core Features","url":"#core-features","metaTitle":"Core Features & Architecture | ApexMobile","metaDescription":"Explore the core features and low-latency performance of ApexMobile."},{"id":"nav-2","label":"Specs & Checksum","url":"#technical-specifications","metaTitle":"Technical Specifications & SHA-256 | ApexMobile","metaDescription":"View version specifications and SHA-256 verification checksums."},{"id":"nav-3","label":"Installation Guide","url":"#install-guide","metaTitle":"Installation Guide | ApexMobile","metaDescription":"Step-by-step installation guide for Android and iOS."},{"id":"nav-4","label":"Daily News (/news)","url":"/news","metaTitle":"Daily News & Release Updates | ApexMobile","metaDescription":"Browse all daily news updates, changelogs, and announcements."},{"id":"nav-5","label":"FAQs","url":"#frequently-asked-questions","metaTitle":"Frequently Asked Questions | ApexMobile","metaDescription":"Answers to common questions about ApexMobile."}],"autoSectionLinks":[{"label":"Why Choose ApexMobile?","url":"#core-features","metaTitle":"Core Features & Architecture | ApexMobile"},{"label":"Step-by-Step Installation Guide","url":"#install-guide","metaTitle":"How to Install ApexMobile on Android & iOS | Step-by-Step Guide"}],"recentNewsDrawerItems":[{"title":"ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine","slug":"apexmobile-v4-8-2-release-notes","category":"Release Update","date":"November 4, 2026"},{"title":"Security Audit Complete: 100% Clean SHA-256 Verification Report","slug":"security-audit-sha256-verification-report","category":"Security Advisory","date":"October 28, 2026"},{"title":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","slug":"global-edge-cdn-upgrade-low-latency-nodes","category":"Infrastructure News","date":"October 21, 2026"}],"headerPages":[],"footerPages":[{"label":"Privacy Policy","slug":"privacy-policy","metaTitle":"Privacy Policy — Data Protection & Zero-Tracking | ApexMobile"},{"label":"Terms and Conditions","slug":"terms-and-conditions","metaTitle":"Terms and Conditions — Official Usage Agreement | ApexMobile"},{"label":"DMCA Disclaimer","slug":"dmca-disclaimer","metaTitle":"DMCA Notice & Copyright Takedown Policy | ApexMobile"},{"label":"Contact Support","slug":"contact-support","metaTitle":"Contact Support & Editorial Desk | ApexMobile"}],"allSubpagePills":[{"label":"📰 News","href":"/news"},{"label":"Privacy Policy","href":"/privacy-policy"},{"label":"Terms and Conditions","href":"/terms-and-conditions"},{"label":"DMCA Disclaimer","href":"/dmca-disclaimer"},{"label":"Contact Support","href":"/contact-support"}],"newsCount":3,"navigation":{"footerSummary":"Official release portal providing cryptographically verified mobile packages, SHA-256 checksums, step-by-step installation guides, and daily changelog updates.","showFooterBrandSummary":true,"showFooterContactEmail":true,"footerQuickLinks":[{"id":"fql-1","label":"Official Download & Checksums","url":"/#technical-specifications","openInNewTab":false},{"id":"fql-2","label":"Installation Guide","url":"/#install-guide","openInNewTab":false},{"id":"fql-3","label":"Daily News Archive","url":"/news","openInNewTab":false}],"disclaimerHeading":"Legal & Trademark Disclaimer","disclaimer":"ApexMobile is an independent software documentation and verified distribution portal. All third-party trademarks, operating system names, and brand insignias remain the property of their respective owners. Packages are provided with cryptographic SHA-256 checksums for user verification.","siteLinksHeading":"Official Legal & Support Pages","copyright":"© 2026 ApexMobile. All rights reserved."}},"updatedAt":1793897560079};
+  </script>
+</head>
+<body>
+  <div class="app-viewport">
+    
+    <!-- Sticky Top Navbar (height: 60px) -->
+    <header class="sticky-header">
+      <a href="/" class="brand-logo-container" id="navbar-logo-link" data-spa-link aria-label="Home">
+        <img
+          id="navbar-logo-img"
+          class="brand-logo-img"
+          src="/assets/app-icon.svg"
+          alt="ApexMobile"
+          width="36"
+          height="36"
+          loading="eager"
+          referrerpolicy="no-referrer"
+        />
+        <span id="navbar-logo-text" class="brand-logo-text">ApexMobile</span>
+      </a>
+
+      <div class="header-right-actions">
+        <!-- Quick Daily News Hub Link -->
+        <a href="/news" id="header-news-btn" class="header-news-link " data-spa-link><span class="header-news-dot"></span><span>News (3)</span></a>
+
+        <!-- Animated Hamburger Button -->
+        <button
+          type="button"
+          id="hamburger-toggle"
+          class="hamburger-button"
+          aria-label="Toggle navigation menu"
+          aria-expanded="false"
+        >
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Slide-Down Navigation Drawer -->
+    <nav id="nav-drawer" class="nav-drawer hidden" aria-label="Site Navigation">
+      <ul class="nav-drawer-list" id="drawer-links-list"><li class="drawer-section-header">Page &amp; Section Navigation</li>
+
+    <li>
+      <a href="/" data-spa-link class="nav-drawer-link ">
+        <span>🏠 Home Overview</span>
+        <span class="drawer-link-badge">Main</span>
+      </a>
+    </li>
+  
+
+      <li>
+        <a href="/#core-features" data-spa-link class="nav-drawer-link " title="Core Features &amp; Architecture | ApexMobile">
+          <span>Core Features</span>
+          <span class="drawer-link-arrow">→</span>
+        </a>
+      </li>
+    
+
+      <li>
+        <a href="/#technical-specifications" data-spa-link class="nav-drawer-link " title="Technical Specifications &amp; SHA-256 | ApexMobile">
+          <span>Specs &amp; Checksum</span>
+          <span class="drawer-link-arrow">→</span>
+        </a>
+      </li>
+    
+
+      <li>
+        <a href="/#install-guide" data-spa-link class="nav-drawer-link " title="Installation Guide | ApexMobile">
+          <span>Installation Guide</span>
+          <span class="drawer-link-arrow">→</span>
+        </a>
+      </li>
+    
+
+      <li>
+        <a href="/news" data-spa-link class="nav-drawer-link active-nav-link" title="Daily News &amp; Release Updates | ApexMobile">
+          <span>Daily News (/news)</span>
+          <span class="drawer-link-arrow">→</span>
+        </a>
+      </li>
+    
+
+      <li>
+        <a href="/#frequently-asked-questions" data-spa-link class="nav-drawer-link " title="Frequently Asked Questions | ApexMobile">
+          <span>FAQs</span>
+          <span class="drawer-link-arrow">→</span>
+        </a>
+      </li>
+    
+<li class="drawer-section-header">Daily News &amp; Changelogs (3)</li>
+
+        <li>
+          <a href="/news/apexmobile-v4-8-2-release-notes" data-spa-link class="nav-drawer-link drawer-news-sublink ">
+            <div>
+              <span class="drawer-news-cat">Release Update</span>
+              <div class="drawer-news-title">ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine</div>
+            </div>
+          </a>
+        </li>
+      
+
+        <li>
+          <a href="/news/security-audit-sha256-verification-report" data-spa-link class="nav-drawer-link drawer-news-sublink ">
+            <div>
+              <span class="drawer-news-cat">Security Advisory</span>
+              <div class="drawer-news-title">Security Audit Complete: 100% Clean SHA-256 Verification Report</div>
+            </div>
+          </a>
+        </li>
+      
+<li class="drawer-section-header">Official Legal &amp; Support Pages</li>
+
+      <li class="drawer-legal-grid-item">
+        <div class="drawer-legal-grid">
+          <a href="/privacy-policy" data-spa-link class="drawer-legal-chip " title="Privacy Policy — Data Protection &amp; Zero-Tracking | ApexMobile">Privacy Policy</a><a href="/terms-and-conditions" data-spa-link class="drawer-legal-chip " title="Terms and Conditions — Official Usage Agreement | ApexMobile">Terms and Conditions</a><a href="/dmca-disclaimer" data-spa-link class="drawer-legal-chip " title="DMCA Notice &amp; Copyright Takedown Policy | ApexMobile">DMCA Disclaimer</a><a href="/contact-support" data-spa-link class="drawer-legal-chip " title="Contact Support &amp; Editorial Desk | ApexMobile">Contact Support</a>
+        </div>
+      </li>
+    
+
+      <li class="drawer-cta-footer">
+        <a href="/moreinfo" data-spa-link class="drawer-cta-btn">
+          <span>⚡ Download Official Package</span>
+          <span class="drawer-cta-ver">v4.8.2 (Stable Build)</span>
+        </a>
+      </li>
+    </ul>
+    </nav>
+
+    <!-- Standalone Page Breadcrumb & Quick Switcher Bar -->
+    <div id="standalone-back-bar" class="back-home-bar hidden">
+      <div class="back-home-row">
+        <a href="/" id="back-home-anchor" class="back-home-link" data-spa-link>← Back to Main Page</a>
+        <a href="/news" id="back-news-anchor" class="back-home-link hidden" data-spa-link>All Daily News →</a>
+      </div>
+      <div id="subpage-switcher-pills" class="subpage-tabs-row"></div>
+    </div>
+
+    <!-- Above-the-Fold Hero Block -->
+    <section id="hero-section" class="hero-container">
+      <h1 id="hero-heading" class="hero-title">Daily News &amp; Release Updates</h1>
+
+      <!-- 2-Column Action Button Grid -->
+      <div id="hero-cta-grid" class="hero-action-grid hidden">
+        <a id="hero-cta-secondary" class="btn-secondary" href="#install-guide">Installation Guide</a>
+        <a id="hero-cta-primary" class="btn-primary" href="#technical-specifications">Download Official Package</a>
+      </div>
+    </section>
+
+    <!-- Main Plain Content Flow (.prose-container — Pre-Rendered by Server SSR!) -->
+    <main id="dynamic-content" class="content-container prose-container" data-ssr-path="/news">
+    <p style="color:#4B5563; margin-bottom:12px;">
+      Read daily news updates, official software changelogs, security advisories, and feature announcements from the ApexMobile engineering team.
+    </p>
+    <div class="news-filter-bar">
+      <button type="button" class="news-filter-btn active" data-news-cat="ALL">
+        All News (3)
+      </button>
+    
+      <button type="button" class="news-filter-btn " data-news-cat="Release Update">
+        Release Update
+      </button>
+    
+      <button type="button" class="news-filter-btn " data-news-cat="Security Advisory">
+        Security Advisory
+      </button>
+    
+      <button type="button" class="news-filter-btn " data-news-cat="Infrastructure News">
+        Infrastructure News
+      </button>
+    </div>
+    <div id="news-hub-articles-container">
+              <article class="news-item-block">
+                <a href="/news/apexmobile-v4-8-2-release-notes" data-spa-link class="news-card-media-link">
+                  <img src="/assets/hero-banner.svg" alt="ApexMobile v4.8.2 Release Benchmark Overview" width="1200" height="675" loading="lazy" decoding="async" class="news-card-cover-img" />
+                </a>
+                <div class="news-meta-line">
+                  <span class="news-category-tag">Release Update</span>
+                  <span class="news-featured-tag">★ Featured</span>
+                  <span>November 4, 2026</span>
+                  <span>· By ApexMobile Core Engineering</span>
+                  <span>· 2 min read</span>
+                </div>
+                <h3 style="margin-top:6px; border-bottom:none; padding-bottom:0;">
+                  <a href="/news/apexmobile-v4-8-2-release-notes" data-spa-link class="news-title-link">ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine</a>
+                </h3>
+                <p style="margin-bottom:10px;">Version 4.8.2 introduces our new lightweight memory allocator, reducing app launch time to under 180ms across Android 9+ and iOS 15+ devices.</p>
+                <a href="/news/apexmobile-v4-8-2-release-notes" data-spa-link class="news-read-more">Read Full News Article →</a>
+              </article>
+            
+
+              <article class="news-item-block">
+                
+                <div class="news-meta-line">
+                  <span class="news-category-tag">Security Advisory</span>
+                  
+                  <span>October 28, 2026</span>
+                  <span>· By Security &amp; Compliance Desk</span>
+                  <span>· 2 min read</span>
+                </div>
+                <h3 style="margin-top:6px; border-bottom:none; padding-bottom:0;">
+                  <a href="/news/security-audit-sha256-verification-report" data-spa-link class="news-title-link">Security Audit Complete: 100% Clean SHA-256 Verification Report</a>
+                </h3>
+                <p style="margin-bottom:10px;">Our quarterly independent security audit confirmed zero vulnerabilities and 0/72 clean multi-engine verification across all official distribution mirrors.</p>
+                <a href="/news/security-audit-sha256-verification-report" data-spa-link class="news-read-more">Read Full News Article →</a>
+              </article>
+            
+
+              <article class="news-item-block">
+                
+                <div class="news-meta-line">
+                  <span class="news-category-tag">Infrastructure News</span>
+                  
+                  <span>October 21, 2026</span>
+                  <span>· By Network Operations Team</span>
+                  <span>· 3 min read</span>
+                </div>
+                <h3 style="margin-top:6px; border-bottom:none; padding-bottom:0;">
+                  <a href="/news/global-edge-cdn-upgrade-low-latency-nodes" data-spa-link class="news-title-link">Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live</a>
+                </h3>
+                <p style="margin-bottom:10px;">We have expanded our Cloudflare &amp; multi-region edge mirror network across Asia-Pacific, Europe, and North America for instant package delivery.</p>
+                <a href="/news/global-edge-cdn-upgrade-low-latency-nodes" data-spa-link class="news-read-more">Read Full News Article →</a>
+              </article>
+            </div>
+  </main>
+
+    <!-- Customizable Public Footer Section -->
+    <footer class="site-footer">
+      <div id="footer-brand-summary-block" class="footer-brand-summary-box">
+        <div id="footer-brand-title" class="footer-brand-title">ApexMobile</div>
+        <p id="footer-summary-text" class="footer-summary-text">Official release portal providing cryptographically verified mobile packages, SHA-256 checksums, step-by-step installation guides, and daily changelog updates.</p>
+        <a id="footer-contact-email-link" class="footer-contact-pill" href="mailto:support@apexmobile.example.com">support@apexmobile.example.com</a>
+      </div>
+
+      <div id="footer-disclaimer-block">
+        <div id="footer-disclaimer-heading" class="footer-heading">Legal &amp; Trademark Disclaimer</div>
+        <p id="footer-disclaimer" class="footer-disclaimer-text">ApexMobile is an independent software documentation and verified distribution portal. All third-party trademarks, operating system names, and brand insignias remain the property of their respective owners. Packages are provided with cryptographic SHA-256 checksums for user verification.</p>
+      </div>
+
+      <div id="footer-links-heading" class="footer-heading">Official Legal &amp; Support Pages</div>
+      <div id="footer-links-list" class="footer-links-stack"><a href="/#technical-specifications" data-spa-link class="footer-link">Official Download &amp; Checksums</a><a href="/#install-guide" data-spa-link class="footer-link">Installation Guide</a><a href="/news" data-spa-link class="footer-link">Daily News Archive</a><a href="/privacy-policy" data-spa-link class="footer-link" title="Privacy Policy — Data Protection &amp; Zero-Tracking | ApexMobile">Privacy Policy</a><a href="/terms-and-conditions" data-spa-link class="footer-link" title="Terms and Conditions — Official Usage Agreement | ApexMobile">Terms and Conditions</a><a href="/dmca-disclaimer" data-spa-link class="footer-link" title="DMCA Notice &amp; Copyright Takedown Policy | ApexMobile">DMCA Disclaimer</a><a href="/contact-support" data-spa-link class="footer-link" title="Contact Support &amp; Editorial Desk | ApexMobile">Contact Support</a></div>
+
+      <hr class="footer-divider" />
+      <p id="footer-copyright" class="footer-copyright-text">© 2026 ApexMobile. All rights reserved.</p>
+    </footer>
+
+    <!-- Floating Bottom Pill CTA -->
+    <div id="floating-bottom-cta" class="floating-cta-wrapper">
+      <a id="floating-cta-btn" class="floating-cta-button" href="#technical-specifications">
+        ⚡ Download v4.8.2
+      </a>
+    </div>
+
+  </div>
+
+  <!-- Dynamic Public Engine Module -->
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

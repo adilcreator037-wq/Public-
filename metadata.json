@@ -1,0 +1,6 @@
+{
+  "name": "Single-Domain CMS & SEO Engine",
+  "description": "Production-ready, mobile-first dynamic Single-Domain CMS & Landing Page Architecture with Firebase v10, SEO engine, stale-while-revalidate caching, and real-time live preview admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

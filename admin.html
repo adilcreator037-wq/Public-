@@ -1,0 +1,3405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <title>Master CMS Studio | Content, Daily News, UI Customizer & SEO Control</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/svg+xml" href="/assets/app-icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --surface-muted: #f1f5f9;
+        --border: #e2e8f0;
+        --border-focus: #0f172a;
+        --text-main: #0f172a;
+        --text-sub: #475569;
+        --text-muted: #64748b;
+        --accent: #ef4444;
+        --accent-hover: #dc2626;
+        --accent-soft: #fef2f2;
+        --success: #059669;
+        --success-soft: #ecfdf5;
+        --warning: #d97706;
+        --radius: 10px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Strict Mobile & Desktop Viewport Lock — Zero Horizontal Wobble & Sticky Support */
+      html,
+      body {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: clip;
+        overscroll-behavior-x: none;
+        touch-action: pan-y;
+        background-color: var(--bg);
+        color: var(--text-main);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 13.5px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+
+      /* ─── 1. LOGIN OVERLAY ─── */
+      .auth-overlay {
+        min-height: 100vh;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+        background: var(--bg);
+      }
+
+      .auth-overlay[hidden] {
+        display: none !important;
+      }
+
+      .auth-card {
+        width: 100%;
+        max-width: 400px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px 18px;
+        box-shadow: 0 12px 32px -12px rgba(15, 23, 42, 0.1);
+      }
+
+      .auth-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .auth-brand img {
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        flex-shrink: 0;
+      }
+
+      .auth-brand h1 {
+        font-size: 1.08rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+
+      .auth-brand p {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+      }
+
+      .auth-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        background: var(--surface-muted);
+        padding: 4px;
+        border-radius: 8px;
+        margin-bottom: 14px;
+      }
+
+      .auth-tab {
+        min-height: 34px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-sub);
+        cursor: pointer;
+      }
+
+      .auth-tab.active {
+        background: var(--surface);
+        color: var(--text-main);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+      }
+
+      .auth-error {
+        display: none;
+        background: var(--accent-soft);
+        border: 1px solid #fecaca;
+        color: #b91c1c;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        margin-bottom: 12px;
+      }
+
+      .auth-error.visible {
+        display: block;
+      }
+
+      .auth-hint {
+        margin-top: 12px;
+        padding: 8px 10px;
+        background: var(--surface-muted);
+        border-radius: 8px;
+        font-size: 0.73rem;
+        color: var(--text-sub);
+        line-height: 1.4;
+      }
+
+      .auth-hint code {
+        font-family: 'JetBrains Mono', monospace;
+        background: #e2e8f0;
+        padding: 1px 4px;
+        border-radius: 4px;
+        font-size: 0.71rem;
+      }
+
+      /* ─── 2. STUDIO SHELL (SIDEBAR ON DESKTOP, COMPACT STICKY SELECTOR ON MOBILE) ─── */
+      .cms-shell {
+        width: 100%;
+        max-width: 100%;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .cms-shell[hidden] {
+        display: none !important;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 60;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+        width: 100%;
+      }
+
+      .topbar-inner {
+        max-width: 1360px;
+        margin: 0 auto;
+        height: 48px;
+        padding: 0 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
+
+      .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .topbar-logo {
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        flex-shrink: 0;
+      }
+
+      .topbar-title {
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: var(--text-main);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .topbar-status {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.68rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--success);
+        flex-shrink: 0;
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+      }
+
+      /* Compact 40px Sticky Quick-Tab Strip (Total sticky height = 88px, strictly < 15% of mobile screen) */
+      .mobile-nav-bar {
+        position: sticky;
+        top: 48px;
+        z-index: 55;
+        display: flex;
+        align-items: center;
+        height: 40px;
+        padding: 0 10px;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+        width: 100%;
+      }
+
+      /* Non-sticky Context Banner inside Main Workspace so it never blocks scrolling */
+      .workspace-context-banner {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        background: #ffffff;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      .editing-context-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .editing-context-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.74rem;
+        font-weight: 800;
+        color: #0f172a;
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
+        padding: 3px 8px;
+        border-radius: 6px;
+      }
+
+      .editing-context-target {
+        font-size: 0.71rem;
+        font-weight: 700;
+        color: #1e40af;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        padding: 2px 7px;
+        border-radius: 5px;
+      }
+
+      .mobile-nav-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+      }
+
+      .mobile-nav-select {
+        flex: 1;
+        min-height: 34px;
+        padding: 4px 10px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface-muted);
+        font-size: 0.79rem;
+        font-weight: 700;
+        color: var(--text-main);
+      }
+
+      .quick-tab-strip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        width: 100%;
+      }
+
+      .quick-tab-strip::-webkit-scrollbar {
+        display: none;
+      }
+
+      .quick-tab-pill {
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: var(--text-sub);
+        white-space: nowrap;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .quick-tab-pill.active {
+        background: var(--text-main);
+        color: #ffffff;
+        border-color: var(--text-main);
+      }
+
+      /* 1-Tap Color Theme Preset Buttons & Visual Color Swatch Input Pair */
+      .theme-preset-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      @media (min-width: 640px) {
+        .theme-preset-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      .theme-preset-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--text-main);
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 0.15s ease, transform 0.1s ease;
+      }
+
+      .theme-preset-btn:hover {
+        border-color: var(--accent);
+      }
+
+      .theme-preset-swatches {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+      }
+
+      .theme-preset-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+      }
+
+      .color-input-pair {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .color-swatch-picker {
+        width: 38px;
+        height: 36px;
+        padding: 2px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      /* Sub-Card Filter Bar inside large workspaces */
+      .subcard-filter-bar {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding: 6px 8px;
+        margin-bottom: 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      .subcard-filter-bar::-webkit-scrollbar {
+        display: none;
+      }
+
+      .subcard-pill {
+        min-height: 28px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: var(--surface-muted);
+        font-size: 0.73rem;
+        font-weight: 700;
+        color: var(--text-sub);
+        white-space: nowrap;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .subcard-pill.active {
+        background: var(--accent);
+        color: #ffffff;
+      }
+
+      /* Main Layout Container */
+      .studio-body {
+        width: 100%;
+        max-width: 1360px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        flex: 1;
+        padding-bottom: 84px;
+      }
+
+      @media (min-width: 1024px) {
+        .studio-body {
+          grid-template-columns: 240px minmax(0, 1fr);
+          gap: 20px;
+          padding: 16px 16px 90px;
+          align-items: start;
+        }
+      }
+
+      /* Desktop Left Sidebar */
+      .studio-sidebar {
+        display: none;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        position: sticky;
+        top: 76px;
+      }
+
+      @media (min-width: 1024px) {
+        .studio-sidebar {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+      }
+
+      .sidebar-group-label {
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        padding: 8px 10px 4px;
+      }
+
+      .nav-tab {
+        width: 100%;
+        min-height: 40px;
+        padding: 8px 12px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        font-size: 0.83rem;
+        font-weight: 600;
+        color: var(--text-sub);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        text-align: left;
+        transition: background-color 0.15s ease, color 0.15s ease;
+      }
+
+      .nav-tab:hover {
+        background: var(--surface-muted);
+        color: var(--text-main);
+      }
+
+      .nav-tab.active {
+        background: var(--text-main);
+        color: #ffffff;
+      }
+
+      .nav-count {
+        font-size: 0.7rem;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.08);
+        font-weight: 700;
+      }
+
+      .nav-tab.active .nav-count {
+        background: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+      }
+
+      /* ─── 3. MAIN WORKSPACE CONTENT ─── */
+      .cms-main {
+        width: 100%;
+        min-width: 0;
+        padding: 12px;
+      }
+
+      @media (min-width: 1024px) {
+        .cms-main {
+          padding: 0;
+        }
+      }
+
+      .tab-panel {
+        display: none;
+        width: 100%;
+        min-width: 0;
+      }
+
+      .tab-panel.active {
+        display: block;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+
+      .panel-header h2 {
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+
+      .panel-header p {
+        font-size: 0.77rem;
+        color: var(--text-sub);
+        margin-top: 2px;
+      }
+
+      /* Overview Stat Cards */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      @media (min-width: 640px) {
+        .stats-grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+
+      .stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+
+      .stat-label {
+        font-size: 0.69rem;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      .stat-value {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--text-main);
+        margin-top: 2px;
+      }
+
+      .stat-sub {
+        font-size: 0.69rem;
+        color: var(--success);
+        font-weight: 600;
+        margin-top: 1px;
+      }
+
+      /* Cards & Forms */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 13px 12px;
+        margin-bottom: 12px;
+        width: 100%;
+        min-width: 0;
+      }
+
+      @media (min-width: 680px) {
+        .card {
+          padding: 16px 16px;
+          margin-bottom: 14px;
+        }
+      }
+
+      .card-title {
+        font-size: 0.88rem;
+        font-weight: 800;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .card-desc {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+        width: 100%;
+        min-width: 0;
+      }
+
+      @media (min-width: 680px) {
+        .form-grid.cols-2 {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+        .form-grid.cols-3 {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .field.span-full {
+        grid-column: 1 / -1;
+      }
+
+      .field-label {
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .field-tag {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.65rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        background: var(--surface-muted);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+
+      .input,
+      .textarea,
+      .select {
+        width: 100%;
+        max-width: 100%;
+        min-height: 36px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--surface);
+        font-size: 0.81rem;
+        color: var(--text-main);
+        transition: border-color 0.15s ease;
+      }
+
+      .input:focus,
+      .textarea:focus,
+      .select:focus {
+        outline: none;
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+      }
+
+      .textarea {
+        min-height: 76px;
+        resize: vertical;
+        line-height: 1.45;
+      }
+
+      .textarea.code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+        background: #fafafa;
+      }
+
+      .field-help {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+      }
+
+      /* Input + Upload Button Group */
+      .input-upload-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        width: 100%;
+      }
+
+      .input-upload-row .input {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .img-mini-preview {
+        margin-top: 5px;
+        max-height: 74px;
+        width: auto;
+        max-width: 100%;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        object-fit: cover;
+        display: block;
+        background: #f1f5f9;
+      }
+
+      .img-mini-preview[src=''] {
+        display: none;
+      }
+
+      /* Live Visual Preview Box for HTML Editors */
+      .live-preview-box {
+        margin-top: 8px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+        font-size: 0.86rem;
+        line-height: 1.55;
+        color: #1f2937;
+        display: none;
+      }
+
+      .live-preview-box.visible {
+        display: block;
+      }
+
+      .live-preview-box h2,
+      .live-preview-box h3 {
+        margin: 10px 0 5px;
+        color: #111827;
+      }
+
+      .live-preview-box p,
+      .live-preview-box ul {
+        margin-bottom: 8px;
+      }
+
+      .live-preview-box ul {
+        padding-left: 18px;
+      }
+
+      .live-preview-box img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        margin: 8px 0;
+      }
+
+      /* Toggle Switch Row */
+      .toggle-box {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--surface-muted);
+        font-size: 0.78rem;
+      }
+
+      .toggle-box input[type='checkbox'] {
+        width: 17px;
+        height: 17px;
+        accent-color: var(--accent);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      /* Buttons */
+      .btn {
+        min-height: 36px;
+        padding: 6px 12px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text-main);
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        white-space: nowrap;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .btn:hover {
+        background: var(--surface-muted);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #ffffff;
+        border-color: var(--accent);
+        font-weight: 700;
+      }
+
+      .btn-primary:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+
+      .btn-dark {
+        background: var(--text-main);
+        color: #ffffff;
+        border-color: var(--text-main);
+      }
+
+      .btn-dark:hover {
+        background: #1e293b;
+      }
+
+      .btn-danger {
+        color: #b91c1c;
+        border-color: #fecaca;
+        background: #fef2f2;
+      }
+
+      .btn-danger:hover {
+        background: #fee2e2;
+      }
+
+      .btn-sm {
+        min-height: 30px;
+        padding: 4px 8px;
+        font-size: 0.73rem;
+      }
+
+      /* Accordion Cards */
+      .item-list {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        width: 100%;
+      }
+
+      .item-card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        overflow: hidden;
+        width: 100%;
+      }
+
+      .item-card-header {
+        padding: 12px 14px;
+        background: var(--surface-muted);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        cursor: pointer;
+        user-select: none;
+        flex-wrap: wrap;
+      }
+
+      .item-card-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .item-badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 5px;
+        background: #e2e8f0;
+        color: var(--text-main);
+        flex-shrink: 0;
+      }
+
+      .item-card-title {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--text-main);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .item-card-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .item-card-body {
+        padding: 16px 14px;
+        border-top: 1px solid var(--border);
+        display: none;
+      }
+
+      .item-card.open .item-card-body {
+        display: block;
+      }
+
+      .seo-subbox {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+      }
+
+      .seo-subbox-title {
+        font-size: 0.75rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #0f172a;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .html-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+
+      /* Sub-selector tabs for Legal Pages */
+      .page-selector-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .page-tab-btn {
+        min-height: 38px;
+        padding: 6px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: var(--text-sub);
+        cursor: pointer;
+      }
+
+      .page-tab-btn.active {
+        background: var(--text-main);
+        color: #ffffff;
+        border-color: var(--text-main);
+      }
+
+      /* Orderable Block Row */
+      .order-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface-muted);
+        margin-bottom: 8px;
+      }
+
+      /* SEO Checklist */
+      .audit-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .audit-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface-muted);
+        flex-wrap: wrap;
+      }
+
+      .audit-badge-pass {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--success);
+        background: var(--success-soft);
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+
+      /* Google SERP Preview */
+      .serp-box {
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+        word-break: break-word;
+      }
+
+      .serp-url {
+        font-size: 0.76rem;
+        color: #475569;
+        margin-bottom: 3px;
+      }
+
+      .serp-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #1a0dab;
+        margin-bottom: 4px;
+        line-height: 1.3;
+      }
+
+      .serp-desc {
+        font-size: 0.82rem;
+        color: #4d5156;
+        line-height: 1.45;
+      }
+
+      /* Modal for Inserting Images & Rich Components */
+      .cms-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        background: rgba(15, 23, 42, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .cms-modal-backdrop[hidden] {
+        display: none !important;
+      }
+
+      .cms-modal-card {
+        width: 100%;
+        max-width: 540px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+
+      /* Placement Badges & Visual Page Anatomy Map */
+      .placement-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #1e40af;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        padding: 3px 9px;
+        border-radius: 6px;
+      }
+
+      .visual-map-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .visual-map-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 14px;
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--accent);
+        border-radius: 8px;
+        background: #f8fafc;
+        flex-wrap: wrap;
+      }
+
+      .visual-map-item strong {
+        font-size: 0.85rem;
+        color: var(--text-main);
+      }
+
+      .visual-map-item span {
+        font-size: 0.76rem;
+        color: var(--text-sub);
+        display: block;
+      }
+
+      /* Bottom Save Bar */
+      .bottom-save-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 45;
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid var(--border);
+        padding: 10px 16px;
+      }
+
+      .bottom-save-inner {
+        max-width: 1120px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .save-feedback {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-sub);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .toast {
+        position: fixed;
+        bottom: 72px;
+        right: 16px;
+        left: 16px;
+        max-width: 380px;
+        margin-left: auto;
+        z-index: 90;
+        background: #0f172a;
+        color: #ffffff;
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-size: 0.84rem;
+        font-weight: 600;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+        display: none;
+      }
+
+      .toast.visible {
+        display: block;
+      }
+
+      .toast.error {
+        background: #b91c1c;
+      }
+
+      .toast.success {
+        background: #059669;
+      }
+
+      /* ─── 4. SMARTPHONE MOBILE TOUCH OPTIMIZATIONS (< 680px) ─── */
+      @media (max-width: 679px) {
+        .card {
+          padding: 10px 10px;
+          margin-bottom: 10px;
+          border-radius: 8px;
+        }
+        .card-title {
+          font-size: 0.84rem;
+        }
+        .card-desc {
+          font-size: 0.72rem;
+          margin-bottom: 8px;
+        }
+        .form-grid {
+          gap: 8px;
+        }
+        .field-label {
+          font-size: 0.71rem;
+        }
+        .input, .textarea, .select {
+          min-height: 34px;
+          padding: 5px 8px;
+          font-size: 0.78rem;
+          border-radius: 6px;
+        }
+        .textarea {
+          min-height: 64px;
+        }
+        .btn {
+          min-height: 34px;
+          padding: 5px 10px;
+          font-size: 0.76rem;
+        }
+        .btn-sm {
+          min-height: 28px;
+          padding: 3px 8px;
+          font-size: 0.7rem;
+        }
+        .toggle-box {
+          padding: 6px 8px;
+          min-height: 36px;
+        }
+        .toggle-box strong {
+          font-size: 0.76rem;
+        }
+        .toggle-box .field-help {
+          font-size: 0.67rem;
+        }
+        .quick-tab-pill {
+          padding: 4px 9px;
+          font-size: 0.71rem;
+        }
+        .topbar-inner {
+          height: 44px;
+          padding: 0 8px;
+        }
+        .cms-main {
+          padding: 8px 6px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Hidden Global Device Image File Picker -->
+    <input type="file" id="global-image-file-picker" accept="image/*" style="display: none" />
+
+    <!-- Category Presets Datalist (Allows selecting a preset OR typing any custom category) -->
+    <datalist id="news-category-presets">
+      <option value="Daily Update"></option>
+      <option value="Release Update"></option>
+      <option value="Security Advisory"></option>
+      <option value="Infrastructure News"></option>
+      <option value="Feature Guide"></option>
+      <option value="Announcement"></option>
+    </datalist>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         1. ADMIN AUTHENTICATION SCREEN
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="auth-overlay" class="auth-overlay">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img src="/assets/app-icon.svg" alt="Admin Icon" width="42" height="42" />
+          <div>
+            <h1>Master CMS & SEO Studio</h1>
+            <p>Content, Daily News, UI Customizer & Domain Engine</p>
+          </div>
+        </div>
+
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab active" data-auth-mode="credentials" id="tab-auth-credentials">
+            Email & Password
+          </button>
+          <button type="button" class="auth-tab" data-auth-mode="apikey" id="tab-auth-apikey">
+            Server API Key
+          </button>
+        </div>
+
+        <div id="auth-error" class="auth-error" role="alert"></div>
+
+        <form id="auth-form" novalidate>
+          <div id="auth-credentials-fields" class="form-grid">
+            <div class="field">
+              <label class="field-label" for="login-email">Admin Email</label>
+              <input
+                type="email"
+                id="login-email"
+                class="input"
+                placeholder="admin@domain.com"
+                autocomplete="username"
+                required
+              />
+            </div>
+            <div class="field">
+              <label class="field-label" for="login-password">Admin Password</label>
+              <input
+                type="password"
+                id="login-password"
+                class="input"
+                placeholder="Enter password"
+                autocomplete="current-password"
+              />
+            </div>
+          </div>
+
+          <div id="auth-apikey-fields" class="form-grid" style="display: none">
+            <div class="field">
+              <label class="field-label" for="login-apikey">Master Admin API Key</label>
+              <input
+                type="password"
+                id="login-apikey"
+                class="input"
+                placeholder="Enter ADMIN_API_KEY"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            id="btn-login-submit"
+            class="btn btn-primary"
+            style="width: 100%; margin-top: 16px; min-height: 44px"
+          >
+            Sign In to Admin Studio
+          </button>
+        </form>
+
+        <div class="auth-hint">
+          <strong>Environment Variables Auth:</strong> Controlled via <code>ADMIN_EMAIL</code>,
+          <code>ADMIN_PASSWORD</code>, and <code>ADMIN_API_KEY</code> in your <code>.env</code> file. Default dev login:
+          <code>admin@domain.com</code> / <code>admin123</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         2. MAIN ADMIN STUDIO SHELL
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="cms-shell" class="cms-shell" hidden>
+      <!-- Single-Row 48px Top Header -->
+      <header class="topbar">
+        <div class="topbar-inner">
+          <div class="topbar-left">
+            <img id="topbar-logo" class="topbar-logo" src="/assets/app-icon.svg" alt="Logo" width="26" height="26" />
+            <div style="min-width: 0">
+              <div class="topbar-title" id="topbar-brand-title">Master CMS Studio</div>
+              <div class="topbar-status">
+                <span class="status-dot" id="storage-dot"></span>
+                <span id="storage-status-text">Live Admin + Static Ready</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="topbar-actions">
+            <a href="/" target="_blank" rel="noopener" class="btn btn-sm">Site ↗</a>
+            <button type="button" id="btn-top-save" class="btn btn-primary btn-sm">Publish</button>
+            <button type="button" id="btn-logout" class="btn btn-sm">Exit</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Sleek 40px Sticky 1-Tap Section Bar (Strictly < 15% Mobile Sticky Cap) -->
+      <div class="mobile-nav-bar" id="sticky-editing-banner">
+        <div class="quick-tab-strip" role="tablist" aria-label="Quick Section Strip">
+          <button type="button" class="quick-tab-pill active" data-quick-tab="overview">🏠 1. Website Map</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="news">📰 2. Post News</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="brand">🎨 3. Colors &amp; Brand</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="specs">📦 4. App Specs</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="sections">📑 5. Sections</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="faqs">❓ 6. FAQs</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="pages">📄 7. Footer &amp; Legal</button>
+          <button type="button" class="quick-tab-pill" data-quick-tab="domain">🚀 8. SEO &amp; Deploy</button>
+        </div>
+      </div>
+
+      <div class="studio-body">
+        <!-- Desktop Left Sidebar Navigation -->
+        <aside class="studio-sidebar" aria-label="Admin Workspaces">
+          <div class="sidebar-group-label">Dashboard &amp; Daily Publishing</div>
+          <button type="button" class="nav-tab active" data-tab="overview">
+            <span>1. Website Map &amp; Audit</span>
+            <span class="nav-count" id="count-seo-score">100%</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="news">
+            <span>2. Daily News Publisher</span>
+            <span class="nav-count" id="count-news">0</span>
+          </button>
+
+          <div class="sidebar-group-label">Design, Content &amp; Sections</div>
+          <button type="button" class="nav-tab" data-tab="brand">
+            <span>3. Colors, Brand &amp; Hero</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="specs">
+            <span>4. Package Specs Table</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="sections">
+            <span>5. Content Sections</span>
+            <span class="nav-count" id="count-sections">0</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="faqs">
+            <span>6. FAQs Manager</span>
+            <span class="nav-count" id="count-faqs">0</span>
+          </button>
+
+          <div class="sidebar-group-label">Footer, SEO &amp; Cloud</div>
+          <button type="button" class="nav-tab" data-tab="pages">
+            <span>7. Footer &amp; Legal Pages</span>
+            <span class="nav-count" id="count-pages">0</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="domain">
+            <span>8. Internal Links, SEO &amp; GitHub</span>
+          </button>
+        </aside>
+
+        <!-- Main Workspace Area -->
+        <main class="cms-main">
+          <!-- Non-Sticky Context Card (Shows active section + dropdown switcher without blocking mobile screen) -->
+          <div class="workspace-context-banner">
+            <div class="editing-context-row">
+              <span class="editing-context-badge" id="editing-now-label">📍 Editing: 1. Website Map &amp; Overview</span>
+              <span class="editing-context-target" id="editing-now-target">Tap any section below to edit</span>
+            </div>
+            <div class="mobile-nav-controls">
+              <label for="mobile-tab-select" style="font-size: 0.74rem; font-weight: 800; color: var(--text-sub)">
+                Switch Section:
+              </label>
+              <select id="mobile-tab-select" class="mobile-nav-select">
+                <option value="overview">1. Visual Website Map &amp; SEO Health</option>
+                <option value="news">2. Post Daily News (/news)</option>
+                <option value="brand">3. Website Colors, Brand, Hero &amp; 3-Bar Menu</option>
+                <option value="specs">4. App Package Specs &amp; SHA-256 Table</option>
+                <option value="sections">5. Homepage Content Sections &amp; Guides</option>
+                <option value="faqs">6. FAQs Questions &amp; Answers</option>
+                <option value="pages">7. Full Footer Editor &amp; Legal Pages</option>
+                <option value="domain">8. Internal Links, Sitemap, Manifest &amp; GitHub</option>
+              </select>
+            </div>
+          </div>
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 1: OVERVIEW, VISUAL PAGE MAP & LIVE SEO HEALTH AUDIT
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel active" id="panel-overview">
+            <div class="panel-header">
+              <div>
+                <h2>Master Site Overview, Visual Page Map &amp; SEO Health</h2>
+                <p>Admin runs 100% on Live Firebase data and compiles your Public Website into 100% static HTML &amp; JSON files.</p>
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-dark" data-jump-tab="domain">🚀 Push Static Site to GitHub</button>
+                <button type="button" class="btn btn-primary" data-jump-tab="news">+ Publish Daily News Post</button>
+              </div>
+            </div>
+
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-label">Technical SEO Score</div>
+                <div class="stat-value" id="stat-seo-score">100 / 100</div>
+                <div class="stat-sub">Schema & Meta Active</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Daily News Posts</div>
+                <div class="stat-value" id="stat-news-count">3</div>
+                <div class="stat-sub">Compiled to /news/:slug</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Standalone Pages</div>
+                <div class="stat-value" id="stat-pages-count">4</div>
+                <div class="stat-sub">Compiled Legal HTML</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Compiled Static URLs</div>
+                <div class="stat-value" id="stat-sitemap-count">9</div>
+                <div class="stat-sub">Zero Firebase on Public</div>
+              </div>
+            </div>
+
+            <!-- Interactive Visual Page Map (Shows exactly where everything goes!) -->
+            <div class="card">
+              <div class="card-title">
+                <span>🗺️ Interactive Visual Page Map (Which Section Goes Where)</span>
+                <span class="placement-badge">Zero Confusion Guide</span>
+              </div>
+              <div class="card-desc">
+                Every part of your public website is listed below in exact top-to-bottom order. Click any row to jump directly to its editor.
+              </div>
+              <div class="visual-map-list">
+                <div class="visual-map-item">
+                  <div>
+                    <strong>1. Top Sticky Header Bar &amp; Slide-Down Menu</strong>
+                    <span>Controls App Logo, Brand Name, Top-Right "News" button, and Hamburger Menu links.</span>
+                  </div>
+                  <div style="display:flex; gap:6px;">
+                    <button type="button" class="btn btn-sm" data-jump-tab="brand">Edit Logo &amp; Brand →</button>
+                    <button type="button" class="btn btn-sm" data-jump-tab="domain">Edit Menu Links →</button>
+                  </div>
+                </div>
+                <div class="visual-map-item">
+                  <div>
+                    <strong>2. Above-the-Fold Hero Section (Top of Homepage)</strong>
+                    <span>Controls Main H1 Headline, 2-Column Download Buttons, Intro Paragraph, and 16:9 Showcase Banner.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm" data-jump-tab="brand">Edit Hero &amp; Banner →</button>
+                </div>
+                <div class="visual-map-item">
+                  <div>
+                    <strong>3. Technical Package Specifications &amp; SHA-256 Table (#technical-specifications)</strong>
+                    <span>Controls Version, File Size, OS Compatibility, Security Scan Status, SHA-256 Hash, and Custom Rows.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm" data-jump-tab="specs">Edit Specs Table →</button>
+                </div>
+                <div class="visual-map-item">
+                  <div>
+                    <strong>4. Homepage Editorial Content Sections &amp; Visual Blocks</strong>
+                    <span>Controls Feature Guides, Step-by-Step Installation Guides, Callout Boxes, and Section Images.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm" data-jump-tab="sections">Edit Content Sections →</button>
+                </div>
+                <div class="visual-map-item">
+                  <div>
+                    <strong>5. Daily News Feed (#latest-news) &amp; Standalone /news Archive Hub</strong>
+                    <span>Publish daily news articles with cover images, categories, and standalone /news/:slug URLs.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary" data-jump-tab="news">Open News Publisher →</button>
+                </div>
+                <div class="visual-map-item">
+                  <div>
+                    <strong>6. Frequently Asked Questions (#frequently-asked-questions)</strong>
+                    <span>Controls Q&amp;A items on the homepage and automatically generates Google FAQPage JSON-LD schema.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm" data-jump-tab="faqs">Edit FAQs →</button>
+                </div>
+                <div class="visual-map-item">
+                  <div>
+                    <strong>7. Public Footer &amp; Standalone Legal Pages (/privacy-policy, /terms-and-conditions)</strong>
+                    <span>Controls Footer Disclaimer, Copyright, and standalone legal pages with their own SEO meta tags.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm" data-jump-tab="pages">Edit Footer &amp; Legal Pages →</button>
+                </div>
+                <div class="visual-map-item" style="border-left-color:#0f172a; background:#f1f5f9;">
+                  <div>
+                    <strong>8. GitHub Fine-Grained Token Static Publisher &amp; Live Firebase Admin Storage</strong>
+                    <span>Admin runs on Live Firebase; compiles &amp; pushes 100% static HTML/JSON to your GitHub repo.</span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">Configure GitHub &amp; Firebase →</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Automated Technical SEO &amp; Content Audit</div>
+              <div class="card-desc">Real-time verification of Meta Titles, Meta Descriptions, Slugs, and Structured Data.</div>
+              <div id="seo-audit-checklist" class="audit-list"></div>
+            </div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 2: DAILY NEWS PUBLISHER (FULL IMAGE & COMPONENT SUPPORT)
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-news">
+            <div class="panel-header">
+              <div>
+                <h2>Daily News Publisher & Release Updates</h2>
+                <p>
+                  Publish single daily news articles with featured images, inline photos, custom categories, and SEO
+                  schema.
+                </p>
+              </div>
+            </div>
+
+            <!-- Quick Daily News Composer Card -->
+            <div class="card" style="border: 2px solid #0f172a">
+              <div class="card-title">
+                <span id="news-composer-heading">✍️ Publish a New Daily News Article</span>
+                <button type="button" id="btn-news-autofill-seo" class="btn btn-sm">
+                  ⚡ Auto-Fill SEO Meta from Headline
+                </button>
+              </div>
+              <div class="card-desc">
+                Fill in your news headline, optional featured cover image, summary, and body below, then click
+                <strong>Publish News Post Now</strong>.
+              </div>
+
+              <input type="hidden" id="composer-news-id" value="" />
+
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <label class="field-label" for="composer-news-title">
+                    News Headline (&lt;h1&gt;)
+                    <span class="field-tag">Required</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="composer-news-title"
+                    class="input"
+                    placeholder="e.g., ApexMobile v4.9.0 Daily Update: Faster Edge Mirrors & Security Patch"
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-slug">
+                    <span>Article URL Slug</span>
+                    <span class="field-tag">/news/:slug</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="composer-news-slug"
+                    class="input"
+                    placeholder="auto-generated-from-headline"
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-category">
+                    <span>Category Badge</span>
+                    <span class="field-tag">Select or Type Custom</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="composer-news-category"
+                    class="input"
+                    list="news-category-presets"
+                    placeholder="Daily Update"
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-date">Publish Date</label>
+                  <input type="text" id="composer-news-date" class="input" placeholder="November 4, 2026" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-author">Author / Editorial Team</label>
+                  <input type="text" id="composer-news-author" class="input" placeholder="Editorial Team" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-readtime">Reading Time Badge</label>
+                  <input type="text" id="composer-news-readtime" class="input" placeholder="2 min read" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label">Highlight Article</label>
+                  <div class="toggle-box" style="min-height: 40px; padding: 6px 12px">
+                    <span>Pin ★ Featured Badge on Post</span>
+                    <input type="checkbox" id="composer-news-featured" />
+                  </div>
+                </div>
+
+                <!-- News Featured Cover Image + Device Upload -->
+                <div class="field span-full">
+                  <label class="field-label" for="composer-news-cover-url">
+                    <span>Featured Cover Image URL (Optional — Shown at Top of News &amp; Cards)</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      data-upload-target="composer-news-cover-url"
+                      data-preview-target="composer-news-cover-preview"
+                    >
+                      📤 Upload Image from Device
+                    </button>
+                  </label>
+                  <input
+                    type="text"
+                    id="composer-news-cover-url"
+                    class="input"
+                    placeholder="Paste image URL or click Upload Image from Device..."
+                  />
+                  <img id="composer-news-cover-preview" class="img-mini-preview" src="" alt="Cover Preview" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-cover-alt">Cover Image Alt Text (SEO)</label>
+                  <input
+                    type="text"
+                    id="composer-news-cover-alt"
+                    class="input"
+                    placeholder="Describe the news image for Google Images..."
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-cover-caption">Cover Image Caption (Optional)</label>
+                  <input
+                    type="text"
+                    id="composer-news-cover-caption"
+                    class="input"
+                    placeholder="Caption shown underneath the cover image..."
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-cta-label">In-Article Action Button Text (Optional)</label>
+                  <input
+                    type="text"
+                    id="composer-news-cta-label"
+                    class="input"
+                    placeholder="e.g., Download Patched Build v4.9.0"
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="composer-news-cta-url">In-Article Action Button URL (Optional)</label>
+                  <input
+                    type="text"
+                    id="composer-news-cta-url"
+                    class="input"
+                    placeholder="e.g., /#technical-specifications"
+                  />
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="composer-news-summary">
+                    Short Summary (Shown on Homepage &amp; /news Feed)
+                  </label>
+                  <textarea
+                    id="composer-news-summary"
+                    class="textarea"
+                    rows="2"
+                    placeholder="Write a 1–2 sentence summary of today's news update..."
+                  ></textarea>
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="composer-news-html">
+                    <span>Full News Article Body (HTML + Rich Components)</span>
+                    <button type="button" id="btn-toggle-composer-preview" class="btn btn-sm">
+                      👁️ Toggle Visual Preview
+                    </button>
+                  </label>
+                  <div class="html-toolbar">
+                    <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="composer-news-html">
+                      🧩 + Visual Block Builder (No Code)
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-dark"
+                      data-open-image-modal="composer-news-html"
+                    >
+                      🖼️ + Insert Image
+                    </button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="p">+ Paragraph</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="h3">+ Subheading (H3)</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="ul">+ Bullet List</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="callout">+ Callout Box</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="grid">+ 2-Col Feature Grid</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="table">+ Spec Table</button>
+                  </div>
+                  <textarea
+                    id="composer-news-html"
+                    class="textarea code"
+                    rows="6"
+                    placeholder="<p>Write the full news article content here, or click '🧩 + Visual Block Builder' above...</p>"
+                  ></textarea>
+                  <div id="composer-live-preview" class="live-preview-box"></div>
+                </div>
+              </div>
+
+              <div class="seo-subbox">
+                <div class="seo-subbox-title">
+                  <span>News Article SEO Meta Title &amp; Meta Description</span>
+                  <span class="field-tag">Injected into &lt;head&gt; &amp; NewsArticle Schema</span>
+                </div>
+                <div class="form-grid cols-2">
+                  <div class="field">
+                    <label class="field-label" for="composer-news-meta-title">Article Meta Title (&lt;title&gt;)</label>
+                    <input
+                      type="text"
+                      id="composer-news-meta-title"
+                      class="input"
+                      placeholder="SEO Meta Title for Google Search..."
+                    />
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="composer-news-meta-desc">Article Meta Description</label>
+                    <input
+                      type="text"
+                      id="composer-news-meta-desc"
+                      class="input"
+                      placeholder="SEO Meta Description (120–160 chars)..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap">
+                <button type="button" id="btn-publish-single-news" class="btn btn-primary">
+                  🚀 Publish News Post Now
+                </button>
+                <button type="button" id="btn-clear-news-composer" class="btn">Clear / New Post</button>
+              </div>
+            </div>
+
+            <!-- News Section Global Settings -->
+            <div class="card">
+              <div class="card-title">News Section Heading &amp; /news Hub SEO Meta Tags</div>
+              <div class="form-grid cols-2" style="margin-top: 10px">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable Daily News Section on Public Website</strong>
+                      <div class="field-help">Displays the latest news feed on the homepage and enables the /news archive hub.</div>
+                    </div>
+                    <input type="checkbox" id="news-enabled" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="news-heading">News Section Heading (&lt;h2&gt;)</label>
+                  <input type="text" id="news-heading" class="input" placeholder="Daily News & Release Updates" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="news-meta-title">News Hub (/news) Meta Title</label>
+                  <input type="text" id="news-meta-title" class="input" placeholder="Daily News & Release Updates..." />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="news-meta-desc">News Hub (/news) Meta Description</label>
+                  <input
+                    type="text"
+                    id="news-meta-desc"
+                    class="input"
+                    placeholder="Official daily news updates, software changelogs..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="card-title" style="margin: 18px 0 10px">
+              <span>Published Daily News Articles</span>
+              <a href="/news" target="_blank" class="btn btn-sm">Open /news Hub ↗</a>
+            </div>
+            <div id="news-list" class="item-list"></div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 3: BRAND, HERO, DOWNLOAD BUTTONS & FULL UI CUSTOMIZER
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-brand">
+            <div class="panel-header">
+              <div>
+                <h2>Brand, Search Logo, Hero, Hamburger Menu &amp; UI Customizer</h2>
+                <p>Tap any sub-section below to edit a single card at a time on mobile, or view all together.</p>
+              </div>
+            </div>
+
+            <!-- Compact Sub-Card Filter Bar for Smartphone & Desktop -->
+            <div class="subcard-filter-bar" role="tablist" aria-label="Brand & Hero Sub-Sections">
+              <button type="button" class="subcard-pill active" data-brand-subtab="all">All Cards</button>
+              <button type="button" class="subcard-pill" data-brand-subtab="identity">1. Brand, Favicon &amp; Search Logo</button>
+              <button type="button" class="subcard-pill" data-brand-subtab="hero">2. Hero &amp; 16:9 Banner</button>
+              <button type="button" class="subcard-pill" data-brand-subtab="ctas">3. Download &amp; Pill Buttons</button>
+              <button type="button" class="subcard-pill" data-brand-subtab="drawer">4. 3-Bar Hamburger Menu</button>
+              <button type="button" class="subcard-pill" data-brand-subtab="theme">5. Theme, Fonts &amp; Order</button>
+            </div>
+
+            <!-- Sub-Card 1: Brand Identity, Favicon, Google Search Logo & Web Manifest -->
+            <div class="card" data-brand-card="identity">
+              <div class="card-title">
+                <span>1. Brand Identity, Favicon, Search Result Small Logo &amp; Manifest</span>
+                <span class="placement-badge">📍 Sticky Header + Google SERP Logo + PWA</span>
+              </div>
+              <div class="card-desc">
+                Controls your header logo, browser tab favicon, <strong>Google Search Result small site logo</strong> (<code>Organization.logo</code> 512x512), Apple Touch Icon, and <code>/manifest.webmanifest</code>.
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 8px">
+                <div class="field">
+                  <label class="field-label" for="brand-name">Brand / Application Name</label>
+                  <input type="text" id="brand-name" class="input" placeholder="ApexMobile" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-short-name">
+                    <span>Short App Name</span>
+                    <span class="field-tag">PWA Manifest</span>
+                  </label>
+                  <input type="text" id="brand-short-name" class="input" placeholder="ApexMobile" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-tagline">Brand Tagline / Subtitle</label>
+                  <input type="text" id="brand-tagline" class="input" placeholder="High-Speed Edge Utility &amp; Package Hub" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-email">Official Support Email</label>
+                  <input type="email" id="brand-email" class="input" placeholder="support@domain.com" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-logo">
+                    <span>Header App Logo URL (36x36)</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-logo">📤 Upload</button>
+                  </label>
+                  <input type="text" id="brand-logo" class="input" placeholder="/assets/app-icon.svg" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-favicon">
+                    <span>Browser Tab Favicon URL</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-favicon">📤 Upload</button>
+                  </label>
+                  <input type="text" id="brand-favicon" class="input" placeholder="/assets/app-icon.svg" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-search-logo">
+                    <span>Google Search Result Small Logo (512x512)</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-search-logo">📤 Upload</button>
+                  </label>
+                  <input type="text" id="brand-search-logo" class="input" placeholder="/assets/app-icon.svg" />
+                  <div class="field-help">Used in Google Search result site attribution &amp; Organization JSON-LD schema.</div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-apple-icon">
+                    <span>Apple Touch Icon URL (180x180)</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-apple-icon">📤 Upload</button>
+                  </label>
+                  <input type="text" id="brand-apple-icon" class="input" placeholder="/assets/app-icon.svg" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-color">Primary Accent Color (Hex)</label>
+                  <input type="text" id="brand-color" class="input" placeholder="#EF4444" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="brand-theme-color">Browser Status Bar Theme Color (Hex)</label>
+                  <input type="text" id="brand-theme-color" class="input" placeholder="#EF4444" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Card 2: Hero Headline, Intro & 16:9 Showcase Banner -->
+            <div class="card" data-brand-card="hero">
+              <div class="card-title">
+                <span>2. Hero Headline, Intro &amp; 16:9 LCP Showcase Banner</span>
+                <span class="placement-badge">📍 Top of Homepage (Above the Fold)</span>
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 8px">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Display Top Hero Section on Homepage</strong>
+                      <div class="field-help">Controls whether the main H1 headline and CTA area appear above the fold.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-hero-section" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="hero-h1">
+                    Main Hero Headline (&lt;h1&gt;)
+                    <span class="field-tag">Primary H1</span>
+                  </label>
+                  <input type="text" id="hero-h1" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-meta-title">Hero Meta Title</label>
+                  <input type="text" id="hero-meta-title" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-meta-desc">Hero Meta Description</label>
+                  <input type="text" id="hero-meta-desc" class="input" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="hero-intro-html">
+                    <span>Hero Intro Paragraph (Appears Directly Below Hero Buttons)</span>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                      <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="hero-intro-html">
+                        🧩 + Visual Block
+                      </button>
+                      <button type="button" class="btn btn-sm" data-open-image-modal="hero-intro-html">
+                        🖼️ + Insert Image
+                      </button>
+                    </div>
+                  </label>
+                  <textarea id="hero-intro-html" class="textarea" rows="3"></textarea>
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Display 16:9 Hero Showcase Banner (Preloaded High-Priority LCP Image)</strong>
+                      <div class="field-help">Locked at 16:9 aspect ratio with <code>fetchpriority="high"</code> for instant LCP &amp; CLS = 0.</div>
+                    </div>
+                    <input type="checkbox" id="hero-show-banner" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="hero-banner-url">
+                    <span>Hero Banner Image URL</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      data-upload-target="hero-banner-url"
+                      data-preview-target="hero-banner-preview"
+                    >
+                      📤 Upload Banner Image
+                    </button>
+                  </label>
+                  <input type="text" id="hero-banner-url" class="input" />
+                  <img id="hero-banner-preview" class="img-mini-preview" src="" alt="Banner Preview" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-banner-alt">Hero Banner Alt Text (Google Image Sitemap)</label>
+                  <input type="text" id="hero-banner-alt" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-banner-caption">Hero Banner Caption (Optional)</label>
+                  <input type="text" id="hero-banner-caption" class="input" placeholder="Optional caption under banner..." />
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Card 3: Hero 2-Column Download Buttons & Floating Pill CTA -->
+            <div class="card" data-brand-card="ctas">
+              <div class="card-title">
+                <span>3. Hero 2-Column Download Buttons &amp; Floating Pill CTA</span>
+                <span class="placement-badge">📍 Hero CTA Grid + Bottom-Left Floating Pill</span>
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 8px">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Display 2-Column Hero Action Buttons</strong>
+                      <div class="field-help">Shows the Secondary &amp; Primary download buttons right below the H1.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-hero-ctas" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-left-text">Left Secondary Button Text</label>
+                  <input type="text" id="cta-left-text" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-left-url">Left Secondary Button Target URL / Anchor</label>
+                  <input type="text" id="cta-left-url" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-right-text">Right Primary Download Button Text</label>
+                  <input type="text" id="cta-right-text" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-right-url">
+                    <span>Homepage Button Route</span>
+                    <span class="field-tag">Keep /moreinfo for Protected Flow</span>
+                  </label>
+                  <input type="text" id="cta-right-url" class="input" />
+                </div>
+                <div class="field span-full" style="background:#ECFDF5; border:1px solid #A7F3D0; border-radius:10px; padding:12px;">
+                  <label class="field-label" for="cta-protected-redirect-url" style="color:#065F46;">
+                    <span>🔒 Protected Destination Link (Where <code>/moreinfo</code> PROCEED Button Redirects User)</span>
+                    <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">Full /moreinfo Settings →</button>
+                  </label>
+                  <input
+                    type="text"
+                    id="cta-protected-redirect-url"
+                    class="input"
+                    placeholder="https://cdn.example.com/releases/ApexMobile-v4.8.2.apk"
+                  />
+                  <div class="field-help" style="color:#047857;">
+                    When a user clicks the Download button on the homepage, they go to <code>/moreinfo</code> first. Only after Turnstile &amp; backend verification pass and they tap <strong>PROCEED</strong> does the server decrypt and redirect them to this link.
+                  </div>
+
+                  <!-- Quick Turnstile Keys inside Workspace 3 -->
+                  <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #A7F3D0; display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:8px;">
+                    <div>
+                      <label class="field-label" for="cta-turnstile-site-key" style="color:#065F46; font-size:0.72rem;">
+                        Cloudflare Turnstile Site Key
+                      </label>
+                      <input
+                        type="text"
+                        id="cta-turnstile-site-key"
+                        class="input"
+                        placeholder="0x4AAAAAA... (Auto test key on localhost)"
+                        style="background:#ffffff; border-color:#A7F3D0; font-size:0.75rem;"
+                      />
+                    </div>
+                    <div>
+                      <label class="field-label" for="cta-turnstile-secret-key" style="color:#065F46; font-size:0.72rem;">
+                        Cloudflare Turnstile Secret Key
+                      </label>
+                      <input
+                        type="password"
+                        id="cta-turnstile-secret-key"
+                        class="input"
+                        placeholder="0x4AAAAAA... (Server siteverify)"
+                        autocomplete="off"
+                        style="background:#ffffff; border-color:#A7F3D0; font-size:0.75rem;"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable Floating Bottom-Left Pill CTA Button</strong>
+                      <div class="field-help">Stays pinned at bottom-left on mobile &amp; desktop.</div>
+                    </div>
+                    <input type="checkbox" id="floating-cta-enabled" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="floating-cta-text">Floating Pill Text</label>
+                  <input type="text" id="floating-cta-text" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="floating-cta-url">Floating Pill Target URL</label>
+                  <input type="text" id="floating-cta-url" class="input" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Card 4: Sticky Header & 3-Bar Hamburger Menu Drawer Controls -->
+            <div class="card" data-brand-card="drawer">
+              <div class="card-title">
+                <span>4. Sticky Header &amp; 3-Bar Hamburger Menu Drawer Controls</span>
+                <span class="placement-badge">📍 Top Sticky Header + 3-Bar Slide-Down Menu</span>
+              </div>
+              <div class="card-desc">
+                Control what automatically populates inside the top-right 3-bar Hamburger Menu Drawer when clicked, plus quick link to edit custom menu items.
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 8px">
+                <div class="field">
+                  <label class="field-label" for="ui-header-news-label">Top Header News Button Label</label>
+                  <input type="text" id="ui-header-news-label" class="input" placeholder="News" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-back-home-label">Subpage "Back to Home" Label</label>
+                  <input type="text" id="ui-back-home-label" class="input" placeholder="← Back to Main Page" />
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Top-Right Header News Button</strong>
+                      <div class="field-help">Shows the News pill next to the 3-bar menu button.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-header-news" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Article Count Badge in News Button</strong>
+                      <div class="field-help">Displays e.g. "News 3" in the sticky header.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-news-count" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Auto-Sync All Homepage Sections in 3-Bar Menu</strong>
+                      <div class="field-help">Automatically lists all visible homepage sections (#slug) in the drawer.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-auto-sections" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Latest Daily News Links in 3-Bar Menu</strong>
+                      <div class="field-help">Shows the /news hub + latest news posts inside the hamburger menu.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-show-news" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Official Legal Pages in 3-Bar Menu</strong>
+                      <div class="field-help">Shows Privacy Policy, Terms, DMCA &amp; Contact chips in the drawer.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-show-legal" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Bottom Download Action CTA in 3-Bar Menu</strong>
+                      <div class="field-help">Displays the primary download button &amp; version badge at the bottom of the drawer.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-show-cta" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">
+                    ☰ Edit Custom Header Menu Links in Workspace 8 →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Card 5: Full Website Color Studio, 1-Tap Presets, Typography & Section Order -->
+            <div class="card" data-brand-card="theme">
+              <div class="card-title">
+                <span>5. Full Website Color Designer, 1-Tap Themes, Fonts &amp; Section Order</span>
+                <span class="placement-badge">📍 Zero-SEO-Impact Inline CSS Variables</span>
+              </div>
+              <div class="card-desc">
+                Tap any preset below to recolor the entire website in 1 second, or customize each individual color (Header, Page Background, Cards, Buttons, Text, and Footer). Compiled as inline CSS variables so FCP/LCP speed stays 100%.
+              </div>
+
+              <div class="field-label" style="margin-bottom: 6px">
+                <span>🎨 1-Tap Instant Website Color Themes</span>
+                <span class="field-tag">WCAG AA Contrast Verified</span>
+              </div>
+              <div class="theme-preset-grid">
+                <button type="button" class="theme-preset-btn" data-theme-preset="clean-light">
+                  <span class="theme-preset-swatches">
+                    <span class="theme-preset-dot" style="background: #F8FAFC"></span>
+                    <span class="theme-preset-dot" style="background: #EF4444"></span>
+                    <span class="theme-preset-dot" style="background: #0F172A"></span>
+                  </span>
+                  <span>☀️ Clean Light</span>
+                </button>
+                <button type="button" class="theme-preset-btn" data-theme-preset="midnight-dark">
+                  <span class="theme-preset-swatches">
+                    <span class="theme-preset-dot" style="background: #0B1120"></span>
+                    <span class="theme-preset-dot" style="background: #38BDF8"></span>
+                    <span class="theme-preset-dot" style="background: #111827"></span>
+                  </span>
+                  <span>🌙 Midnight Dark</span>
+                </button>
+                <button type="button" class="theme-preset-btn" data-theme-preset="royal-blue">
+                  <span class="theme-preset-swatches">
+                    <span class="theme-preset-dot" style="background: #EFF6FF"></span>
+                    <span class="theme-preset-dot" style="background: #2563EB"></span>
+                    <span class="theme-preset-dot" style="background: #0F172A"></span>
+                  </span>
+                  <span>💎 Royal Blue</span>
+                </button>
+                <button type="button" class="theme-preset-btn" data-theme-preset="emerald-tech">
+                  <span class="theme-preset-swatches">
+                    <span class="theme-preset-dot" style="background: #ECFDF5"></span>
+                    <span class="theme-preset-dot" style="background: #059669"></span>
+                    <span class="theme-preset-dot" style="background: #064E3B"></span>
+                  </span>
+                  <span>🌿 Emerald Tech</span>
+                </button>
+                <button type="button" class="theme-preset-btn" data-theme-preset="violet-modern">
+                  <span class="theme-preset-swatches">
+                    <span class="theme-preset-dot" style="background: #FAF5FF"></span>
+                    <span class="theme-preset-dot" style="background: #7C3AED"></span>
+                    <span class="theme-preset-dot" style="background: #1E1B4B"></span>
+                  </span>
+                  <span>🟣 Violet Studio</span>
+                </button>
+                <button type="button" class="theme-preset-btn" data-theme-preset="warm-editorial">
+                  <span class="theme-preset-swatches">
+                    <span class="theme-preset-dot" style="background: #FAFAF9"></span>
+                    <span class="theme-preset-dot" style="background: #D97706"></span>
+                    <span class="theme-preset-dot" style="background: #1C1917"></span>
+                  </span>
+                  <span>✨ Warm Editorial</span>
+                </button>
+              </div>
+
+              <div class="form-grid cols-3">
+                <div class="field">
+                  <label class="field-label" for="ui-bg-page">Outer Page Background</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-bg-page" value="#F8FAFC" />
+                    <input type="text" id="ui-bg-page" class="input" placeholder="#F8FAFC" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-bg-surface">Main Content Surface</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-bg-surface" value="#FFFFFF" />
+                    <input type="text" id="ui-bg-surface" class="input" placeholder="#FFFFFF" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-border-color">Card &amp; Section Border Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-border-color" value="#E2E8F0" />
+                    <input type="text" id="ui-border-color" class="input" placeholder="#E2E8F0" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-header-bg">Sticky Header Background</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-header-bg" value="#FFFFFF" />
+                    <input type="text" id="ui-header-bg" class="input" placeholder="#FFFFFF" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-header-text">Sticky Header Title Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-header-text" value="#111827" />
+                    <input type="text" id="ui-header-text" class="input" placeholder="#111827" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-btn-text-color">Primary Button Text Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-btn-text-color" value="#FFFFFF" />
+                    <input type="text" id="ui-btn-text-color" class="input" placeholder="#FFFFFF" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-footer-bg">Website Footer Background</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-footer-bg" value="#0F172A" />
+                    <input type="text" id="ui-footer-bg" class="input" placeholder="#0F172A" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-footer-text">Website Footer Text Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-footer-text" value="#F8FAFC" />
+                    <input type="text" id="ui-footer-text" class="input" placeholder="#F8FAFC" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-text-color">Body Paragraph Text Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-text-color" value="#1F2937" />
+                    <input type="text" id="ui-text-color" class="input" placeholder="#1F2937" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-heading-color">Headings (H1–H3) Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="ui-heading-color" value="#111827" />
+                    <input type="text" id="ui-heading-color" class="input" placeholder="#111827" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-card-radius">Button &amp; Card Corner Radius</label>
+                  <select id="ui-card-radius" class="select">
+                    <option value="6px">6px (Sharp Technical)</option>
+                    <option value="8px">8px (Clean Standard)</option>
+                    <option value="12px">12px (Modern Rounded)</option>
+                    <option value="16px">16px (Soft Pill Card)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-max-width">Container Max Width</label>
+                  <select id="ui-max-width" class="select">
+                    <option value="680px">680px (Compact Editorial)</option>
+                    <option value="768px">768px (Standard Single-Column)</option>
+                    <option value="860px">860px (Medium Wide)</option>
+                    <option value="960px">960px (Wide Portal)</option>
+                    <option value="1080px">1080px (Full Widescreen)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-font-family">Typography Font Family</label>
+                  <select id="ui-font-family" class="select">
+                    <option value="system">System UI (Zero-Latency Native)</option>
+                    <option value="inter">Inter (Modern Technical)</option>
+                    <option value="jakarta">Plus Jakarta Sans</option>
+                    <option value="serif">Editorial Serif (Georgia)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-font-size">Base Body Font Size</label>
+                  <select id="ui-font-size" class="select">
+                    <option value="15px">15px (Compact)</option>
+                    <option value="16px">16px (Recommended)</option>
+                    <option value="17px">17px (Large Reading)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-home-news-limit">Homepage News Articles Limit</label>
+                  <input type="number" id="ui-home-news-limit" class="input" min="1" max="50" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-news-readmore">News "Read More" Link Text</label>
+                  <input type="text" id="ui-news-readmore" class="input" placeholder="Read Full News Article →" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-news-viewall">News "View All" Link Text</label>
+                  <input type="text" id="ui-news-viewall" class="input" placeholder="View All Daily News →" />
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Subpage Quick-Switcher Pills on Legal &amp; News Pages</strong>
+                      <div class="field-help">Displays quick jump pills at the top of standalone pages.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-subpage-pills" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Homepage Section Order Controller -->
+              <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px">
+                <div class="card-title">Homepage Vertical Block Order Controller</div>
+                <div class="card-desc">Reorder how the major sections appear vertically on your homepage.</div>
+                <div id="homepage-order-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 4: TECHNICAL PACKAGE SPECIFICATIONS TABLE
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-specs">
+            <div class="panel-header">
+              <div>
+                <h2>Technical Package Specifications &amp; Checksum Table</h2>
+                <p>Manage the structured technical verification table and add unlimited custom specification rows.</p>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Package Specifications Table Controls</div>
+              <div class="form-grid cols-2" style="margin-top: 12px">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Display Technical Specifications Table on Homepage</strong>
+                      <div class="field-help">Renders a clean specification &amp; SHA-256 verification table (#technical-specifications).</div>
+                    </div>
+                    <input type="checkbox" id="specs-enabled" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-heading">Section Heading (&lt;h2&gt;)</label>
+                  <input type="text" id="specs-heading" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-app-name">Application Package Name</label>
+                  <input type="text" id="specs-app-name" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-version">Latest Version</label>
+                  <input type="text" id="specs-version" class="input" placeholder="v4.8.2 (Stable Build)" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-size">Package File Size</label>
+                  <input type="text" id="specs-size" class="input" placeholder="64.2 MB" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-os">System Requirements</label>
+                  <input type="text" id="specs-os" class="input" placeholder="Android 9.0+ / iOS 15.0+" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-format">Package Format</label>
+                  <input type="text" id="specs-format" class="input" placeholder="Signed APK / Universal Package" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-license">License &amp; Cost</label>
+                  <input type="text" id="specs-license" class="input" placeholder="Freeware (100% Clean)" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-security">Security Scan Status</label>
+                  <input type="text" id="specs-security" class="input" placeholder="Verified Clean (0/72 Engines)" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-updated">Last Updated Date</label>
+                  <input type="text" id="specs-updated" class="input" placeholder="November 4, 2026" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="specs-sha256">
+                    <span>SHA-256 Cryptographic Checksum</span>
+                    <button type="button" id="btn-gen-sha256" class="btn btn-sm">Generate New SHA-256 Hash</button>
+                  </label>
+                  <input type="text" id="specs-sha256" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-meta-title">Specs Section Meta Title</label>
+                  <input type="text" id="specs-meta-title" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="specs-meta-desc">Specs Section Meta Description</label>
+                  <input type="text" id="specs-meta-desc" class="input" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Custom Specification Rows -->
+            <div class="card">
+              <div class="card-title">
+                <span>Custom Specification Rows (Optional Extra Table Rows)</span>
+                <button type="button" id="btn-add-spec-row" class="btn btn-sm btn-primary">+ Add Custom Spec Row</button>
+              </div>
+              <div class="card-desc">Add any extra technical rows (e.g., Architecture, Developer, Minimum RAM, CDN Mirrors).</div>
+              <div id="custom-specs-list" class="item-list"></div>
+            </div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 5: HOMEPAGE CONTENT SECTIONS & CUSTOM COMPONENTS
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-sections">
+            <div class="panel-header">
+              <div>
+                <h2>Homepage Content Sections &amp; Media Blocks</h2>
+                <p>
+                  Add, reorder, and customize homepage sections with images, callout boxes, tables, CTA buttons, and per-section SEO meta tags.
+                </p>
+              </div>
+              <button type="button" id="btn-add-section" class="btn btn-primary">+ Add Content Section</button>
+            </div>
+
+            <div id="sections-list" class="item-list"></div>
+
+            <!-- Global Additional Raw HTML / Custom Component Block -->
+            <div class="card" style="margin-top: 18px">
+              <div class="card-title">
+                <span>Additional Custom HTML / Component Block (Optional)</span>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <span class="placement-badge">📍 Appears on Homepage (#3 in Block Order)</span>
+                  <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="global-raw-html">
+                    🧩 + Visual Block Builder
+                  </button>
+                  <button type="button" class="btn btn-sm btn-dark" data-open-image-modal="global-raw-html">
+                    🖼️ + Insert Image
+                  </button>
+                </div>
+              </div>
+              <div class="card-desc">
+                Any visual blocks, comparison tables, or custom HTML placed here render automatically on the homepage in the position set in your Homepage Block Order Controller.
+              </div>
+              <textarea
+                id="global-raw-html"
+                class="textarea code"
+                rows="5"
+                placeholder="<!-- Click '🧩 + Visual Block Builder' above or enter custom HTML -->"
+              ></textarea>
+            </div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 6: FAQs MANAGER
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-faqs">
+            <div class="panel-header">
+              <div>
+                <h2>Frequently Asked Questions (FAQs)</h2>
+                <p>Renders clean Q&amp;A items on the homepage and automatically builds Google <code>FAQPage</code> JSON-LD schema.</p>
+              </div>
+              <button type="button" id="btn-add-faq" class="btn btn-primary">+ Add FAQ Question</button>
+            </div>
+
+            <div class="card">
+              <div class="card-title">FAQ Section Heading &amp; Meta Tags</div>
+              <div class="form-grid cols-2" style="margin-top: 12px">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable FAQ Section &amp; FAQPage Schema</strong>
+                      <div class="field-help">Displays FAQs on the homepage and syncs structured data.</div>
+                    </div>
+                    <input type="checkbox" id="faqs-enabled" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="faqs-heading">FAQ Section Heading (&lt;h2&gt;)</label>
+                  <input type="text" id="faqs-heading" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="faqs-meta-title">FAQ Section Meta Title</label>
+                  <input type="text" id="faqs-meta-title" class="input" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="faqs-meta-desc">FAQ Section Meta Description</label>
+                  <input type="text" id="faqs-meta-desc" class="input" />
+                </div>
+              </div>
+            </div>
+
+            <div id="faqs-list" class="item-list"></div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 7: FOOTER & STANDALONE LEGAL PAGES
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-pages">
+            <div class="panel-header">
+              <div>
+                <h2>Footer &amp; Standalone Legal SEO Pages</h2>
+                <p>
+                  Every footer link opens its own standalone crawlable URL with dedicated Meta Title, Meta Description,
+                  and optional banner image.
+                </p>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <button type="button" id="btn-autogen-legal" class="btn">⚡ Auto-Fill Brand in All Legal Pages</button>
+                <button type="button" id="btn-add-page" class="btn btn-primary">+ Add Standalone Page</button>
+              </div>
+            </div>
+
+            <!-- Select Which Legal Page to Edit (Clean Tabbed Selector) -->
+            <div class="card">
+              <div class="card-title">Select Standalone Legal / Footer Page to Edit</div>
+              <div class="card-desc">Click any page tab below to edit its content, images, visibility, URL slug, and SEO meta tags.</div>
+              <div id="legal-page-selector" class="page-selector-bar"></div>
+              <div id="pages-list"></div>
+            </div>
+
+            <!-- Full Footer Brand Summary, Custom Quick Links, Disclaimer & Copyright Settings -->
+            <div class="card">
+              <div class="card-title">
+                <span>1. Website Footer Brand Summary, Contact Email &amp; Disclaimer</span>
+                <span class="placement-badge">📍 Bottom of Every Public Page</span>
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 10px">
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Brand Summary Block in Footer</strong>
+                      <div class="field-help">Displays brand title and summary statement at the top of the footer.</div>
+                    </div>
+                    <input type="checkbox" id="nav-show-footer-summary" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Support Email Link in Footer</strong>
+                      <div class="field-help">Displays your official support email inside the footer summary block.</div>
+                    </div>
+                    <input type="checkbox" id="nav-show-footer-email" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="nav-footer-summary">Footer Brand Summary / About Text</label>
+                  <textarea id="nav-footer-summary" class="textarea" rows="2" placeholder="Official release portal providing cryptographically verified mobile packages..."></textarea>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Display Legal Disclaimer Paragraph</strong>
+                      <div class="field-help">Uncheck to hide the disclaimer text above the footer links.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-footer-disclaimer" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Display Footer Links Section Heading</strong>
+                      <div class="field-help">Shows or hides the heading above the footer links.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-footer-links-heading" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="footer-disclaimer-heading">Footer Disclaimer Heading</label>
+                  <input type="text" id="footer-disclaimer-heading" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="footer-links-heading">Footer Links Heading</label>
+                  <input type="text" id="footer-links-heading" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="footer-meta-title">Footer Disclaimer Meta Title</label>
+                  <input type="text" id="footer-meta-title" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="footer-meta-desc">Footer Disclaimer Meta Description</label>
+                  <input type="text" id="footer-meta-desc" class="input" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="footer-disclaimer-text">Footer Disclaimer Text</label>
+                  <textarea id="footer-disclaimer-text" class="textarea" rows="3"></textarea>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="footer-copyright-text">Copyright Notice</label>
+                  <input type="text" id="footer-copyright-text" class="input" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Custom Footer Quick Links Manager -->
+            <div class="card">
+              <div class="card-title">
+                <span>2. Custom Footer Quick Links (In Addition to Legal Pages)</span>
+                <button type="button" id="btn-add-footer-quick-link" class="btn btn-sm btn-primary">+ Add Footer Link</button>
+              </div>
+              <div class="card-desc">Add custom internal or external links directly into your website footer alongside your legal pages.</div>
+              <div id="footer-quick-links-list" class="item-list"></div>
+            </div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               WORKSPACE 8: GITHUB FINE-GRAINED TOKEN STATIC PUSH, DOMAIN & FIREBASE
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-domain">
+            <div class="panel-header">
+              <div>
+                <h2>Internal Linking Engine, Sitemap, Manifest, GitHub Push &amp; Firebase</h2>
+                <p>Tap any sub-section below to edit a single card at a time on mobile, or view all together.</p>
+              </div>
+            </div>
+
+            <!-- Compact Sub-Card Filter Bar for Workspace 8 -->
+            <div class="subcard-filter-bar" role="tablist" aria-label="Domain, GitHub & SEO Sub-Sections">
+              <button type="button" class="subcard-pill active" data-domain-subtab="all">All Cards</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="security">🔒 7-Gate Security &amp; Link Vault (/moreinfo)</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="internallinks">1. Smart Internal Links</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="github">2. GitHub Static Push</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="sitemap">3. Domain, Sitemap &amp; Manifest</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="serp">4. Google SERP &amp; Meta</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="schema">5. App Star Schema</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="menu">6. Custom 3-Bar Links</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="firebase">7. Live Firebase &amp; Backup</button>
+            </div>
+
+            <!-- v12 7-Gate Security Gateway & AES-256-GCM Encrypted Link Vault Card -->
+            <div class="card" data-domain-card="security" style="border: 2px solid #059669">
+              <div class="card-title">
+                <span>🔒 v12 7-Gate Security Gateway &amp; AES-256-GCM Encrypted Link Vault (<code>/moreinfo</code>)</span>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <span class="placement-badge">100% Isolated from SEO Crawlers (noindex, nofollow)</span>
+                  <a href="/moreinfo" target="_blank" rel="noopener" class="btn btn-sm btn-primary">Open /moreinfo Gateway ↗</a>
+                </div>
+              </div>
+              <div class="card-desc">
+                Protects your download mirror URL behind 7 sequential security gates (Edge Bot/ASN Filter, <code>__did</code> Device Cookie, Hardware Probe <code>hw</code>, Single-Use Nonce, Cloudflare Turnstile with <code>cData</code> Binding, Physical Touch/Pointer Telemetry <code>TokenV12</code>, and Late AES-256-GCM RAM Decryption) while keeping your public SEO pages 100% static and untouched.
+              </div>
+
+              <div class="form-grid cols-2">
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable Protected Security Gateway (<code>/moreinfo</code>)</strong>
+                      <div class="field-help">Routes download CTAs through the 7-Gate verification page.</div>
+                    </div>
+                    <input type="checkbox" id="sec-enabled" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show SHA-256 &amp; Specs Table on <code>/moreinfo</code></strong>
+                      <div class="field-help">Displays package checksum &amp; version details below the clearance card.</div>
+                    </div>
+                    <input type="checkbox" id="sec-show-specs" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-device-policy">Device Verification Policy Mode</label>
+                  <select id="sec-device-policy" class="select">
+                    <option value="universal_human">Universal Human (Mobile + Desktop Humans — Blocks All Bots/Scrapers/Headless)</option>
+                    <option value="strict_mobile_only">Strict Mobile-Only Lock (v12 Physical Touch Smartphone Only — Desktop Gets 404)</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-btn-label">Clearance Button Label (After Verification)</label>
+                  <input type="text" id="sec-btn-label" class="input" placeholder="PROCEED" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-app-slug">Gateway App Slug (Used for Nonce &amp; Rate-Limit Keys)</label>
+                  <input type="text" id="sec-app-slug" class="input" placeholder="apexmobile" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-serial-id">Gateway Header Serial Badge ID</label>
+                  <input type="text" id="sec-serial-id" class="input" placeholder="APM-482" />
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="sec-custom-heading">
+                    <span>Custom App Title on <code>/moreinfo</code> (Optional — Defaults to App/Brand Name)</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="sec-custom-heading"
+                    class="input"
+                    placeholder="Leave blank to use your main App / Brand Name"
+                  />
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="sec-custom-note">
+                    <span>Custom Note / HTML on <code>/moreinfo</code> (Optional — Leave Blank for Clean Minimal Page)</span>
+                  </label>
+                  <textarea
+                    id="sec-custom-note"
+                    class="textarea"
+                    rows="2"
+                    placeholder="Leave blank to show only the App Icon, App Name, Turnstile verification, and PROCEED button."
+                  ></textarea>
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="sec-primary-url">
+                    <span>Protected Destination Download URL (Plaintext Input — Auto-Encrypted into Vault)</span>
+                    <button type="button" id="btn-encrypt-vault-url" class="btn btn-sm btn-dark">🔒 Encrypt URL with AES-256-GCM Now</button>
+                  </label>
+                  <input
+                    type="text"
+                    id="sec-primary-url"
+                    class="input"
+                    placeholder="https://cdn.example.com/releases/ApexMobile-v4.8.2.apk"
+                  />
+                  <div class="field-help">
+                    This destination URL is never exposed in public HTML or static JSON. It is decrypted only in server RAM at Gate G7 after all 7 security checks pass.
+                  </div>
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="sec-encrypted-url">
+                    <span>AES-256-GCM Encrypted Vault Ciphertext (<code>v2.&lt;iv&gt;.&lt;cipher&gt;</code>)</span>
+                    <span class="field-tag" id="sec-vault-status-tag">AES-256-GCM Vault Active</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="sec-encrypted-url"
+                    class="input"
+                    placeholder="v2.<base64url-iv>.<base64url-ciphertext> (Click 'Encrypt URL' above or Publish to generate)"
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-turnstile-site-key">
+                    <span>Cloudflare Turnstile Site Key (<code>0x4...</code>)</span>
+                    <span class="field-tag">Auto Test Key on Localhost</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="sec-turnstile-site-key"
+                    class="input"
+                    placeholder="0x4AAAAAA... (Leave blank for automatic test key in preview)"
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-turnstile-secret-key">
+                    <span>Cloudflare Turnstile Secret Key (<code>0x4...</code>)</span>
+                    <span class="field-tag">Server-Only</span>
+                  </label>
+                  <input
+                    type="password"
+                    id="sec-turnstile-secret-key"
+                    class="input"
+                    placeholder="0x4AAAAAA... (Server-side siteverify secret)"
+                    autocomplete="off"
+                  />
+                </div>
+
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Temporarily Pause Link Dispatch</strong>
+                      <div class="field-help">Shows the maintenance notice &amp; helpline buttons instead of redirecting.</div>
+                    </div>
+                    <input type="checkbox" id="sec-paused" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Coming Soon Mode</strong>
+                      <div class="field-help">Displays a Coming Soon notice when users complete verification.</div>
+                    </div>
+                    <input type="checkbox" id="sec-coming-soon" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-daily-cap">Daily Link Issuance Cap (<code>0</code> = Unlimited)</label>
+                  <input type="number" id="sec-daily-cap" class="input" min="0" placeholder="0" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-unavailable-msg">Maintenance / Unavailable Message</label>
+                  <input
+                    type="text"
+                    id="sec-unavailable-msg"
+                    class="input"
+                    placeholder="Official download mirror is undergoing scheduled maintenance."
+                  />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-whatsapp">WhatsApp Helpline Link (Optional)</label>
+                  <input type="text" id="sec-whatsapp" class="input" placeholder="https://wa.me/1234567890" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="sec-telegram">Telegram Helpline Link (Optional)</label>
+                  <input type="text" id="sec-telegram" class="input" placeholder="https://t.me/your_support" />
+                </div>
+              </div>
+            </div>
+
+            <!-- NEW Sub-Card: Smart Contextual Internal Linking Engine -->
+            <div class="card" data-domain-card="internallinks">
+              <div class="card-title">
+                <span>1. 🔗 Smart Contextual Internal Linking Engine &amp; Crawl Hub</span>
+                <button type="button" id="btn-add-internal-link" class="btn btn-sm btn-primary">+ Add Keyword Link Rule</button>
+              </div>
+              <div class="card-desc">
+                Automatically links matching keywords inside your Homepage Sections, Daily News Articles, and Legal Pages to target internal URLs, and embeds an "Official Portal Guides &amp; Resources" internal link hub on news articles so search engines index every URL with zero orphan pages.
+              </div>
+              <div class="field" style="margin-bottom: 12px">
+                <div class="toggle-box">
+                  <div>
+                    <strong>Enable Automatic Contextual Internal Linking &amp; Resource Hub</strong>
+                    <div class="field-help">Safely links keywords inside paragraph text without altering headings, code blocks, or existing links.</div>
+                  </div>
+                  <input type="checkbox" id="domain-auto-internal-links" />
+                </div>
+              </div>
+              <div id="internal-links-list" class="item-list"></div>
+            </div>
+
+            <!-- 1. GitHub Fine-Grained Token Static Publisher Card -->
+            <div class="card" data-domain-card="github" style="border: 2px solid #0f172a">
+              <div class="card-title">
+                <span>1. 🚀 GitHub Fine-Grained Token Static Website Publisher</span>
+                <span class="placement-badge" id="gh-status-badge">Static Compiler Ready</span>
+              </div>
+              <div class="card-desc">
+                <strong>How this works:</strong> Your Admin Studio runs on live dynamic data from Firebase. When you click
+                <strong>Compile &amp; Push Static Website to GitHub</strong>, the compiler generates 100% hardcoded static HTML
+                (<code>index.html</code>, <code>news/index.html</code>, <code>news/:slug/index.html</code>,
+                <code>privacy-policy/index.html</code>, <code>sitemap.xml</code>, <code>manifest.webmanifest</code>, <code>robots.txt</code>, <code>feed.xml</code>,
+                and <code>static-routes/*.json</code>) with <strong>Zero Firebase on the Public Website</strong> and commits them directly to your GitHub repository.
+              </div>
+
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <label class="field-label" for="gh-token">
+                    <span>GitHub Fine-Grained Personal Access Token (<code>github_pat_...</code>)</span>
+                    <span class="field-tag">Stored in Live Admin Config</span>
+                  </label>
+                  <input
+                    type="password"
+                    id="gh-token"
+                    class="input"
+                    placeholder="github_pat_11ABCDEFG... (Needs 'Contents: Read and write' permission on target repo)"
+                    autocomplete="off"
+                  />
+                  <div class="field-help">
+                    Create at GitHub &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens &rarr; Fine-grained tokens &rarr; Repository permissions: <strong>Contents (Read and write)</strong>.
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-owner">GitHub Username or Organization</label>
+                  <input type="text" id="gh-owner" class="input" placeholder="e.g., octocat or my-org" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-repo">GitHub Repository Name</label>
+                  <input type="text" id="gh-repo" class="input" placeholder="e.g., apexmobile-static-public" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-branch">Target Branch</label>
+                  <input type="text" id="gh-branch" class="input" placeholder="main" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-dir">
+                    <span>Target Folder in Repo</span>
+                    <span class="field-tag">dist-public or empty for root</span>
+                  </label>
+                  <input type="text" id="gh-dir" class="input" placeholder="dist-public" />
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="gh-commit-msg">Git Commit Message Template</label>
+                  <input
+                    type="text"
+                    id="gh-commit-msg"
+                    class="input"
+                    placeholder="chore(static-publish): update compiled static public pages from Admin Studio"
+                  />
+                </div>
+
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Auto-Push Compiled Static Site to GitHub on Every "Publish Changes"</strong>
+                      <div class="field-help">
+                        When enabled, clicking "Publish Changes" saves to Live Firebase AND pushes the compiled static public files to GitHub automatically.
+                      </div>
+                    </div>
+                    <input type="checkbox" id="gh-auto-push" />
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px">
+                <button type="button" id="btn-verify-github" class="btn btn-dark">
+                  🔍 Verify GitHub Token &amp; Repo Access
+                </button>
+                <button type="button" id="btn-publish-github" class="btn btn-primary">
+                  🚀 Compile &amp; Push Static Website to GitHub Now
+                </button>
+              </div>
+
+              <div id="gh-verify-feedback" style="margin-top: 10px; display: none" class="seo-subbox"></div>
+
+              <!-- Recent Static Compilation & GitHub Push History -->
+              <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px">
+                <div class="field-label" style="margin-bottom: 6px">
+                  <span>Recent Static Builds &amp; GitHub Commits</span>
+                  <span class="field-tag" id="gh-last-commit-tag">Local static bundle active in /dist-public</span>
+                </div>
+                <div id="gh-deploy-history-list" class="audit-list"></div>
+              </div>
+            </div>
+
+            <!-- 2. Custom Domain, Sitemap, Web Manifest & Webmaster Tools -->
+            <div class="card" data-domain-card="sitemap">
+              <div class="card-title">
+                <span>2. Custom Domain, Google Image Sitemap &amp; Web App Manifest</span>
+                <div style="display: flex; gap: 5px; flex-wrap: wrap">
+                  <a href="/sitemap.xml" target="_blank" class="btn btn-sm">Sitemap.xml ↗</a>
+                  <a href="/manifest.webmanifest" target="_blank" class="btn btn-sm">Manifest.webmanifest ↗</a>
+                  <a href="/robots.txt" target="_blank" class="btn btn-sm">Robots.txt ↗</a>
+                  <a href="/feed.xml" target="_blank" class="btn btn-sm">RSS Feed ↗</a>
+                </div>
+              </div>
+              <div class="card-desc">
+                <code>/sitemap.xml</code> (with Google Image Sitemap <code>&lt;image:image&gt;</code> tags), <code>/manifest.webmanifest</code>, <code>/robots.txt</code>, and <code>/feed.xml</code> are automatically generated and compiled into your static bundle.
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 8px">
+                <div class="field">
+                  <label class="field-label" for="domain-primary">
+                    Primary Production Domain URL
+                    <span class="field-tag">Canonical Base</span>
+                  </label>
+                  <input type="url" id="domain-primary" class="input" placeholder="https://yourdomain.com" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="domain-ga-id">Google Analytics / Tag ID (Optional)</label>
+                  <input type="text" id="domain-ga-id" class="input" placeholder="G-XXXXXXXXXX" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="domain-gsc">Google Search Console Verification Code</label>
+                  <input
+                    type="text"
+                    id="domain-gsc"
+                    class="input"
+                    placeholder="google-site-verification content token"
+                  />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="domain-bing">Bing Webmaster Verification Code</label>
+                  <input type="text" id="domain-bing" class="input" placeholder="msvalidate.01 content token" />
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Include Google Image Sitemap (<code>&lt;image:image&gt;</code>)</strong>
+                      <div class="field-help">Embeds Hero Banner, Section Images &amp; News Cover Images inside <code>/sitemap.xml</code>.</div>
+                    </div>
+                    <input type="checkbox" id="domain-image-sitemap" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable Web App Manifest (<code>/manifest.webmanifest</code>)</strong>
+                      <div class="field-help">Generates PWA manifest with 192x192 &amp; 512x512 icons and theme color.</div>
+                    </div>
+                    <input type="checkbox" id="domain-web-manifest" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Force HTTPS on All Canonical &amp; Sitemap URLs</strong>
+                      <div class="field-help">Automatically normalizes http:// to https:// across all pages and JSON-LD schemas.</div>
+                    </div>
+                    <input type="checkbox" id="domain-force-https" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="domain-robots-txt">Custom /robots.txt Rules</label>
+                  <textarea id="domain-robots-txt" class="textarea code" rows="4"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Homepage Global SEO & Google SERP Simulator -->
+            <div class="card" data-domain-card="serp">
+              <div class="card-title">
+                <span>3. Homepage Meta Tags &amp; Live Google SERP Preview</span>
+                <span class="placement-badge">📍 &lt;head&gt; Meta + Google Search Snippet</span>
+              </div>
+              <div class="form-grid cols-2" style="margin-top: 8px">
+                <div class="field span-full">
+                  <label class="field-label" for="seo-meta-title">
+                    Homepage Meta Title (&lt;title&gt;)
+                    <span class="field-tag" id="seo-title-counter">0 / 60 chars</span>
+                  </label>
+                  <input type="text" id="seo-meta-title" class="input" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="seo-meta-desc">
+                    Homepage Meta Description
+                    <span class="field-tag" id="seo-desc-counter">0 / 160 chars</span>
+                  </label>
+                  <textarea id="seo-meta-desc" class="textarea" rows="3"></textarea>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="seo-canonical">Homepage Canonical URL</label>
+                  <input type="url" id="seo-canonical" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="seo-og-image">
+                    <span>OpenGraph Social Share Image URL</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="seo-og-image">📤 Upload</button>
+                  </label>
+                  <input type="text" id="seo-og-image" class="input" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label">Live Google Search Result Preview</label>
+                  <div class="serp-box">
+                    <div class="serp-url" id="serp-preview-url">https://yourdomain.com/</div>
+                    <div class="serp-title" id="serp-preview-title">Homepage Meta Title</div>
+                    <div class="serp-desc" id="serp-preview-desc">Homepage meta description preview...</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. SoftwareApplication Schema -->
+            <div class="card" data-domain-card="schema">
+              <div class="card-title">
+                <span>4. SoftwareApplication Rich Snippet Star Schema</span>
+                <span class="placement-badge">📍 JSON-LD @graph</span>
+              </div>
+              <div class="form-grid cols-3" style="margin-top: 8px">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable SoftwareApplication Star Rating Schema</strong>
+                      <div class="field-help">Injects AggregateRating and software metadata into JSON-LD.</div>
+                    </div>
+                    <input type="checkbox" id="schema-app-enabled" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-name">App Name</label>
+                  <input type="text" id="schema-app-name" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-os">Operating System</label>
+                  <input type="text" id="schema-app-os" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-category">Category</label>
+                  <input type="text" id="schema-app-category" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-price">Price (USD)</label>
+                  <input type="text" id="schema-app-price" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-rating">Star Rating (1–5)</label>
+                  <input type="text" id="schema-app-rating" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-votes">Review Count</label>
+                  <input type="text" id="schema-app-votes" class="input" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 5. Header Hamburger Navigation Links -->
+            <div class="card" data-domain-card="menu">
+              <div class="card-title">
+                <span>5. Custom Header 3-Bar Hamburger Navigation Links</span>
+                <button type="button" id="btn-add-menu-link" class="btn btn-sm btn-primary">+ Add Menu Link</button>
+              </div>
+              <div class="card-desc">Manage the custom primary links inside the top-right 3-bar slide-down navigation drawer.</div>
+              <div id="menu-links-list" class="item-list"></div>
+            </div>
+
+            <!-- 6. Firebase Cloud Persistence & Master Clone Backup -->
+            <div class="card" data-domain-card="firebase">
+              <div class="card-title">
+                <span>6. Live Admin Firebase Cloud Persistence (.env or Runtime Keys) &amp; Backup</span>
+                <span class="field-tag" id="fb-env-badge">Checking .env...</span>
+              </div>
+              <div class="card-desc">
+                The Admin Studio runs 100% on live data from Firebase Cloud Firestore (<code>siteConfig/main</code>).
+                Reads <code>FIREBASE_API_KEY</code> &amp; <code>FIREBASE_PROJECT_ID</code> from <code>.env</code> or runtime keys below.
+              </div>
+              <div class="form-grid cols-2">
+                <div class="field">
+                  <label class="field-label" for="fb-api-key">FIREBASE_API_KEY</label>
+                  <input type="text" id="fb-api-key" class="input" placeholder="AIzaSy..." />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="fb-project-id">FIREBASE_PROJECT_ID</label>
+                  <input type="text" id="fb-project-id" class="input" placeholder="your-project-id" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="fb-auth-domain">FIREBASE_AUTH_DOMAIN</label>
+                  <input type="text" id="fb-auth-domain" class="input" placeholder="your-project.firebaseapp.com" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="fb-app-id">FIREBASE_APP_ID</label>
+                  <input type="text" id="fb-app-id" class="input" placeholder="1:123456:web:abcdef" />
+                </div>
+                <div class="field span-full" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px">
+                  <button type="button" id="btn-save-firebase" class="btn btn-dark">Save Firebase Runtime Keys</button>
+                  <button type="button" id="btn-export-json" class="btn">Export Site JSON Backup</button>
+                  <label class="btn" style="cursor: pointer">
+                    Import Site JSON
+                    <input type="file" id="input-import-json" accept="application/json" style="display: none" />
+                  </label>
+                  <button type="button" id="btn-reset-defaults" class="btn btn-danger">Reset to Master Template</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <!-- Fixed Bottom Save Bar -->
+      <div class="bottom-save-bar">
+        <div class="bottom-save-inner">
+          <div class="save-feedback" id="save-feedback-text">All changes published and live</div>
+          <div style="display: flex; gap: 8px">
+            <button type="button" id="btn-bottom-save" class="btn btn-primary">Publish All Changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         3. INTERACTIVE IMAGE & MEDIA INSERTION MODAL
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="image-insert-modal" class="cms-modal-backdrop" hidden>
+      <div class="cms-modal-card">
+        <div class="card-title">
+          <span>🖼️ Insert Image into Content</span>
+          <button type="button" id="btn-close-image-modal" class="btn btn-sm">✕ Close</button>
+        </div>
+        <div class="card-desc">
+          Upload an image directly from your device or paste an image URL. Automatically formatted with responsive 16:9
+          styling and optional caption.
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="modal-img-url">
+              <span>Image URL</span>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary"
+                data-upload-target="modal-img-url"
+                data-preview-target="modal-img-preview"
+              >
+                📤 Upload Image from Device
+              </button>
+            </label>
+            <input type="text" id="modal-img-url" class="input" placeholder="https://... or /uploads/..." />
+            <img id="modal-img-preview" class="img-mini-preview" src="" alt="Preview" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="modal-img-alt">Image Alt Text (For Google Images SEO)</label>
+            <input type="text" id="modal-img-alt" class="input" placeholder="Describe the image..." />
+          </div>
+          <div class="field">
+            <label class="field-label" for="modal-img-caption">Image Caption (Optional — Shown Below Image)</label>
+            <input type="text" id="modal-img-caption" class="input" placeholder="Optional caption..." />
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
+            <button type="button" id="btn-confirm-insert-image" class="btn btn-primary">
+              + Insert Image into Editor
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         4. INTERACTIVE NO-CODE VISUAL BLOCK BUILDER MODAL
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="visual-block-modal" class="cms-modal-backdrop" hidden>
+      <div class="cms-modal-card">
+        <div class="card-title">
+          <span>🧩 Visual Block Builder (No HTML Required)</span>
+          <button type="button" id="btn-close-visual-block-modal" class="btn btn-sm">✕ Close</button>
+        </div>
+        <div class="card-desc">
+          Choose a visual component below, type your text into the simple fields, and click
+          <strong>+ Insert Visual Block</strong>. We automatically generate the clean HTML for you!
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="vb-type">Select Component Type to Build</label>
+            <select id="vb-type" class="select">
+              <option value="callout">1. Highlight / Verification Callout Box</option>
+              <option value="grid">2. Two-Column Feature Cards Grid</option>
+              <option value="steps">3. Numbered Step-by-Step Guide Block</option>
+              <option value="table">4. Two-Column Technical Comparison Table</option>
+              <option value="cta">5. Inline Action / Download Button</option>
+              <option value="accordion">6. Expandable FAQ / Details Accordion</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="vb-title-1" id="vb-label-title-1">Box Heading / Title</label>
+            <input type="text" id="vb-title-1" class="input" value="✓ Verified Technical Note" />
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="vb-text-1" id="vb-label-text-1">Main Description / Content</label>
+            <textarea id="vb-text-1" class="textarea" rows="2">All packages are cryptographically signed with SHA-256 checksums and scanned across 72 security engines.</textarea>
+          </div>
+
+          <div class="field" id="vb-group-2" style="display: none">
+            <label class="field-label" for="vb-title-2" id="vb-label-title-2">Second Card Title / Row 2 Label</label>
+            <input type="text" id="vb-title-2" class="input" value="🔒 Zero-Latency Edge Delivery" />
+          </div>
+
+          <div class="field" id="vb-group-2-text" style="display: none">
+            <label class="field-label" for="vb-text-2" id="vb-label-text-2">Second Card Description / Row 2 Value</label>
+            <textarea id="vb-text-2" class="textarea" rows="2">Pre-compiled static pages load in under 50ms globally with zero database overhead.</textarea>
+          </div>
+
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
+            <button type="button" id="btn-confirm-visual-block" class="btn btn-primary">
+              + Insert Visual Block into Editor
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>
