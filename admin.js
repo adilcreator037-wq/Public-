@@ -2905,6 +2905,13 @@ async function bootstrapAdmin() {
   const session = await verifyAdminSession();
   if (session && session.authenticated) {
     await unlockAdminStudio();
+  } else if (session && session.loginHints) {
+    const emailInput = $('login-email');
+    const passInput = $('login-password');
+    if (session.loginHints.usingDefaultDevCredentials && emailInput && passInput) {
+      if (!emailInput.value) emailInput.value = session.loginHints.defaultEmailHint || 'admin@domain.com';
+      if (!passInput.value) passInput.value = 'admin123';
+    }
   }
 }
 

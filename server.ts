@@ -44,19 +44,58 @@ for (const dir of [DATA_DIR, UPLOADS_DIR, PUBLIC_STATIC_ROUTES_DIR, DIST_PUBLIC_
   }
 }
 
+function cleanEnvVal(val: unknown): string {
+  if (!val) return '';
+  return String(val)
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .trim();
+}
+
 function getAdminAuthEnv() {
-  const email = (process.env.ADMIN_EMAIL || 'admin@domain.com').trim();
-  const password = (process.env.ADMIN_PASSWORD || 'admin123').trim();
-  const apiKey = (process.env.ADMIN_API_KEY || '').trim();
-  const secret = (process.env.ADMIN_SESSION_SECRET || 'master-cms-hmac-secret-2026').trim();
+  const email =
+    cleanEnvVal(process.env.ADMIN_EMAIL) ||
+    cleanEnvVal(process.env.ADMIN_USER) ||
+    cleanEnvVal(process.env.ADMIN_USERNAME) ||
+    cleanEnvVal(process.env.CMS_ADMIN_EMAIL) ||
+    'admin@domain.com';
+
+  const password =
+    cleanEnvVal(process.env.ADMIN_PASSWORD) ||
+    cleanEnvVal(process.env.ADMIN_PASS) ||
+    cleanEnvVal(process.env.CMS_ADMIN_PASSWORD) ||
+    'admin123';
+
+  const apiKey =
+    cleanEnvVal(process.env.ADMIN_API_KEY) ||
+    cleanEnvVal(process.env.CMS_ADMIN_API_KEY) ||
+    '';
+
+  const secret =
+    cleanEnvVal(process.env.ADMIN_SESSION_SECRET) ||
+    cleanEnvVal(process.env.ADMIN_SECRET) ||
+    cleanEnvVal(process.env.SESSION_SECRET) ||
+    'master-cms-hmac-secret-2026';
+
+  const isCustomEmail = Boolean(
+    process.env.ADMIN_EMAIL ||
+    process.env.ADMIN_USER ||
+    process.env.ADMIN_USERNAME ||
+    process.env.CMS_ADMIN_EMAIL
+  );
+
+  const isCustomPassword = Boolean(
+    process.env.ADMIN_PASSWORD ||
+    process.env.ADMIN_PASS ||
+    process.env.CMS_ADMIN_PASSWORD
+  );
 
   return {
     email,
     password,
     apiKey,
     secret,
-    isCustomEmail: Boolean(process.env.ADMIN_EMAIL),
-    isCustomPassword: Boolean(process.env.ADMIN_PASSWORD),
+    isCustomEmail,
+    isCustomPassword,
     requiresApiKey: Boolean(apiKey)
   };
 }
