@@ -237,6 +237,74 @@ export function compileStaticSiteBundle(
     });
   }
 
+  // 9. Include Cloudflare Pages Functions (/functions) in the bundle
+  const functionsDir = path.resolve(process.cwd(), 'functions');
+  if (fs.existsSync(functionsDir)) {
+    const collectFuncs = (baseDir: string, relSub: string = ''): Array<{ rel: string; full: string }> => {
+      const cur = path.join(baseDir, relSub);
+      if (!fs.existsSync(cur)) return [];
+      let out: Array<{ rel: string; full: string }> = [];
+      const entries = fs.readdirSync(cur, { withFileTypes: true });
+      for (const ent of entries) {
+        const itemRel = relSub ? `${relSub}/${ent.name}` : ent.name;
+        const itemFull = path.join(baseDir, itemRel);
+        if (ent.isDirectory()) {
+          out = out.concat(collectFuncs(baseDir, itemRel));
+        } else if (ent.isFile()) {
+          out.push({ rel: itemRel, full: itemFull });
+        }
+      }
+      return out;
+    };
+
+    const funcList = collectFuncs(functionsDir);
+    for (const item of funcList) {
+      try {
+        const content = fs.readFileSync(item.full, 'utf-8');
+        files.push({
+          path: `functions/${item.rel}`,
+          content,
+          description: `Cloudflare Pages Edge Function (${item.rel})`
+        });
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  // 10. Include Admin Studio HTML/JS in the bundle for Cloudflare Pages
+  const adminHtmlPath = path.resolve(process.cwd(), 'admin.html');
+  const adminJsPath = path.resolve(process.cwd(), 'admin.js');
+  const fbConfigPath = path.resolve(process.cwd(), 'firebase-config.js');
+
+  if (fs.existsSync(adminHtmlPath)) {
+    const content = fs.readFileSync(adminHtmlPath, 'utf-8');
+    files.push({
+      path: 'admin.html',
+      content,
+      description: 'Master CMS Admin Studio HTML'
+    });
+    files.push({
+      path: 'admin/index.html',
+      content,
+      description: 'Master CMS Admin Studio Route (/admin)'
+    });
+  }
+  if (fs.existsSync(adminJsPath)) {
+    files.push({
+      path: 'admin.js',
+      content: fs.readFileSync(adminJsPath, 'utf-8'),
+      description: 'Master CMS Admin Studio Controller'
+    });
+  }
+  if (fs.existsSync(fbConfigPath)) {
+    files.push({
+      path: 'firebase-config.js',
+      content: fs.readFileSync(fbConfigPath, 'utf-8'),
+      description: 'Admin Studio Firebase & Edge API Client'
+    });
+  }
+
   // 7. Write to disk if requested (populates `/public/static-routes` and `/dist-public`)
   if (options?.writeToDisk) {
     if (options.publicStaticRoutesDir) {

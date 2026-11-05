@@ -595,14 +595,37 @@ export async function loginAdminUser(email, password, apiKey = '') {
   try {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
       body: JSON.stringify({ email, password, apiKey })
     });
-    const data = await res.json();
+
+    const contentType = res.headers.get('content-type') || '';
+    let data = null;
+
+    if (contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      const rawText = await res.text().catch(() => '');
+      if (res.status === 404) {
+        return {
+          success: false,
+          error:
+            'Cloudflare Pages Functions are not deployed yet (/api/admin/login returned HTTP 404). Ensure the "functions" directory is committed to GitHub and deployed in Cloudflare Pages.'
+        };
+      }
+      return {
+        success: false,
+        error: `Cloudflare Pages endpoint returned HTTP ${res.status} (${contentType || 'non-JSON'}). Verify your deployment.`
+      };
+    }
+
     if (!res.ok || !data.success) {
       return {
         success: false,
-        error: data.error || 'Invalid credentials.'
+        error: data.error || 'Invalid credentials. Check ADMIN_EMAIL and ADMIN_PASSWORD in Cloudflare environment variables.'
       };
     }
 
@@ -625,9 +648,14 @@ export async function verifyAdminSession() {
   const token = getAdminAuthToken();
   try {
     const res = await fetch('/api/admin/verify', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
     });
-    if (res.ok) {
+
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.envDiagnostics?.firebaseConfig) {
         serverInjectedFirebaseConfig = data.envDiagnostics.firebaseConfig;

@@ -3,12 +3,12 @@
   "canonicalPath": "/privacy-policy",
   "viewType": "standalone-page",
   "metaTitle": "Privacy Policy — Data Protection & Zero-Tracking | ApexMobile",
-  "metaDescription": "Read the official ApexMobile Privacy Policy covering data protection, local browser caching, and GDPR/CCPA compliance.",
+  "metaDescription": "Read the official ApexMobile Privacy Policy covering data protection, static edge delivery, and GDPR/CCPA compliance.",
   "ogImage": "/assets/hero-banner.svg",
   "heroH1": "Privacy Policy",
   "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "\n    <p style=\"font-size:13.5px; color:#6B7280; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);\">\n      Official Data Protection &amp; Zero-Tracking Compliance Document · Last Updated: <strong>November 2026</strong>\n    </p>\n    \n    <h2 id=\"1-privacy-policy-amp-data-protection-overview\">1. Privacy Policy &amp; Data Protection Overview</h2>\n<p>Welcome to <strong>ApexMobile</strong> (<a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a>). Protecting your privacy and keeping your browsing experience secure is our top priority. This Privacy Policy explains how information is handled when you visit our website and download our software packages.</p>\n\n<h3 id=\"information-we-collect\">Information We Collect</h3>\n<p>We do not require account registration or collect personal identity documents to browse our guides or download public releases. Standard edge server logs (such as anonymized IP region, browser user-agent, and referring URLs) are processed strictly to maintain network security, DDoS mitigation, and service reliability.</p>\n\n<h3 id=\"local-browser-caching-amp-zero-tracking-architecture\">Local Browser Caching &amp; Zero-Tracking Architecture</h3>\n<p>Our website uses browser <code>localStorage</code> to cache configuration data locally on your device so repeat visits render with zero latency. We do not sell, rent, or trade user data to third-party data brokers.</p>\n\n<h3 id=\"cryptographic-package-verification\">Cryptographic Package Verification</h3>\n<p>All files distributed through ApexMobile are verified with SHA-256 checksums. Users are encouraged to verify package hashes prior to installation.</p>\n\n<h3 id=\"your-privacy-rights-amp-contact-information\">Your Privacy Rights &amp; Contact Information</h3>\n<p>If you have any questions about this Privacy Policy, GDPR/CCPA compliance, or wish to contact our data protection officer, please email us directly at <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a>.</p>\n<p><em>Effective &amp; Last Updated: November 2026</em></p>\n  ",
+  "renderedMainHtml": "\n    <p style=\"font-size:13.5px; color:#6B7280; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);\">\n      Official Data Protection &amp; Zero-Tracking Compliance Document · Last Updated: <strong>November 2026</strong>\n    </p>\n    \n    <h2 id=\"1-privacy-policy-amp-data-protection-overview\">1. Privacy Policy &amp; Data Protection Overview</h2>\n<p>Welcome to <strong>ApexMobile</strong> (<a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a>). Protecting your privacy and keeping your browsing experience secure is our top priority. This Privacy Policy explains how information is handled when you visit our website and download our software packages.</p>\n\n<h3 id=\"information-we-collect\">Information We Collect</h3>\n<p>We do not require account registration or collect personal identity documents to browse our guides or download public releases. Standard edge server logs (such as anonymized IP region, browser user-agent, and referring URLs) are processed strictly to maintain network security, DDoS mitigation, and service reliability.</p>\n\n<h3 id=\"static-zero-tracking-architecture\">Static Zero-Tracking Architecture</h3>\n<p>Our public website is pre-compiled as pure static HTML with zero third-party tracking scripts or database calls in the browser. We do not sell, rent, or trade user data to third-party data brokers.</p>\n\n<h3 id=\"cryptographic-package-verification\">Cryptographic Package Verification</h3>\n<p>All files distributed through ApexMobile are verified with SHA-256 checksums. Users are encouraged to verify package hashes prior to installation.</p>\n\n<h3 id=\"your-privacy-rights-amp-contact-information\">Your Privacy Rights &amp; Contact Information</h3>\n<p>If you have any questions about this Privacy Policy, GDPR/CCPA compliance, or wish to contact our data protection officer, please email us directly at <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a>.</p>\n<p><em>Effective &amp; Last Updated: November 2026</em></p>\n  ",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
@@ -66,7 +66,7 @@
         "@id": "https://apexmobile.example.com/privacy-policy/#webpage",
         "url": "https://apexmobile.example.com/privacy-policy",
         "name": "Privacy Policy — Data Protection & Zero-Tracking | ApexMobile",
-        "description": "Read the official ApexMobile Privacy Policy covering data protection, local browser caching, and GDPR/CCPA compliance.",
+        "description": "Read the official ApexMobile Privacy Policy covering data protection, static edge delivery, and GDPR/CCPA compliance.",
         "dateModified": "November 2026",
         "breadcrumb": {
           "@id": "https://apexmobile.example.com/privacy-policy/#breadcrumb"
@@ -293,5 +293,5 @@
       "copyright": "© 2026 ApexMobile. All rights reserved."
     }
   },
-  "updatedAt": 1793897560079
+  "updatedAt": 1762265000000
 }
