@@ -26,6 +26,12 @@ import {
 } from './cms-types';
 import { resolveRouteView, buildJsonLdSchema, applySmartInternalLinks } from './cms-seo';
 
+function wrapEditorialTables(html: string): string {
+  if (!html || !html.includes('<table')) return html;
+  if (html.includes('table-scroll-wrapper')) return html;
+  return html.replace(/<table\b[\s\S]*?<\/table>/gi, (tbl) => `<div class="table-scroll-wrapper">${tbl}</div>`);
+}
+
 /**
  * Pure Isomorphic HTML Renderer for Homepage (`renderHomeContentHtml`)
  */
@@ -77,7 +83,7 @@ export function renderHomeContentHtml(config: SiteConfig): string {
   if (faqs.enabled !== false && Array.isArray(faqs.items) && faqs.items.length > 0) {
     tocLinks.push({ href: '#frequently-asked-questions', label: 'FAQs' });
   }
-  if (tocLinks.length >= 2) {
+  if (ui.showTocJumpBar !== false && tocLinks.length >= 2) {
     introParts.push(`
       <nav class="toc-jump-bar" aria-label="On-page table of contents">
         <span class="toc-jump-label">On this page</span>
@@ -116,54 +122,56 @@ export function renderHomeContentHtml(config: SiteConfig): string {
     blockMap.specs = `
       <section id="technical-specifications" data-meta-title="${escapeHtml(specs.metaTitle)}" data-meta-description="${escapeHtml(specs.metaDescription)}">
         <h2 id="package-specs-heading">${escapeHtml(specs.heading || 'Technical Package Specifications')}</h2>
-        <table>
-          <tbody>
-            <tr>
-              <th>Application Name</th>
-              <td><strong>${escapeHtml(specs.appName || config.brand?.name || 'ApexMobile')}</strong></td>
-            </tr>
-            <tr>
-              <th>Latest Version</th>
-              <td><code>${escapeHtml(specs.version || 'v4.8.2')}</code></td>
-            </tr>
-            <tr>
-              <th>Package Size</th>
-              <td>${escapeHtml(specs.fileSize || '64.2 MB')}</td>
-            </tr>
-            <tr>
-              <th>System Requirements</th>
-              <td>${escapeHtml(specs.operatingSystem || 'Android 9.0+ / iOS 15.0+')}</td>
-            </tr>
-            <tr>
-              <th>Package Format</th>
-              <td>${escapeHtml(specs.packageFormat || 'Signed Package')}</td>
-            </tr>
-            <tr>
-              <th>License &amp; Cost</th>
-              <td>${escapeHtml(specs.license || 'Freeware')}</td>
-            </tr>
-            <tr>
-              <th>Security Scan Status</th>
-              <td><strong style="color:#059669;">✓ ${escapeHtml(specs.securityStatus || 'Verified Clean')}</strong></td>
-            </tr>
-            <tr>
-              <th>Last Updated</th>
-              <td>${escapeHtml(specs.lastUpdated || 'November 2026')}</td>
-            </tr>
-            <tr>
-              <th>SHA-256 Checksum</th>
-              <td>
-                <code>${escapeHtml(specs.sha256 || '')}</code>
-                ${
-                  specs.sha256
-                    ? `<button type="button" class="copy-hash-btn" data-copy-text="${escapeHtml(specs.sha256)}" aria-label="Copy SHA-256 checksum">Copy</button>`
-                    : ''
-                }
-              </td>
-            </tr>
-            ${customRowsHtml}
-          </tbody>
-        </table>
+        <div class="table-scroll-wrapper">
+          <table>
+            <tbody>
+              <tr>
+                <th>Application Name</th>
+                <td><strong>${escapeHtml(specs.appName || config.brand?.name || 'ApexMobile')}</strong></td>
+              </tr>
+              <tr>
+                <th>Latest Version</th>
+                <td><code>${escapeHtml(specs.version || 'v4.8.2')}</code></td>
+              </tr>
+              <tr>
+                <th>Package Size</th>
+                <td>${escapeHtml(specs.fileSize || '64.2 MB')}</td>
+              </tr>
+              <tr>
+                <th>System Requirements</th>
+                <td>${escapeHtml(specs.operatingSystem || 'Android 9.0+ / iOS 15.0+')}</td>
+              </tr>
+              <tr>
+                <th>Package Format</th>
+                <td>${escapeHtml(specs.packageFormat || 'Signed Package')}</td>
+              </tr>
+              <tr>
+                <th>License &amp; Cost</th>
+                <td>${escapeHtml(specs.license || 'Freeware')}</td>
+              </tr>
+              <tr>
+                <th>Security Scan Status</th>
+                <td><strong style="color:#059669;">✓ ${escapeHtml(specs.securityStatus || 'Verified Clean')}</strong></td>
+              </tr>
+              <tr>
+                <th>Last Updated</th>
+                <td>${escapeHtml(specs.lastUpdated || 'November 2026')}</td>
+              </tr>
+              <tr>
+                <th>SHA-256 Checksum</th>
+                <td>
+                  <code>${escapeHtml(specs.sha256 || '')}</code>
+                  ${
+                    specs.sha256
+                      ? `<button type="button" class="copy-hash-btn" data-copy-text="${escapeHtml(specs.sha256)}" aria-label="Copy SHA-256 checksum">Copy</button>`
+                      : ''
+                  }
+                </td>
+              </tr>
+              ${customRowsHtml}
+            </tbody>
+          </table>
+        </div>
       </section>
     `;
   }
@@ -192,7 +200,9 @@ export function renderHomeContentHtml(config: SiteConfig): string {
               </div>`
             : '';
 
-        const enhancedSectionHtml = applySmartInternalLinks(sec.htmlContent || '', config, '/');
+        const enhancedSectionHtml = wrapEditorialTables(
+          applySmartInternalLinks(sec.htmlContent || '', config, '/')
+        );
         return `
           <section id="${slug}" data-meta-title="${escapeHtml(sec.metaTitle)}" data-meta-description="${escapeHtml(sec.metaDescription)}">
             ${badgeHtml}
@@ -209,7 +219,7 @@ export function renderHomeContentHtml(config: SiteConfig): string {
 
   // Block: Raw HTML
   if (rawHtml && rawHtml.trim()) {
-    blockMap.rawHtml = applySmartInternalLinks(rawHtml, config, '/');
+    blockMap.rawHtml = wrapEditorialTables(applySmartInternalLinks(rawHtml, config, '/'));
   }
 
   // Block: Dedicated Daily News Section
@@ -260,14 +270,19 @@ export function renderHomeContentHtml(config: SiteConfig): string {
     `;
   }
 
-  // Block: Frequently Asked Questions Section
+  // Block: Frequently Asked Questions Section (Pre-rendered cleanly as native <details> accordion when enabled for zero CLS)
   if (faqs.enabled !== false && Array.isArray(faqs.items) && faqs.items.length > 0) {
+    const useAccordion = ui.enableFaqAccordion !== false;
     const faqItemsHtml = faqs.items
-      .map((f) => `<h3>${escapeHtml(f.question || '')}</h3>\n<p>${escapeHtml(f.answer || '')}</p>`)
+      .map((f) =>
+        useAccordion
+          ? `<details class="faq-item"><summary>${escapeHtml(f.question || '')}</summary><div class="faq-answer"><p>${escapeHtml(f.answer || '')}</p></div></details>`
+          : `<div class="faq-static-item"><h3>${escapeHtml(f.question || '')}</h3>\n<p>${escapeHtml(f.answer || '')}</p></div>`
+      )
       .join('\n');
 
     blockMap.faqs = `
-      <section id="frequently-asked-questions" class="cv-auto-section" data-meta-title="${escapeHtml(faqs.metaTitle)}" data-meta-description="${escapeHtml(faqs.metaDescription)}">
+      <section id="frequently-asked-questions" data-meta-title="${escapeHtml(faqs.metaTitle)}" data-meta-description="${escapeHtml(faqs.metaDescription)}">
         <h2 id="faqs">${escapeHtml(faqs.heading || 'Frequently Asked Questions')}</h2>
         ${faqItemsHtml}
       </section>
@@ -412,10 +427,12 @@ export function renderNewsArticleContentHtml(article: NewsArticleItem, config: S
       `
       : '';
 
-  const enhancedArticleBody = applySmartInternalLinks(
-    article.htmlContent || `<p>${escapeHtml(article.summary || '')}</p>`,
-    config,
-    `/news/${generateSlug(article.slug || article.title)}`
+  const enhancedArticleBody = wrapEditorialTables(
+    applySmartInternalLinks(
+      article.htmlContent || `<p>${escapeHtml(article.summary || '')}</p>`,
+      config,
+      `/news/${generateSlug(article.slug || article.title)}`
+    )
   );
 
   return `
@@ -444,9 +461,11 @@ export function renderStandalonePageContentHtml(page: StandalonePageItem, config
     : '';
 
   const subtitleText = page.subtitle || 'Official Document';
-  const enhancedHtml = config
-    ? applySmartInternalLinks(page.htmlContent || '', config, `/${generateSlug(page.slug || page.label)}`)
-    : page.htmlContent || '';
+  const enhancedHtml = wrapEditorialTables(
+    config
+      ? applySmartInternalLinks(page.htmlContent || '', config, `/${generateSlug(page.slug || page.label)}`)
+      : page.htmlContent || ''
+  );
 
   return `
     <p style="font-size:13.5px; color:#6B7280; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);">
@@ -872,14 +891,21 @@ export function renderCompleteStaticPageHtml(
     `<span id="navbar-logo-text" class="brand-logo-text">${brandName}</span>`
   );
 
-  // Pre-render Header News Button count
+  // Pre-render Header Sticky Mode & News Button state
+  if (ui.stickyHeader === false) {
+    html = html.replace(
+      /<header class="sticky-header">/i,
+      `<header class="sticky-header" style="position:relative;">`
+    );
+  }
   const newsBtnLabel = ui.showNewsCountInHeader !== false
     ? `${ui.headerNewsButtonLabel || 'News'} (${payload.shell.newsCount})`
     : `${ui.headerNewsButtonLabel || 'News'}`;
+  const isNewsActive = payload.viewType === 'news-hub' || payload.viewType === 'news-article';
   html = html.replace(
     /<a href="\/news" id="header-news-btn" class="header-news-link" data-spa-link>[\s\S]*?<\/a>/i,
-    `<a href="/news" id="header-news-btn" class="header-news-link ${
-      ui.showHeaderNewsButton === false ? 'hidden' : ''
+    `<a href="/news" id="header-news-btn" class="header-news-link${isNewsActive ? ' is-active' : ''}${
+      ui.showHeaderNewsButton === false ? ' hidden' : ''
     }" data-spa-link><span class="header-news-dot"></span><span>${escapeHtml(newsBtnLabel)}</span></a>`
   );
 
@@ -890,7 +916,45 @@ export function renderCompleteStaticPageHtml(
     `<ul class="nav-drawer-list" id="drawer-links-list">${drawerHtml}</ul>`
   );
 
-  // Pre-render Hero H1 & CTA Grid visibility
+  // Pre-render Standalone Page Breadcrumb & Subpage Switcher Bar (`#standalone-back-bar`)
+  const showBackBar = payload.viewType !== 'home' && ui.showBreadcrumbs !== false;
+  const backHomeLabel = escapeHtml(ui.backToHomeLabel || '← Back to Main Page');
+  const allNewsLabel = escapeHtml(ui.allNewsBreadcrumbLabel || 'All Daily News →');
+  const showNewsBack = payload.viewType === 'news-article';
+  const subpagePillsHtml =
+    ui.showSubpageSwitcherPills !== false && Array.isArray(payload.shell.allSubpagePills)
+      ? payload.shell.allSubpagePills
+          .map((pill) => {
+            const isActivePill =
+              payload.canonicalPath === pill.href ||
+              (pill.href === '/news' && payload.viewType === 'news-article');
+            return `<a href="${escapeHtml(pill.href)}" data-spa-link class="subpage-pill${
+              isActivePill ? ' active' : ''
+            }">${escapeHtml(pill.label)}</a>`;
+          })
+          .join('')
+      : '';
+  const backBarHtml = `<div id="standalone-back-bar" class="back-home-bar${showBackBar ? '' : ' hidden'}">
+      <div class="back-home-row">
+        <a href="/" id="back-home-anchor" class="back-home-link" data-spa-link>${backHomeLabel}</a>
+        <a href="/news" id="back-news-anchor" class="back-home-link${showNewsBack ? '' : ' hidden'}" data-spa-link>${allNewsLabel}</a>
+      </div>
+      <div id="subpage-switcher-pills" class="subpage-tabs-row${
+        ui.showSubpageSwitcherPills === false ? ' hidden' : ''
+      }">${subpagePillsHtml}</div>
+    </div>`;
+  html = html.replace(
+    /<div id="standalone-back-bar" class="back-home-bar hidden">[\s\S]*?<\/div>\s*<\/div>/i,
+    backBarHtml
+  );
+
+  // Pre-render Hero Section visibility, H1 & CTA Grid
+  if (!payload.showHeroSection) {
+    html = html.replace(
+      /<section id="hero-section" class="hero-container">/i,
+      `<section id="hero-section" class="hero-container hidden">`
+    );
+  }
   html = html.replace(
     /<h1 id="hero-heading" class="hero-title">[\s\S]*?<\/h1>/i,
     `<h1 id="hero-heading" class="hero-title">${escapeHtml(payload.heroH1)}</h1>`
@@ -901,17 +965,24 @@ export function renderCompleteStaticPageHtml(
       `<div id="hero-cta-grid" class="hero-action-grid hidden">`
     );
   } else {
+    const secCta = payload.shell.heroCtas?.secondaryCta;
+    const priCta = payload.shell.heroCtas?.primaryCta;
     html = html.replace(
       /<a id="hero-cta-secondary" class="btn-secondary" href="[^"]*">[\s\S]*?<\/a>/i,
-      `<a id="hero-cta-secondary" class="btn-secondary" href="${escapeHtml(config.hero?.secondaryCta?.url || '#')}" data-spa-link>${escapeHtml(config.hero?.secondaryCta?.label || 'Installation Guide')}</a>`
+      `<a id="hero-cta-secondary" class="btn-secondary" href="${escapeHtml(secCta?.url || '#')}"${
+        secCta?.relSponsored ? ' rel="sponsored noopener"' : ''
+      } data-spa-link>${escapeHtml(secCta?.label || 'Installation Guide')}</a>`
     );
-    const primaryHref =
-      config.securityGate?.enabled !== false ? '/moreinfo' : config.hero?.primaryCta?.url || '#';
+    const primaryHref = priCta?.url || '#';
     const primaryRel =
-      primaryHref === '/moreinfo' || primaryHref === '/download' ? ' rel="nofollow noopener"' : '';
+      primaryHref === '/moreinfo' || primaryHref === '/download'
+        ? ' rel="nofollow noopener"'
+        : priCta?.relSponsored
+        ? ' rel="sponsored noopener"'
+        : '';
     html = html.replace(
-      /<a id="hero-cta-primary" class="btn-primary" href="[^"]*">[\s\S]*?<\/a>/i,
-      `<a id="hero-cta-primary" class="btn-primary" href="${escapeHtml(primaryHref)}"${primaryRel} data-spa-link>${escapeHtml(config.hero?.primaryCta?.label || 'Download Official Package')}</a>`
+      /<a id="hero-cta-primary" class="btn-primary" href="[^"]*"[^>]*>[\s\S]*?<\/a>/i,
+      `<a id="hero-cta-primary" class="btn-primary" href="${escapeHtml(primaryHref)}"${primaryRel} data-spa-link>${escapeHtml(priCta?.label || 'Download Official Package')}</a>`
     );
   }
 
@@ -964,17 +1035,42 @@ export function renderCompleteStaticPageHtml(
     );
   }
 
+  if (ui.showFooterDisclaimer === false) {
+    html = html.replace(
+      /<div id="footer-disclaimer-block">/i,
+      `<div id="footer-disclaimer-block" class="hidden">`
+    );
+  }
   html = html.replace(
-    /<p id="footer-disclaimer" class="footer-disclaimer-text"><\/p>/i,
+    /<div id="footer-disclaimer-heading" class="footer-heading">[\s\S]*?<\/div>/i,
+    `<div id="footer-disclaimer-heading" class="footer-heading">${escapeHtml(config.navigation?.disclaimerHeading || 'Legal & Trademark Disclaimer')}</div>`
+  );
+  html = html.replace(
+    /<p id="footer-disclaimer" class="footer-disclaimer-text">[\s\S]*?<\/p>/i,
     `<p id="footer-disclaimer" class="footer-disclaimer-text">${escapeHtml(config.navigation?.disclaimer || '')}</p>`
   );
   html = html.replace(
-    /<div id="footer-links-list" class="footer-links-stack"><\/div>/i,
+    /<div id="footer-links-heading" class="footer-heading">[\s\S]*?<\/div>/i,
+    `<div id="footer-links-heading" class="footer-heading${ui.showFooterLinksHeading === false ? ' hidden' : ''}">${escapeHtml(config.navigation?.siteLinksHeading || 'Official Legal & Support Pages')}</div>`
+  );
+  html = html.replace(
+    /<div id="footer-links-list" class="footer-links-stack">[\s\S]*?<\/div>/i,
     `<div id="footer-links-list" class="footer-links-stack">${footerLinksHtml}</div>`
   );
   html = html.replace(
-    /<p id="footer-copyright" class="footer-copyright-text"><\/p>/i,
+    /<p id="footer-copyright" class="footer-copyright-text">[\s\S]*?<\/p>/i,
     `<p id="footer-copyright" class="footer-copyright-text">${escapeHtml(config.navigation?.copyright || '')}</p>`
+  );
+
+  // Pre-render Floating Bottom Pill CTA (`#floating-bottom-cta` + `#floating-cta-btn`)
+  const fl = payload.shell.heroCtas?.floatingCta;
+  const showFloating = Boolean(fl?.enabled && payload.viewType === 'home');
+  const flHref = fl?.url || '/moreinfo';
+  const flRel = flHref === '/moreinfo' || flHref === '/download' ? ' rel="nofollow noopener"' : '';
+  const flLabel = escapeHtml(fl?.label || 'Download');
+  html = html.replace(
+    /<div id="floating-bottom-cta" class="floating-cta-wrapper[^"]*">[\s\S]*?<\/div>/i,
+    `<div id="floating-bottom-cta" class="floating-cta-wrapper${showFloating ? '' : ' hidden'}">\n      <a id="floating-cta-btn" class="floating-cta-button" href="${escapeHtml(flHref)}"${flRel}>${flLabel}</a>\n    </div>`
   );
 
   // 4. Inject LCP Preload Hints, Web App Manifest, Apple Touch Icon, Sitemap Link, Webmaster Verification, RSS, JSON-LD, and Static Initial Route Payload (ZERO Firebase!)
@@ -1024,9 +1120,17 @@ export function renderCompleteStaticPageHtml(
     );
   }
 
+  const hasExistingJsonLd = /<script\s+id="dynamic-jsonld-schema"[^>]*>[\s\S]*?<\/script>/i.test(html);
+  if (hasExistingJsonLd) {
+    html = html.replace(
+      /<script\s+id="dynamic-jsonld-schema"[^>]*>[\s\S]*?<\/script>/i,
+      `<script id="dynamic-jsonld-schema" type="application/ld+json">${jsonLd}</script>`
+    );
+  }
+
   const preloadScript = `
   ${extraHeadTags.join('\n  ')}
-  <script id="dynamic-jsonld-schema" type="application/ld+json">${jsonLd}</script>
+  ${hasExistingJsonLd ? '' : `<script id="dynamic-jsonld-schema" type="application/ld+json">${jsonLd}</script>`}
   <script>
     window.__INITIAL_ROUTE_PAYLOAD__ = ${JSON.stringify(payload).replace(/<\//g, '<\\/')};
   </script>

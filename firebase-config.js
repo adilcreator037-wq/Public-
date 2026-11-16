@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import {
   getFirestore,
   doc,
@@ -23,37 +23,62 @@ import {
 import {
   MASTER_DEFAULT_CONFIG,
   mergeSiteConfig,
-  buildPartialRoutePayload
+  buildPartialRoutePayload,
+  parseFirebaseConfigSnippet,
+  normalizeFirebaseClientConfig,
+  isValidFirebaseClientConfig
 } from './src/utils/cms-engine';
 
 export const DEFAULT_SITE_CONFIG = MASTER_DEFAULT_CONFIG;
+export { parseFirebaseConfigSnippet, normalizeFirebaseClientConfig, isValidFirebaseClientConfig };
 
 let serverInjectedFirebaseConfig =
   typeof window !== 'undefined' && window.__SERVER_FIREBASE_CONFIG__
     ? window.__SERVER_FIREBASE_CONFIG__
     : null;
+let lastEnvDiagnostics = null;
 let firestoreDb = null;
+let firestoreDbKey = '';
+
+export function getLastEnvDiagnostics() {
+  return lastEnvDiagnostics;
+}
+
+/**
+ * Safe response JSON parser that never throws raw "Unexpected end of JSON input"
+ */
+async function safeReadJsonResponse(res) {
+  const text = await res.text().catch(() => '');
+  if (!text || !text.trim()) {
+    return { ok: false, data: null, rawText: '' };
+  }
+  try {
+    return { ok: true, data: JSON.parse(text), rawText: text };
+  } catch {
+    return { ok: false, data: null, rawText: text };
+  }
+}
 
 /**
  * Resolve active Firebase configuration from:
  * 1. Admin custom override in localStorage (`firebase_custom_config`)
- * 2. Server-injected .env variables (`window.__SERVER_FIREBASE_CONFIG__`)
+ * 2. Authenticated server/edge .env variables (`serverInjectedFirebaseConfig`)
  * 3. Vite client environment variables (`import.meta.env.VITE_FIREBASE_*`)
  */
-export function getActiveFirebaseConfig() {
+export function getActiveFirebaseConfig(overrideConfig = null) {
+  if (overrideConfig && typeof overrideConfig === 'object') {
+    const normalized = normalizeFirebaseClientConfig(overrideConfig);
+    return { ...normalized, source: 'candidate' };
+  }
+
   try {
     const saved = localStorage.getItem('firebase_custom_config');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && parsed.apiKey && parsed.projectId) {
+      const normalized = normalizeFirebaseClientConfig(parsed);
+      if (normalized.apiKey && normalized.projectId) {
         return {
-          apiKey: parsed.apiKey.trim(),
-          authDomain: (parsed.authDomain || `${parsed.projectId.trim()}.firebaseapp.com`).trim(),
-          projectId: parsed.projectId.trim(),
-          storageBucket: (parsed.storageBucket || `${parsed.projectId.trim()}.appspot.com`).trim(),
-          messagingSenderId: (parsed.messagingSenderId || '').trim(),
-          appId: (parsed.appId || '').trim(),
-          databaseId: (parsed.databaseId || '(default)').trim(),
+          ...normalized,
           source: 'admin-override'
         };
       }
@@ -68,13 +93,7 @@ export function getActiveFirebaseConfig() {
 
   if (srvCfg && srvCfg.apiKey && srvCfg.projectId) {
     return {
-      apiKey: srvCfg.apiKey,
-      authDomain: srvCfg.authDomain || `${srvCfg.projectId}.firebaseapp.com`,
-      projectId: srvCfg.projectId,
-      storageBucket: srvCfg.storageBucket || `${srvCfg.projectId}.appspot.com`,
-      messagingSenderId: srvCfg.messagingSenderId || '',
-      appId: srvCfg.appId || '',
-      databaseId: srvCfg.databaseId || '(default)',
+      ...normalizeFirebaseClientConfig(srvCfg),
       source: 'server-env'
     };
   }
@@ -83,13 +102,15 @@ export function getActiveFirebaseConfig() {
   const viteProjectId = (import.meta.env?.VITE_FIREBASE_PROJECT_ID || '').trim();
   if (viteApiKey && viteProjectId) {
     return {
-      apiKey: viteApiKey,
-      authDomain: (import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || `${viteProjectId}.firebaseapp.com`).trim(),
-      projectId: viteProjectId,
-      storageBucket: (import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET || `${viteProjectId}.appspot.com`).trim(),
-      messagingSenderId: (import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
-      appId: (import.meta.env?.VITE_FIREBASE_APP_ID || '').trim(),
-      databaseId: (import.meta.env?.VITE_FIREBASE_DATABASE_ID || '(default)').trim(),
+      ...normalizeFirebaseClientConfig({
+        apiKey: viteApiKey,
+        authDomain: import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || '',
+        projectId: viteProjectId,
+        storageBucket: import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET || '',
+        messagingSenderId: import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+        appId: import.meta.env?.VITE_FIREBASE_APP_ID || '',
+        databaseId: import.meta.env?.VITE_FIREBASE_DATABASE_ID || '(default)'
+      }),
       source: 'vite-env'
     };
   }
@@ -107,14 +128,7 @@ export function getActiveFirebaseConfig() {
 }
 
 export function isRealFirebaseConfig(config = getActiveFirebaseConfig()) {
-  return Boolean(
-    config &&
-    config.apiKey &&
-    config.projectId &&
-    !config.apiKey.includes('DummyKey') &&
-    !config.apiKey.includes('YOUR_') &&
-    !config.projectId.includes('my-single-domain-cms')
-  );
+  return isValidFirebaseClientConfig(config);
 }
 
 export function saveActiveFirebaseConfig(config) {
@@ -122,21 +136,11 @@ export function saveActiveFirebaseConfig(config) {
     if (!config || (!config.apiKey && !config.projectId)) {
       localStorage.removeItem('firebase_custom_config');
     } else {
-      const pid = (config.projectId || '').trim();
-      localStorage.setItem(
-        'firebase_custom_config',
-        JSON.stringify({
-          apiKey: (config.apiKey || '').trim(),
-          authDomain: (config.authDomain || (pid ? `${pid}.firebaseapp.com` : '')).trim(),
-          projectId: pid,
-          storageBucket: (config.storageBucket || (pid ? `${pid}.appspot.com` : '')).trim(),
-          messagingSenderId: (config.messagingSenderId || '').trim(),
-          appId: (config.appId || '').trim(),
-          databaseId: (config.databaseId || '(default)').trim()
-        })
-      );
+      const normalized = normalizeFirebaseClientConfig(config);
+      localStorage.setItem('firebase_custom_config', JSON.stringify(normalized));
     }
     firestoreDb = null;
+    firestoreDbKey = '';
     return true;
   } catch (e) {
     console.error('Failed saving custom Firebase config:', e);
@@ -144,33 +148,128 @@ export function saveActiveFirebaseConfig(config) {
   }
 }
 
+export function clearActiveFirebaseConfig() {
+  try {
+    localStorage.removeItem('firebase_custom_config');
+    firestoreDb = null;
+    firestoreDbKey = '';
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Initialize or retrieve Firestore instance when valid credentials exist
+ * Initialize or retrieve Firestore instance for the active (or candidate) config.
+ * Uses named Firebase apps keyed by project + database + apiKey suffix so changing
+ * Firebase keys in Admin Studio immediately switches to the new Firebase project.
  */
-export function getFirestoreInstance() {
-  if (firestoreDb) return firestoreDb;
-  const active = getActiveFirebaseConfig();
+export function getFirestoreInstance(candidateConfig = null) {
+  const active = getActiveFirebaseConfig(candidateConfig);
   if (!isRealFirebaseConfig(active)) return null;
 
+  const targetKey = `cms-${active.projectId}-${active.databaseId || 'default'}-${active.apiKey.slice(-6)}`;
+  if (!candidateConfig && firestoreDb && firestoreDbKey === targetKey) {
+    return firestoreDb;
+  }
+
   try {
-    const appInstance = !getApps().length
-      ? initializeApp({
+    const existingApp = getApps().find((a) => a.name === targetKey);
+    const appInstance =
+      existingApp ||
+      initializeApp(
+        {
           apiKey: active.apiKey,
           authDomain: active.authDomain,
           projectId: active.projectId,
           storageBucket: active.storageBucket,
           messagingSenderId: active.messagingSenderId,
           appId: active.appId
-        })
-      : getApp();
-    firestoreDb =
+        },
+        targetKey
+      );
+
+    const db =
       active.databaseId && active.databaseId !== '(default)'
         ? getFirestore(appInstance, active.databaseId)
         : getFirestore(appInstance);
-    return firestoreDb;
+
+    if (!candidateConfig) {
+      firestoreDb = db;
+      firestoreDbKey = targetKey;
+    }
+    return db;
   } catch (err) {
     console.warn('Firestore initialization notice:', err.message);
     return null;
+  }
+}
+
+/**
+ * Test Firebase Firestore connectivity via both Browser SDK (`getDoc`) & Server REST (`/api/firebase/test`)
+ */
+export async function testFirebaseConnectionRemote(candidateConfig = null) {
+  const active = getActiveFirebaseConfig(candidateConfig);
+  if (!isRealFirebaseConfig(active)) {
+    return {
+      success: false,
+      code: 'unconfigured',
+      error: 'Valid Firebase API Key (AIza...) and Project ID are required before testing.'
+    };
+  }
+
+  const db = getFirestoreInstance(candidateConfig);
+  let sdkError = null;
+  if (db) {
+    try {
+      const configRef = doc(db, 'siteConfig', 'main');
+      const snap = await getDoc(configRef);
+      return {
+        success: true,
+        via: 'firebase-sdk',
+        documentExists: snap.exists(),
+        cloudConfig: snap.exists() ? mergeSiteConfig(snap.data(), MASTER_DEFAULT_CONFIG) : null,
+        projectId: active.projectId,
+        databaseId: active.databaseId,
+        message: snap.exists()
+          ? `Connected to Firebase Firestore (${active.projectId}) — live siteConfig/main document synced.`
+          : `Connected to Firebase Firestore (${active.projectId}). Document siteConfig/main will be created when you publish.`
+      };
+    } catch (err) {
+      sdkError = err;
+    }
+  }
+
+  // Fallback / diagnostic verification via server REST endpoint
+  const token = getAdminAuthToken();
+  try {
+    const res = await fetch('/api/firebase/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ firebaseConfig: active })
+    });
+    const parsed = await safeReadJsonResponse(res);
+    if (res.ok && parsed.data?.success) {
+      return {
+        ...parsed.data,
+        via: 'rest-diagnostic'
+      };
+    }
+    return {
+      success: false,
+      code: parsed.data?.code || sdkError?.code || 'connection-failed',
+      error: parsed.data?.error || sdkError?.message || `Firestore check returned HTTP ${res.status}`
+    };
+  } catch (err) {
+    return {
+      success: false,
+      code: sdkError?.code || 'network-error',
+      error: sdkError?.message || err.message || 'Could not reach Firebase Firestore.'
+    };
   }
 }
 
@@ -221,19 +320,27 @@ export function getCachedSiteConfigSync() {
  */
 export async function getSiteConfigRemote() {
   let latestConfig = null;
+  const token = getAdminAuthToken();
 
-  // 1. Fetch from Live Backend API (/api/config with cache: 'no-store')
+  // 1. Fetch from Protected Live Backend API (/api/config with cache: 'no-store')
   try {
     const response = await fetch('/api/config', {
       cache: 'no-store',
-      headers: { Accept: 'application/json' }
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
     });
     if (response.ok) {
-      const data = await response.json();
-      if (data.firebaseEnv?.isConfigured && data.firebaseEnv.config) {
+      const parsed = await safeReadJsonResponse(response);
+      const data = parsed.data;
+      if (data?.firebaseEnv?.isConfigured && data.firebaseEnv.config) {
         serverInjectedFirebaseConfig = data.firebaseEnv.config;
       }
-      if (data.config) {
+      if (data?.envDiagnostics) {
+        lastEnvDiagnostics = data.envDiagnostics;
+      }
+      if (data?.config) {
         latestConfig = mergeSiteConfig(data.config, MASTER_DEFAULT_CONFIG);
       }
     }
@@ -632,34 +739,40 @@ export async function loginAdminUser(email, password, apiKey = '') {
     });
 
     const contentType = res.headers.get('content-type') || '';
-    let data = null;
+    const parsed = await safeReadJsonResponse(res);
+    const data = parsed.data;
 
-    if (contentType.includes('application/json')) {
-      data = await res.json();
-    } else {
-      const rawText = await res.text().catch(() => '');
+    if (!parsed.ok || !data) {
       if (res.status === 404) {
         return {
           success: false,
           error:
-            'Cloudflare Pages Functions are not deployed yet (/api/admin/login returned HTTP 404). Ensure the "functions" directory is committed to GitHub and deployed in Cloudflare Pages.'
+            'Admin login endpoint returned HTTP 404. Ensure the "functions" directory is deployed on Cloudflare Pages.'
         };
       }
       return {
         success: false,
-        error: `Cloudflare Pages endpoint returned HTTP ${res.status} (${contentType || 'non-JSON'}). Verify your deployment.`
+        error: `Authentication endpoint returned HTTP ${res.status} (${contentType || 'empty response'}). Check deployment logs.`
       };
     }
 
     if (!res.ok || !data.success) {
       return {
         success: false,
-        error: data.error || 'Invalid credentials. Check ADMIN_EMAIL and ADMIN_PASSWORD in Cloudflare environment variables.'
+        error:
+          data.error ||
+          'Invalid credentials. Check ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.'
       };
     }
 
     localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
     localStorage.setItem(ADMIN_USER_KEY, JSON.stringify(data.user));
+    if (data.envDiagnostics) {
+      lastEnvDiagnostics = data.envDiagnostics;
+      if (data.envDiagnostics.firebaseConfig) {
+        serverInjectedFirebaseConfig = data.envDiagnostics.firebaseConfig;
+      }
+    }
     return {
       success: true,
       user: data.user,
@@ -677,17 +790,21 @@ export async function verifyAdminSession() {
   const token = getAdminAuthToken();
   try {
     const res = await fetch('/api/admin/verify', {
+      cache: 'no-store',
       headers: {
         Accept: 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       }
     });
 
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      const data = await res.json();
-      if (data.envDiagnostics?.firebaseConfig) {
-        serverInjectedFirebaseConfig = data.envDiagnostics.firebaseConfig;
+    const parsed = await safeReadJsonResponse(res);
+    if (res.ok && parsed.ok && parsed.data) {
+      const data = parsed.data;
+      if (data.envDiagnostics) {
+        lastEnvDiagnostics = data.envDiagnostics;
+        if (data.envDiagnostics.firebaseConfig) {
+          serverInjectedFirebaseConfig = data.envDiagnostics.firebaseConfig;
+        }
       }
       return data;
     }

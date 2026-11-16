@@ -228,6 +228,10 @@ export interface UiCustomizationConfig {
   showSubpageSwitcherPills: boolean;
   showFooterDisclaimer: boolean;
   showFooterLinksHeading: boolean;
+  stickyHeader?: boolean;
+  showBreadcrumbs?: boolean;
+  enableFaqAccordion?: boolean;
+  showTocJumpBar?: boolean;
   homepageSectionOrder: HomepageBlockKey[];
 }
 
@@ -535,6 +539,10 @@ export const MASTER_DEFAULT_CONFIG: SiteConfig = {
     showSubpageSwitcherPills: true,
     showFooterDisclaimer: true,
     showFooterLinksHeading: true,
+    stickyHeader: true,
+    showBreadcrumbs: true,
+    enableFaqAccordion: true,
+    showTocJumpBar: true,
     homepageSectionOrder: ['specs', 'sections', 'rawHtml', 'news', 'faqs']
   },
   domainConfig: {
@@ -1323,4 +1331,136 @@ export function mergeSiteConfig(
     seo: mergedSeo,
     updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : Date.now()
   };
+}
+
+export interface FirebaseClientConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+  databaseId: string;
+}
+
+export function cleanFirebaseEnvString(raw: unknown): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+    .trim()
+    .replace(/^["'`]+|["'`,;]+$/g, '')
+    .trim();
+}
+
+export function normalizeFirebaseClientConfig(
+  raw: Partial<FirebaseClientConfig> | null | undefined
+): FirebaseClientConfig {
+  const projectId = cleanFirebaseEnvString(raw?.projectId);
+  const apiKey = cleanFirebaseEnvString(raw?.apiKey);
+  const authDomain =
+    cleanFirebaseEnvString(raw?.authDomain) || (projectId ? `${projectId}.firebaseapp.com` : '');
+  const storageBucket =
+    cleanFirebaseEnvString(raw?.storageBucket) || (projectId ? `${projectId}.appspot.com` : '');
+  const messagingSenderId = cleanFirebaseEnvString(raw?.messagingSenderId);
+  const appId = cleanFirebaseEnvString(raw?.appId);
+  const databaseId = cleanFirebaseEnvString(raw?.databaseId) || '(default)';
+
+  return {
+    apiKey,
+    authDomain,
+    projectId,
+    storageBucket,
+    messagingSenderId,
+    appId,
+    databaseId
+  };
+}
+
+export function isValidFirebaseClientConfig(
+  cfg: Partial<FirebaseClientConfig> | null | undefined
+): boolean {
+  if (!cfg) return false;
+  const apiKey = cleanFirebaseEnvString(cfg.apiKey);
+  const projectId = cleanFirebaseEnvString(cfg.projectId);
+  if (!apiKey || !projectId) return false;
+  if (
+    apiKey.includes('DummyKey') ||
+    apiKey.includes('YOUR_') ||
+    apiKey.includes('<') ||
+    projectId.includes('my-single-domain-cms') ||
+    projectId.includes('YOUR_') ||
+    projectId.includes('<')
+  ) {
+    return false;
+  }
+  return apiKey.length >= 16 && /^[a-z0-9-]+$/i.test(projectId);
+}
+
+/**
+ * Parses any pasted Firebase SDK snippet (`const firebaseConfig = { ... }`), JSON object,
+ * or key=value lines into a normalized 7-field FirebaseClientConfig.
+ */
+export function parseFirebaseConfigSnippet(rawInput: string): FirebaseClientConfig | null {
+  const raw = (rawInput || '').trim();
+  if (!raw) return null;
+
+  // 1. Try direct JSON parse first
+  try {
+    const parsedJson = JSON.parse(raw);
+    if (parsedJson && typeof parsedJson === 'object') {
+      const normalized = normalizeFirebaseClientConfig(parsedJson);
+      if (normalized.apiKey || normalized.projectId) return normalized;
+    }
+  } catch {
+    // Fall through to JS snippet / regex extraction
+  }
+
+  // 2. Strip JS single-line and multi-line comments, extract object literal keys/values
+  const stripped = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  const keys: Array<keyof FirebaseClientConfig> = [
+    'apiKey',
+    'authDomain',
+    'projectId',
+    'storageBucket',
+    'messagingSenderId',
+    'appId',
+    'databaseId'
+  ];
+
+  const envMap: Record<keyof FirebaseClientConfig, string[]> = {
+    apiKey: ['apiKey', 'FIREBASE_API_KEY', 'VITE_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_API_KEY'],
+    authDomain: ['authDomain', 'FIREBASE_AUTH_DOMAIN', 'VITE_FIREBASE_AUTH_DOMAIN', 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN'],
+    projectId: ['projectId', 'FIREBASE_PROJECT_ID', 'VITE_FIREBASE_PROJECT_ID', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'],
+    storageBucket: ['storageBucket', 'FIREBASE_STORAGE_BUCKET', 'VITE_FIREBASE_STORAGE_BUCKET', 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET'],
+    messagingSenderId: ['messagingSenderId', 'FIREBASE_MESSAGING_SENDER_ID', 'VITE_FIREBASE_MESSAGING_SENDER_ID', 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'],
+    appId: ['appId', 'FIREBASE_APP_ID', 'VITE_FIREBASE_APP_ID', 'NEXT_PUBLIC_FIREBASE_APP_ID'],
+    databaseId: ['databaseId', 'FIREBASE_DATABASE_ID', 'VITE_FIREBASE_DATABASE_ID']
+  };
+
+  const extracted: Partial<FirebaseClientConfig> = {};
+  for (const field of keys) {
+    for (const alias of envMap[field]) {
+      const re = new RegExp(`["']?${alias}["']?\\s*[:=]\\s*["'\`]([^"'\`\\n]+)["'\`]`);
+      const m = stripped.match(re);
+      if (m && m[1]) {
+        extracted[field] = cleanFirebaseEnvString(m[1]);
+        break;
+      }
+      // Also match unquoted value on a single line (e.g., FIREBASE_PROJECT_ID=my-proj)
+      const reUnquoted = new RegExp(`^\\s*${alias}\\s*=\\s*([^\\s#;,"'\`]+)`, 'm');
+      const mu = stripped.match(reUnquoted);
+      if (mu && mu[1]) {
+        extracted[field] = cleanFirebaseEnvString(mu[1]);
+        break;
+      }
+    }
+  }
+
+  if (!extracted.apiKey && !extracted.projectId && !extracted.appId) {
+    return null;
+  }
+  return normalizeFirebaseClientConfig(extracted);
 }

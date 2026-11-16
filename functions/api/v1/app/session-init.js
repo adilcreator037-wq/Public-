@@ -3,7 +3,22 @@
  * Handles v12 7-Gate Security Gate Session Initialization at the Edge.
  */
 
-import { jsonResponse } from '../../../_shared/auth.js';
+import {
+  jsonResponse,
+  cleanEnvVal,
+  getFirebaseEnvFromEnv,
+  readSiteConfigFromFirestoreRest,
+  evaluateGateG1Edge,
+  verifyOrMintDidCookieEdge,
+  issueStatelessNonceEdge
+} from '../../../_shared/auth.js';
+
+function hard404() {
+  return jsonResponse({ error: 'Not Found' }, 404, {
+    'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
+    'Referrer-Policy': 'no-referrer'
+  });
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -12,38 +27,77 @@ export async function onRequestPost(context) {
   try {
     body = await request.json();
   } catch {
-    body = {};
+    return hard404();
   }
 
-  const clientIp =
-    request.headers.get('cf-connecting-ip') ||
-    request.headers.get('x-forwarded-for') ||
-    '127.0.0.1';
+  const appId = typeof body?.appId === 'string' ? body.appId.trim() : '';
+  if (!/^[a-zA-Z0-9\-_]{1,64}$/.test(appId)) {
+    return hard404();
+  }
 
-  const userAgent = request.headers.get('user-agent') || '';
-  const now = Date.now();
+  const fbEnv = getFirebaseEnvFromEnv(env);
+  const siteConfig = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config) : null;
+  const sec = siteConfig?.securityGate || {};
 
-  // Generate random session tokens using Web Crypto
-  const rawId = new Uint8Array(16);
-  crypto.getRandomValues(rawId);
-  const sessionId = Array.from(rawId)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  const policyMode =
+    sec.devicePolicyMode === 'strict_mobile_only' ||
+    cleanEnvVal(env.SECURITY_DEVICE_POLICY).toLowerCase() === 'strict_mobile_only'
+      ? 'strict_mobile_only'
+      : 'universal_human';
 
-  const rawNonce = new Uint8Array(16);
-  crypto.getRandomValues(rawNonce);
-  const nonce = Array.from(rawNonce)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  const g1 = evaluateGateG1Edge(request, env, policyMode);
+  if (!g1.pass) {
+    return hard404();
+  }
 
-  return jsonResponse({
-    success: true,
-    sessionId: `cf-${sessionId}`,
-    nonce,
-    timestamp: now,
-    expiresAt: now + 600000,
-    runtime: 'Cloudflare Pages Functions'
-  });
+  const { setCookie } = await verifyOrMintDidCookieEdge(request, env);
+  const nonce = await issueStatelessNonceEdge(appId, env);
+
+  const siteKey =
+    cleanEnvVal(sec.turnstileSiteKey) ||
+    cleanEnvVal(env.VITE_TURNSTILE_SITE_KEY) ||
+    cleanEnvVal(env.TURNSTILE_SITE_KEY) ||
+    cleanEnvVal(env.CF_TURNSTILE_SITE_KEY) ||
+    '1x00000000000000000000AA';
+
+  const extraHeaders = {
+    'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
+    'Referrer-Policy': 'no-referrer'
+  };
+  if (setCookie) {
+    extraHeaders['Set-Cookie'] = setCookie;
+  }
+
+  return jsonResponse(
+    {
+      nonce,
+      siteKey,
+      policyMode,
+      appMeta: {
+        brandName: siteConfig?.brand?.name || cleanEnvVal(env.SITE_BRAND_NAME) || 'ApexMobile',
+        logoUrl: siteConfig?.brand?.logoUrl || '/assets/app-icon.svg',
+        accentColor: siteConfig?.brand?.accentColor || '#EF4444',
+        appSlug: sec.appSlug || appId || 'apexmobile',
+        appSerialId: sec.appSerialId || 'APM-482',
+        devicePolicyMode: policyMode,
+        proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
+        unavailableMessage: sec.unavailableMessage || '',
+        helplineWhatsapp: sec.helplineWhatsapp || '',
+        helplineTelegram: sec.helplineTelegram || '',
+        customHeading: sec.customHeading || '',
+        customNoteHtml: sec.customNoteHtml || '',
+        showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
+        appName: sec.customHeading || siteConfig?.packageSpecs?.appName || siteConfig?.brand?.name || 'ApexMobile',
+        version: siteConfig?.packageSpecs?.version || 'v4.8.2',
+        fileSize: siteConfig?.packageSpecs?.fileSize || '64.2 MB',
+        operatingSystem: siteConfig?.packageSpecs?.operatingSystem || 'Android 9.0+ / iOS 15.0+',
+        securityStatus: siteConfig?.packageSpecs?.securityStatus || 'Verified Clean',
+        sha256: siteConfig?.packageSpecs?.sha256 || ''
+      }
+    },
+    200,
+    extraHeaders
+  );
 }
 
 export async function onRequestOptions() {

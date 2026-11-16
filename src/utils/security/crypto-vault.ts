@@ -43,11 +43,15 @@ export function base64UrlToBytes(b64url: string): Uint8Array | null {
 
 export function resolveVaultSecret(env?: Record<string, string | undefined>): string {
   const candidates = [
+    env?.VAULT_ENCRYPTION_SECRET,
+    env?.LINK_VAULT_MASTER_SECRET,
     env?.AES_KEY,
     env?.AES_SECRET,
     env?.VAULT_SECRET_KEY,
     env?.VITE_AES_SECRET,
+    env?.HMAC_SECRET,
     env?.ADMIN_SESSION_SECRET,
+    env?.ADMIN_SECRET,
   ];
   for (const raw of candidates) {
     if (raw && typeof raw === 'string') {

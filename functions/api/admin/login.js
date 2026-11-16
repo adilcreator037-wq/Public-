@@ -1,11 +1,14 @@
 /**
  * Cloudflare Pages Function: POST /api/admin/login
  * Authenticates admin users using Cloudflare Pages environment variables / secrets
- * (ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_API_KEY, ADMIN_SECRET).
+ * (ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_API_KEY, ADMIN_SESSION_SECRET).
  */
 
 import {
   getAdminCredentials,
+  getFirebaseEnvFromEnv,
+  buildEdgeEnvDiagnostics,
+  readSiteConfigFromFirestoreRest,
   timingSafeEqual,
   createAdminToken,
   jsonResponse,
@@ -28,34 +31,30 @@ export async function onRequestPost(context) {
 
   const adminCreds = getAdminCredentials(env);
 
-  const emailMatches = timingSafeEqual(
-    email.toLowerCase(),
-    adminCreds.email.toLowerCase()
+  const apiKeyAuthenticated = Boolean(
+    adminCreds.requiresApiKey && apiKey && timingSafeEqual(apiKey, adminCreds.apiKey)
   );
-  const passMatches = timingSafeEqual(password, adminCreds.password);
-  const apiKeyMatches =
-    !adminCreds.requiresApiKey ||
-    (Boolean(apiKey) && timingSafeEqual(apiKey, adminCreds.apiKey));
+  const credentialsAuthenticated = Boolean(
+    email &&
+    timingSafeEqual(email.toLowerCase(), adminCreds.email.toLowerCase()) &&
+    timingSafeEqual(password, adminCreds.password)
+  );
 
-  // Allow login if apiKey matches OR if email and password match
-  const isAuthenticated =
-    (adminCreds.requiresApiKey && apiKey && apiKeyMatches) ||
-    (emailMatches && passMatches && apiKeyMatches);
-
-  if (!isAuthenticated) {
+  if (!apiKeyAuthenticated && !credentialsAuthenticated) {
     return jsonResponse(
       {
         success: false,
-        error:
-          adminCreds.requiresApiKey && !apiKeyMatches
-            ? 'Invalid Admin API Key, Email, or Password. Verify your Cloudflare environment variables.'
-            : 'Invalid Admin Email or Password. Verify ADMIN_EMAIL and ADMIN_PASSWORD in your Cloudflare Pages environment variables.'
+        error: apiKey
+          ? 'Invalid Admin API Key. Verify ADMIN_API_KEY in your Cloudflare Pages environment variables.'
+          : 'Invalid Admin Email or Password. Verify ADMIN_EMAIL and ADMIN_PASSWORD in your Cloudflare Pages environment variables.'
       },
       401
     );
   }
 
   const token = await createAdminToken(adminCreds.email, adminCreds.secret);
+  const fbEnv = getFirebaseEnvFromEnv(env);
+  const siteConfig = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config) : null;
 
   return jsonResponse({
     success: true,
@@ -64,12 +63,7 @@ export async function onRequestPost(context) {
       email: adminCreds.email,
       role: 'Master Administrator'
     },
-    envDiagnostics: {
-      adminEmailConfigured: adminCreds.isCustomEmail,
-      adminPasswordConfigured: adminCreds.isCustomPassword,
-      adminApiKeyRequired: adminCreds.requiresApiKey,
-      runtime: 'Cloudflare Pages Functions'
-    }
+    envDiagnostics: buildEdgeEnvDiagnostics(adminCreds, fbEnv, env, true, siteConfig)
   });
 }
 

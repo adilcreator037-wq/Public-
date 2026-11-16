@@ -1,40 +1,47 @@
 /**
  * Cloudflare Pages Function: GET /api/config & PUT /api/config
- * Provides configuration read/write at the edge.
+ * Authenticated read/write endpoint wired to Firebase Cloud Firestore REST API
+ * and AES-256-GCM Link Vault encryption.
  */
 
 import {
-  getAdminCredentials,
-  verifyAdminToken,
+  verifyAdminRequest,
+  getFirebaseEnvFromEnv,
+  buildEdgeEnvDiagnostics,
+  readSiteConfigFromFirestoreRest,
+  writeSiteConfigToFirestoreRest,
+  encryptVaultValueWeb,
   jsonResponse
 } from '../_shared/auth.js';
 
-export async function onRequestGet() {
-  // Edge response for site config; client also syncs with Firestore
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const { verification, adminCreds } = await verifyAdminRequest(request, env);
+
+  if (!verification.valid) {
+    return jsonResponse(
+      { success: false, error: 'Unauthorized. Admin authentication required.' },
+      401
+    );
+  }
+
+  const fbEnv = getFirebaseEnvFromEnv(env);
+  const cloudConfig = fbEnv.isConfigured
+    ? await readSiteConfigFromFirestoreRest(fbEnv.config)
+    : null;
+
   return jsonResponse({
     success: true,
-    message: 'Edge config endpoint active',
+    config: cloudConfig || null,
+    firebaseEnv: fbEnv,
+    envDiagnostics: buildEdgeEnvDiagnostics(adminCreds, fbEnv, env, true, cloudConfig),
     runtime: 'Cloudflare Pages Functions'
   });
 }
 
 export async function onRequestPut(context) {
   const { request, env } = context;
-
-  const authHeader = request.headers.get('authorization') || '';
-  const bearerToken = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : '';
-  const headerApiKey = request.headers.get('x-admin-api-key') || '';
-
-  const adminCreds = getAdminCredentials(env);
-  const tokenToVerify = bearerToken || headerApiKey;
-
-  const verification = await verifyAdminToken(
-    tokenToVerify,
-    adminCreds.secret,
-    adminCreds.apiKey
-  );
+  const { verification } = await verifyAdminRequest(request, env);
 
   if (!verification.valid) {
     return jsonResponse(
@@ -50,11 +57,37 @@ export async function onRequestPut(context) {
     body = {};
   }
 
+  const incomingConfig = body.config || body;
+  if (!incomingConfig || typeof incomingConfig !== 'object') {
+    return jsonResponse({ success: false, error: 'Invalid configuration payload.' }, 400);
+  }
+
+  // Encrypt securityGate.primaryDownloadUrl using AES-256-GCM at the edge
+  if (incomingConfig.securityGate?.primaryDownloadUrl) {
+    try {
+      incomingConfig.securityGate.encryptedPrimaryUrl = await encryptVaultValueWeb(
+        incomingConfig.securityGate.primaryDownloadUrl,
+        env
+      );
+    } catch {
+      // Fallback handled on clearance
+    }
+  }
+  incomingConfig.updatedAt = Date.now();
+
+  const fbEnv = getFirebaseEnvFromEnv(env);
+  let firestoreResult = { ok: false, error: 'Firebase not configured in Cloudflare env' };
+  if (fbEnv.isConfigured) {
+    firestoreResult = await writeSiteConfigToFirestoreRest(fbEnv.config, incomingConfig);
+  }
+
   return jsonResponse({
     success: true,
-    config: body.config || body,
-    message: 'Configuration verified by Cloudflare Edge Function',
-    savedAt: Date.now()
+    config: incomingConfig,
+    firestoreSaved: firestoreResult.ok,
+    firestoreNotice: firestoreResult.ok ? null : firestoreResult.error,
+    savedAt: incomingConfig.updatedAt,
+    runtime: 'Cloudflare Pages Functions'
   });
 }
 

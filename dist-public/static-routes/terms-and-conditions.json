@@ -122,6 +122,10 @@
       "showSubpageSwitcherPills": true,
       "showFooterDisclaimer": true,
       "showFooterLinksHeading": true,
+      "stickyHeader": true,
+      "showBreadcrumbs": true,
+      "enableFaqAccordion": true,
+      "showTocJumpBar": true,
       "homepageSectionOrder": [
         "specs",
         "sections",
@@ -293,5 +297,5 @@
       "copyright": "© 2026 ApexMobile. All rights reserved."
     }
   },
-  "updatedAt": 1793897560079
+  "updatedAt": 1794799501367
 }

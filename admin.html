@@ -103,11 +103,10 @@
         <div class="auth-hint" id="auth-env-hint" style="margin-top: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;">
           <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
             <span>🔒 Secure Environment Authentication</span>
-            <span style="font-size: 0.68rem; color: #059669; font-weight: 700;">Active</span>
+            <span id="auth-env-status-pill" style="font-size: 0.68rem; color: #059669; font-weight: 700;">Active</span>
           </div>
-          <div style="color: #64748b; font-size: 0.73rem; line-height: 1.45;">
-            Configure secrets in your environment: <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code>.
-            Default credentials: <code>admin@domain.com</code> / <code>admin123</code>.
+          <div id="auth-env-hint-text" style="color: #64748b; font-size: 0.73rem; line-height: 1.45;">
+            Verify using your server/Cloudflare environment secrets (<code>ADMIN_EMAIL</code> &amp; <code>ADMIN_PASSWORD</code>, or <code>ADMIN_API_KEY</code>).
           </div>
         </div>
       </div>
@@ -143,6 +142,7 @@
           </div>
 
           <div class="topbar-actions">
+            <button type="button" id="btn-open-preview-modal" class="btn btn-sm">Preview</button>
             <a href="/" target="_blank" rel="noopener" class="btn btn-sm">Site ↗</a>
             <button type="button" id="btn-top-save" class="btn btn-primary btn-sm">Publish Changes</button>
             <button type="button" id="btn-logout" class="btn btn-sm">Exit</button>
@@ -240,6 +240,51 @@
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button type="button" class="btn btn-dark" data-jump-tab="domain">Push Static Site to GitHub</button>
                 <button type="button" class="btn btn-primary" data-jump-tab="news">+ Publish Daily News Post</button>
+              </div>
+            </div>
+
+            <!-- Quick 1-Tap Master Clone Setup Card (Re-Brand & Customize Whole Site in 10 Seconds) -->
+            <div class="card">
+              <div class="card-title">
+                <span>⚡ 1-Tap Master Clone &amp; Brand Switcher</span>
+                <span class="placement-badge">Updates Brand, Hero, Specs, Schema &amp; Legal Pages</span>
+              </div>
+              <div class="card-desc">
+                Cloning this template for a new app or domain? Fill in these core details once and click
+                <strong>Apply to Entire Website</strong> to update headers, meta titles, specs, legal policies, and download route simultaneously.
+              </div>
+              <div class="form-grid cols-3">
+                <div class="field">
+                  <label class="field-label" for="qc-brand-name">Brand / App Name</label>
+                  <input type="text" id="qc-brand-name" class="input" placeholder="e.g., NovaPlayer" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="qc-version">Latest Version</label>
+                  <input type="text" id="qc-version" class="input" placeholder="e.g., v5.2.0" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="qc-domain">Production Domain (HTTPS)</label>
+                  <input type="url" id="qc-domain" class="input" placeholder="https://example.com" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="qc-email">Support Email</label>
+                  <input type="email" id="qc-email" class="input" placeholder="support@example.com" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="qc-download-url">Protected Download Destination URL</label>
+                  <input type="text" id="qc-download-url" class="input" placeholder="https://cdn.example.com/build.apk" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="qc-accent-color">Brand Accent Color</label>
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="qc-accent-color" value="#EF4444" />
+                    <input type="text" id="qc-accent-color" class="input" placeholder="#EF4444" />
+                  </div>
+                </div>
+                <div class="field span-full" style="flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px;">
+                  <span class="field-help">Updates all default references automatically without wiping your custom news or body sections.</span>
+                  <button type="button" id="btn-apply-quick-clone" class="btn btn-dark btn-sm">⚡ Apply to Entire Website</button>
+                </div>
               </div>
             </div>
 
@@ -343,7 +388,7 @@
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 2: DAILY NEWS PUBLISHER (FULL IMAGE & COMPONENT SUPPORT)
+               WORKSPACE 5: DAILY NEWS PUBLISHER (FULL IMAGE & COMPONENT SUPPORT)
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-news">
             <div class="panel-header">
@@ -394,8 +439,8 @@
 
                 <div class="field">
                   <label class="field-label" for="composer-news-slug">
-                    <span>Article URL Slug</span>
-                    <span class="field-tag">/news/:slug</span>
+                    <span>Article URL Slug (<code>/news/:slug</code>)</span>
+                    <button type="button" id="btn-composer-autoslug" class="btn btn-sm">Auto-Slug</button>
                   </label>
                   <input
                     type="text"
@@ -525,21 +570,26 @@
                   </label>
                   <div class="html-toolbar">
                     <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="composer-news-html">
-                      🧩 + Visual Block Builder (No Code)
+                      🧩 + Visual Block Builder
                     </button>
                     <button
                       type="button"
                       class="btn btn-sm btn-dark"
                       data-open-image-modal="composer-news-html"
                     >
-                      🖼️ + Insert Image
+                      🖼️ + Image
                     </button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="p">+ Paragraph</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="h3">+ Subheading (H3)</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="ul">+ Bullet List</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="callout">+ Callout Box</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="grid">+ 2-Col Feature Grid</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="table">+ Spec Table</button>
+                    <button type="button" class="btn btn-sm" data-open-link-modal="composer-news-html">🔗 + Link</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="b"><b>B</b></button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="p">+ P</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="h3">+ H3</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="ul">+ List</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="steps">+ Steps</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="callout">+ Callout</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="grid">+ 2-Col Grid</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="table">+ Table</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="cta">+ Button</button>
+                    <button type="button" class="btn btn-sm" data-undo-target="composer-news-html">↩ Undo</button>
                   </div>
                   <textarea
                     id="composer-news-html"
@@ -619,9 +669,16 @@
               </div>
             </div>
 
-            <div class="card-title" style="margin: 18px 0 10px">
+            <div class="card-title" style="margin: 18px 0 8px">
               <span>Published Daily News Articles</span>
               <a href="/news" target="_blank" class="btn btn-sm">Open /news Hub ↗</a>
+            </div>
+            <div class="list-controls-bar">
+              <input type="search" id="news-search-input" class="input list-controls-search" placeholder="Filter articles by headline or category..." />
+              <div class="list-controls-actions">
+                <button type="button" id="btn-news-expand-all" class="btn btn-sm">Expand All</button>
+                <button type="button" id="btn-news-collapse-all" class="btn btn-sm">Collapse All</button>
+              </div>
             </div>
             <div id="news-list" class="item-list"></div>
           </section>
@@ -679,31 +736,43 @@
                 <div class="field">
                   <label class="field-label" for="brand-logo">
                     <span>Header App Logo URL (36x36)</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-logo">📤 Upload</button>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-logo" data-preview-target="brand-logo-thumb">📤 Upload</button>
                   </label>
-                  <input type="text" id="brand-logo" class="input" placeholder="/assets/app-icon.svg" />
+                  <div class="brand-thumb-row">
+                    <img id="brand-logo-thumb" class="brand-thumb-preview" src="/assets/app-icon.svg" alt="Header Logo Preview" />
+                    <input type="text" id="brand-logo" class="input" placeholder="/assets/app-icon.svg" />
+                  </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-favicon">
                     <span>Browser Tab Favicon URL</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-favicon">📤 Upload</button>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-favicon" data-preview-target="brand-favicon-thumb">📤 Upload</button>
                   </label>
-                  <input type="text" id="brand-favicon" class="input" placeholder="/assets/app-icon.svg" />
+                  <div class="brand-thumb-row">
+                    <img id="brand-favicon-thumb" class="brand-thumb-preview" src="/assets/app-icon.svg" alt="Favicon Preview" />
+                    <input type="text" id="brand-favicon" class="input" placeholder="/assets/app-icon.svg" />
+                  </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-search-logo">
                     <span>Google Search Result Small Logo (512x512)</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-search-logo">📤 Upload</button>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-search-logo" data-preview-target="brand-search-logo-thumb">📤 Upload</button>
                   </label>
-                  <input type="text" id="brand-search-logo" class="input" placeholder="/assets/app-icon.svg" />
+                  <div class="brand-thumb-row">
+                    <img id="brand-search-logo-thumb" class="brand-thumb-preview" src="/assets/app-icon.svg" alt="Search Logo Preview" />
+                    <input type="text" id="brand-search-logo" class="input" placeholder="/assets/app-icon.svg" />
+                  </div>
                   <div class="field-help">Used in Google Search result site attribution &amp; Organization JSON-LD schema.</div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-apple-icon">
                     <span>Apple Touch Icon URL (180x180)</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-apple-icon">📤 Upload</button>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-apple-icon" data-preview-target="brand-apple-icon-thumb">📤 Upload</button>
                   </label>
-                  <input type="text" id="brand-apple-icon" class="input" placeholder="/assets/app-icon.svg" />
+                  <div class="brand-thumb-row">
+                    <img id="brand-apple-icon-thumb" class="brand-thumb-preview" src="/assets/app-icon.svg" alt="Apple Touch Icon Preview" />
+                    <input type="text" id="brand-apple-icon" class="input" placeholder="/assets/app-icon.svg" />
+                  </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-color">Primary Accent Color (Hex)</label>
@@ -756,16 +825,18 @@
                 <div class="field span-full">
                   <label class="field-label" for="hero-intro-html">
                     <span>Hero Intro Paragraph (Appears Directly Below Hero Buttons)</span>
-                    <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                      <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="hero-intro-html">
-                        🧩 + Visual Block
-                      </button>
-                      <button type="button" class="btn btn-sm" data-open-image-modal="hero-intro-html">
-                        🖼️ + Insert Image
-                      </button>
-                    </div>
+                    <button type="button" class="btn btn-sm" data-toggle-preview="hero-intro-preview">👁️ Preview</button>
                   </label>
-                  <textarea id="hero-intro-html" class="textarea" rows="3"></textarea>
+                  <div class="html-toolbar">
+                    <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="hero-intro-html">🧩 + Visual Block</button>
+                    <button type="button" class="btn btn-sm" data-open-image-modal="hero-intro-html">🖼️ + Image</button>
+                    <button type="button" class="btn btn-sm" data-open-link-modal="hero-intro-html">🔗 + Link</button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="b" data-target="hero-intro-html"><b>B</b></button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="p" data-target="hero-intro-html">+ P</button>
+                    <button type="button" class="btn btn-sm" data-undo-target="hero-intro-html">↩ Undo</button>
+                  </div>
+                  <textarea id="hero-intro-html" class="textarea" rows="3" data-preview-target="hero-intro-preview"></textarea>
+                  <div id="hero-intro-preview" class="live-preview-box"></div>
                 </div>
                 <div class="field span-full">
                   <div class="toggle-box">
@@ -824,7 +895,10 @@
                 </div>
                 <div class="field">
                   <label class="field-label" for="cta-left-url">Left Secondary Button Target URL / Anchor</label>
-                  <input type="text" id="cta-left-url" class="input" />
+                  <div class="url-picker-row">
+                    <input type="text" id="cta-left-url" class="input" />
+                    <select class="select url-quick-select" data-url-picker-for="cta-left-url" aria-label="Quick select URL"></select>
+                  </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="cta-right-text">Right Primary Download Button Text</label>
@@ -835,7 +909,28 @@
                     <span>Homepage Button Route</span>
                     <span class="field-tag">Keep /moreinfo for Protected Flow</span>
                   </label>
-                  <input type="text" id="cta-right-url" class="input" />
+                  <div class="url-picker-row">
+                    <input type="text" id="cta-right-url" class="input" />
+                    <select class="select url-quick-select" data-url-picker-for="cta-right-url" aria-label="Quick select URL"></select>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Secondary CTA <code>rel="sponsored"</code></strong>
+                      <div class="field-help">Mark secondary link as sponsored/partner for SEO compliance.</div>
+                    </div>
+                    <input type="checkbox" id="cta-left-sponsored" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Primary CTA <code>rel="sponsored"</code></strong>
+                      <div class="field-help">Applies when Primary CTA points directly outside <code>/moreinfo</code>.</div>
+                    </div>
+                    <input type="checkbox" id="cta-right-sponsored" />
+                  </div>
                 </div>
                 <div class="field span-full" style="background:#ECFDF5; border:1px solid #A7F3D0; border-radius:10px; padding:12px;">
                   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
@@ -863,7 +958,10 @@
                 </div>
                 <div class="field">
                   <label class="field-label" for="floating-cta-url">Floating Pill Target URL</label>
-                  <input type="text" id="floating-cta-url" class="input" />
+                  <div class="url-picker-row">
+                    <input type="text" id="floating-cta-url" class="input" />
+                    <select class="select url-quick-select" data-url-picker-for="floating-cta-url" aria-label="Quick select URL"></select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -929,6 +1027,28 @@
                       <div class="field-help">Shows Privacy Policy, Terms, DMCA &amp; Contact chips in the drawer.</div>
                     </div>
                     <input type="checkbox" id="ui-drawer-show-legal" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-all-news-label">News Article "All News" Breadcrumb Label</label>
+                  <input type="text" id="ui-all-news-label" class="input" placeholder="All Daily News →" />
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Pin Sticky Top Header on Scroll</strong>
+                      <div class="field-help">Keeps top navigation bar fixed while scrolling pages.</div>
+                    </div>
+                    <input type="checkbox" id="ui-sticky-header" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Subpage Breadcrumb Navigation Bar</strong>
+                      <div class="field-help">Displays "Back to Main Page" link bar on /news &amp; legal pages.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-breadcrumbs" />
                   </div>
                 </div>
                 <div class="field">
@@ -1167,6 +1287,24 @@
                     <input type="checkbox" id="ui-show-subpage-pills" />
                   </div>
                 </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show "On This Page" Jump Bar on Homepage</strong>
+                      <div class="field-help">Displays quick section jump chips below the hero banner.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-toc-bar" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Expandable FAQ Accordion Mode</strong>
+                      <div class="field-help">Renders homepage FAQs as clean collapsible items (uncheck for open list).</div>
+                    </div>
+                    <input type="checkbox" id="ui-enable-faq-accordion" />
+                  </div>
+                </div>
               </div>
 
               <!-- Homepage Section Order Controller -->
@@ -1262,19 +1400,26 @@
                 <button type="button" id="btn-add-spec-row" class="btn btn-sm btn-primary">+ Add Custom Spec Row</button>
               </div>
               <div class="card-desc">Add any extra technical rows (e.g., Architecture, Developer, Minimum RAM, CDN Mirrors).</div>
+              <div class="template-bar">
+                <span class="template-bar-label">1-Click Common Rows:</span>
+                <button type="button" class="btn btn-sm" data-spec-preset="arch">+ Architecture</button>
+                <button type="button" class="btn btn-sm" data-spec-preset="dev">+ Publisher</button>
+                <button type="button" class="btn btn-sm" data-spec-preset="ram">+ Min RAM / Storage</button>
+                <button type="button" class="btn btn-sm" data-spec-preset="channel">+ Release Channel</button>
+              </div>
               <div id="custom-specs-list" class="item-list"></div>
             </div>
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 5: HOMEPAGE CONTENT SECTIONS & CUSTOM COMPONENTS
+               WORKSPACE 4: HOMEPAGE CONTENT SECTIONS & CUSTOM COMPONENTS
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-sections">
             <div class="panel-header">
               <div>
                 <h2>Homepage Content Sections &amp; Media Blocks</h2>
                 <p>
-                  Add, reorder, and customize homepage sections with images, callout boxes, tables, CTA buttons, and per-section SEO meta tags.
+                  Add, reorder, clone, and customize homepage sections with images, callout boxes, tables, CTA buttons, and per-section SEO meta tags.
                 </p>
               </div>
               <button type="button" id="btn-add-section" class="btn btn-primary">+ Add Blank Section</button>
@@ -1285,6 +1430,15 @@
               <button type="button" class="btn btn-sm" data-section-template="features">+ Feature Overview Grid</button>
               <button type="button" class="btn btn-sm" data-section-template="install">+ Step-by-Step Installation Guide</button>
               <button type="button" class="btn btn-sm" data-section-template="changelog">+ Version Changelog Table</button>
+              <button type="button" class="btn btn-sm" data-section-template="proscons">+ Pros &amp; Verification Highlights</button>
+            </div>
+
+            <div class="list-controls-bar">
+              <input type="search" id="sections-search-input" class="input list-controls-search" placeholder="Filter sections by heading or #slug..." />
+              <div class="list-controls-actions">
+                <button type="button" id="btn-sections-expand-all" class="btn btn-sm">Expand All</button>
+                <button type="button" id="btn-sections-collapse-all" class="btn btn-sm">Collapse All</button>
+              </div>
             </div>
 
             <div id="sections-list" class="item-list"></div>
@@ -1294,24 +1448,31 @@
               <div class="card-title">
                 <span>Additional Custom HTML / Component Block (Optional)</span>
                 <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                  <span class="placement-badge">📍 Appears on Homepage (#3 in Block Order)</span>
-                  <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="global-raw-html">
-                    🧩 + Visual Block Builder
-                  </button>
-                  <button type="button" class="btn btn-sm btn-dark" data-open-image-modal="global-raw-html">
-                    🖼️ + Insert Image
-                  </button>
+                  <span class="placement-badge">📍 Appears on Homepage (Block Order #3)</span>
+                  <button type="button" class="btn btn-sm" data-toggle-preview="global-raw-html-preview">👁️ Toggle Visual Preview</button>
                 </div>
               </div>
               <div class="card-desc">
                 Any visual blocks, comparison tables, or custom HTML placed here render automatically on the homepage in the position set in your Homepage Block Order Controller.
               </div>
+              <div class="html-toolbar">
+                <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="global-raw-html">🧩 + Visual Block Builder</button>
+                <button type="button" class="btn btn-sm btn-dark" data-open-image-modal="global-raw-html">🖼️ + Image</button>
+                <button type="button" class="btn btn-sm" data-open-link-modal="global-raw-html">🔗 + Link</button>
+                <button type="button" class="btn btn-sm" data-scalar-snippet="p" data-target="global-raw-html">+ P</button>
+                <button type="button" class="btn btn-sm" data-scalar-snippet="callout" data-target="global-raw-html">+ Callout</button>
+                <button type="button" class="btn btn-sm" data-scalar-snippet="grid" data-target="global-raw-html">+ 2-Col Grid</button>
+                <button type="button" class="btn btn-sm" data-scalar-snippet="table" data-target="global-raw-html">+ Table</button>
+                <button type="button" class="btn btn-sm" data-undo-target="global-raw-html">↩ Undo</button>
+              </div>
               <textarea
                 id="global-raw-html"
                 class="textarea code"
                 rows="5"
+                data-preview-target="global-raw-html-preview"
                 placeholder="<!-- Click '🧩 + Visual Block Builder' above or enter custom HTML -->"
               ></textarea>
+              <div id="global-raw-html-preview" class="live-preview-box"></div>
             </div>
           </section>
 
@@ -1354,6 +1515,22 @@
               </div>
             </div>
 
+            <div class="template-bar">
+              <span class="template-bar-label">1-Click Quick FAQs:</span>
+              <button type="button" class="btn btn-sm" data-faq-preset="free">+ Free License FAQ</button>
+              <button type="button" class="btn btn-sm" data-faq-preset="safety">+ SHA-256 Verification FAQ</button>
+              <button type="button" class="btn btn-sm" data-faq-preset="update">+ Safe Upgrade FAQ</button>
+              <button type="button" class="btn btn-sm" data-faq-preset="compat">+ Android &amp; iOS Compatibility</button>
+            </div>
+
+            <div class="list-controls-bar">
+              <input type="search" id="faqs-search-input" class="input list-controls-search" placeholder="Search FAQ questions or answers..." />
+              <div class="list-controls-actions">
+                <button type="button" id="btn-faqs-expand-all" class="btn btn-sm">Expand All</button>
+                <button type="button" id="btn-faqs-collapse-all" class="btn btn-sm">Collapse All</button>
+              </div>
+            </div>
+
             <div id="faqs-list" class="item-list"></div>
           </section>
 
@@ -1373,6 +1550,13 @@
                 <button type="button" id="btn-autogen-legal" class="btn">⚡ Auto-Fill Brand in All Legal Pages</button>
                 <button type="button" id="btn-add-page" class="btn btn-primary">+ Add Standalone Page</button>
               </div>
+            </div>
+
+            <div class="template-bar">
+              <span class="template-bar-label">1-Click Page Templates:</span>
+              <button type="button" class="btn btn-sm" data-page-template="about">+ About Official Portal</button>
+              <button type="button" class="btn btn-sm" data-page-template="disclosure">+ Editorial &amp; Affiliate Disclosure</button>
+              <button type="button" class="btn btn-sm" data-page-template="mirrors">+ Official Mirrors &amp; Checksums</button>
             </div>
 
             <!-- Select Which Legal Page to Edit (Clean Tabbed Selector) -->
@@ -1564,6 +1748,12 @@
                   <label class="field-label" for="sec-custom-note">
                     <span>Custom Note / HTML on <code>/moreinfo</code> (Optional — Leave Blank for Clean Minimal Page)</span>
                   </label>
+                  <div class="html-toolbar">
+                    <button type="button" class="btn btn-sm" data-open-link-modal="sec-custom-note">🔗 + Link</button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="b" data-target="sec-custom-note"><b>B</b></button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="callout" data-target="sec-custom-note">+ Notice Box</button>
+                    <button type="button" class="btn btn-sm" data-undo-target="sec-custom-note">↩ Undo</button>
+                  </div>
                   <textarea
                     id="sec-custom-note"
                     class="textarea"
@@ -1868,6 +2058,24 @@
                 <div class="field">
                   <div class="toggle-box">
                     <div>
+                      <strong>Enable XML Sitemap (<code>/sitemap.xml</code>)</strong>
+                      <div class="field-help">Automatically lists homepage, news archive, articles, and legal URLs.</div>
+                    </div>
+                    <input type="checkbox" id="domain-enable-sitemap" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Enable News RSS 2.0 Feed (<code>/feed.xml</code>)</strong>
+                      <div class="field-help">Publishes an auto-updating RSS XML feed for all daily news articles.</div>
+                    </div>
+                    <input type="checkbox" id="domain-enable-rss" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
                       <strong>Enable Web App Manifest (<code>/manifest.webmanifest</code>)</strong>
                       <div class="field-help">Generates PWA manifest with 192x192 &amp; 512x512 icons and theme color.</div>
                     </div>
@@ -1899,14 +2107,14 @@
               <div class="form-grid cols-2" style="margin-top: 8px">
                 <div class="field span-full">
                   <label class="field-label" for="seo-meta-title">
-                    Homepage Meta Title (&lt;title&gt;)
+                    <span>Homepage Meta Title (&lt;title&gt;)</span>
                     <span class="field-tag" id="seo-title-counter">0 / 60 chars</span>
                   </label>
                   <input type="text" id="seo-meta-title" class="input" />
                 </div>
                 <div class="field span-full">
                   <label class="field-label" for="seo-meta-desc">
-                    Homepage Meta Description
+                    <span>Homepage Meta Description</span>
                     <span class="field-tag" id="seo-desc-counter">0 / 160 chars</span>
                   </label>
                   <textarea id="seo-meta-desc" class="textarea" rows="3"></textarea>
@@ -1936,7 +2144,7 @@
             <!-- 4. SoftwareApplication Schema -->
             <div class="card" data-domain-card="schema">
               <div class="card-title">
-                <span>4. SoftwareApplication Rich Snippet Star Schema</span>
+                <span>4. SoftwareApplication Rich Snippet Star Schema &amp; Custom JSON-LD</span>
                 <span class="placement-badge">📍 JSON-LD @graph</span>
               </div>
               <div class="form-grid cols-3" style="margin-top: 8px">
@@ -1962,8 +2170,12 @@
                   <input type="text" id="schema-app-category" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="schema-app-price">Price (USD)</label>
+                  <label class="field-label" for="schema-app-price">Price (0.00 = Free)</label>
                   <input type="text" id="schema-app-price" class="input" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="schema-app-currency">Price Currency</label>
+                  <input type="text" id="schema-app-currency" class="input" placeholder="USD" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="schema-app-rating">Star Rating (1–5)</label>
@@ -1973,38 +2185,77 @@
                   <label class="field-label" for="schema-app-votes">Review Count</label>
                   <input type="text" id="schema-app-votes" class="input" />
                 </div>
+                <div class="field span-full">
+                  <label class="field-label" for="seo-raw-jsonld">
+                    <span>Custom JSON-LD Schema Node / @graph Extension (Optional)</span>
+                    <span class="field-tag" id="seo-jsonld-status">Optional Valid JSON Object or Array</span>
+                  </label>
+                  <textarea id="seo-raw-jsonld" class="textarea code" rows="3" placeholder='{"@type":"Organization","sameAs":["https://github.com/yourorg"]}'></textarea>
+                </div>
               </div>
             </div>
 
-            <!-- 5. Firebase Cloud Persistence & Master Clone Backup -->
+            <!-- 5. Firebase Cloud Persistence, Environment Diagnostics & Master Clone Backup -->
             <div class="card" data-domain-card="firebase">
               <div class="card-title">
-                <span>5. Live Admin Firebase Cloud Persistence (.env or Runtime Keys) &amp; Backup</span>
+                <span>5. Live Admin Firebase Cloud Persistence (.env or Runtime Keys) &amp; Environment Security</span>
                 <span class="field-tag" id="fb-env-badge">Checking .env...</span>
               </div>
               <div class="card-desc">
                 The Admin Studio runs 100% on live data from Firebase Cloud Firestore (<code>siteConfig/main</code>).
-                Reads <code>FIREBASE_API_KEY</code> &amp; <code>FIREBASE_PROJECT_ID</code> from <code>.env</code> or runtime keys below.
+                Paste your full Firebase SDK config snippet below to auto-fill all 7 fields, or configure <code>FIREBASE_API_KEY</code> &amp; <code>FIREBASE_PROJECT_ID</code> in your server/Cloudflare environment variables.
               </div>
+
+              <div class="seo-subbox" style="margin-bottom: 12px">
+                <div class="seo-subbox-title">
+                  <span>1-Click Paste Firebase SDK Snippet or JSON (Auto-Fills All 7 Fields)</span>
+                  <button type="button" id="btn-parse-fb-snippet" class="btn btn-sm btn-primary">Parse &amp; Auto-Fill</button>
+                </div>
+                <textarea
+                  id="fb-snippet-input"
+                  class="textarea code"
+                  rows="3"
+                  placeholder="Paste const firebaseConfig = { apiKey: &quot;AIza...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, storageBucket: &quot;...&quot;, messagingSenderId: &quot;...&quot;, appId: &quot;...&quot; };"
+                ></textarea>
+              </div>
+
               <div class="form-grid cols-2">
                 <div class="field">
                   <label class="field-label" for="fb-api-key">FIREBASE_API_KEY</label>
-                  <input type="text" id="fb-api-key" class="input" placeholder="AIzaSy..." />
+                  <input type="text" id="fb-api-key" class="input" placeholder="AIzaSy..." autocomplete="off" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="fb-project-id">FIREBASE_PROJECT_ID</label>
-                  <input type="text" id="fb-project-id" class="input" placeholder="your-project-id" />
+                  <input type="text" id="fb-project-id" class="input" placeholder="your-project-id" autocomplete="off" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="fb-auth-domain">FIREBASE_AUTH_DOMAIN</label>
-                  <input type="text" id="fb-auth-domain" class="input" placeholder="your-project.firebaseapp.com" />
+                  <input type="text" id="fb-auth-domain" class="input" placeholder="your-project.firebaseapp.com" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="fb-storage-bucket">FIREBASE_STORAGE_BUCKET</label>
+                  <input type="text" id="fb-storage-bucket" class="input" placeholder="your-project.appspot.com" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="fb-messaging-sender-id">FIREBASE_MESSAGING_SENDER_ID</label>
+                  <input type="text" id="fb-messaging-sender-id" class="input" placeholder="123456789012" autocomplete="off" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="fb-app-id">FIREBASE_APP_ID</label>
-                  <input type="text" id="fb-app-id" class="input" placeholder="1:123456:web:abcdef" />
+                  <input type="text" id="fb-app-id" class="input" placeholder="1:123456:web:abcdef" autocomplete="off" />
                 </div>
+                <div class="field span-full">
+                  <label class="field-label" for="fb-database-id">
+                    <span>FIREBASE_DATABASE_ID</span>
+                    <span class="field-tag">Usually (default)</span>
+                  </label>
+                  <input type="text" id="fb-database-id" class="input" placeholder="(default)" autocomplete="off" />
+                </div>
+
                 <div class="field span-full" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px">
-                  <button type="button" id="btn-save-firebase" class="btn btn-dark">Save Firebase Runtime Keys</button>
+                  <button type="button" id="btn-save-firebase" class="btn btn-dark">Save &amp; Connect Firebase</button>
+                  <button type="button" id="btn-test-firebase" class="btn btn-primary">Test Firestore Connection</button>
+                  <button type="button" id="btn-clear-firebase" class="btn">Revert to .env Defaults</button>
                   <button type="button" id="btn-export-json" class="btn">Export Site JSON Backup</button>
                   <label class="btn" style="cursor: pointer">
                     Import Site JSON
@@ -2012,6 +2263,17 @@
                   </label>
                   <button type="button" id="btn-reset-defaults" class="btn btn-danger">Reset to Master Template</button>
                 </div>
+              </div>
+
+              <div id="fb-test-feedback" class="seo-subbox" style="margin-top: 10px; display: none"></div>
+
+              <!-- Live Environment Variables & Security System Diagnostics -->
+              <div class="seo-subbox" style="margin-top: 12px">
+                <div class="seo-subbox-title">
+                  <span>Environment Variables &amp; Security System Status (Non-Secret Live Audit)</span>
+                  <span class="field-tag" id="env-runtime-tag">Checking runtime...</span>
+                </div>
+                <div id="env-security-diagnostics-box" class="form-grid cols-2" style="gap: 8px; margin-top: 6px"></div>
               </div>
             </div>
           </section>
@@ -2095,9 +2357,10 @@
               <option value="callout">1. Highlight / Verification Callout Box</option>
               <option value="grid">2. Two-Column Feature Cards Grid</option>
               <option value="steps">3. Numbered Step-by-Step Guide Block</option>
-              <option value="table">4. Two-Column Technical Comparison Table</option>
-              <option value="cta">5. Inline Action / Download Button</option>
-              <option value="accordion">6. Expandable FAQ / Details Accordion</option>
+              <option value="checklist">4. Verified Checklist (✓ Bullet Items)</option>
+              <option value="table">5. Two-Column Technical Comparison Table</option>
+              <option value="cta">6. Inline Action / Download Button</option>
+              <option value="accordion">7. Expandable FAQ / Details Accordion</option>
             </select>
           </div>
 
@@ -2126,6 +2389,75 @@
               + Insert Visual Block into Editor
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         5. INTERACTIVE INTERNAL / EXTERNAL LINK INSERTION MODAL
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="link-insert-modal" class="cms-modal-backdrop" hidden>
+      <div class="cms-modal-card">
+        <div class="card-title">
+          <span>🔗 Insert Internal or External Link (No Code)</span>
+          <button type="button" id="btn-close-link-modal" class="btn btn-sm">✕ Close</button>
+        </div>
+        <div class="card-desc">
+          Pick an existing section, news route, legal page, or paste any URL. We generate the clean SEO link automatically.
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="modal-link-text">Link Anchor Text</label>
+            <input type="text" id="modal-link-text" class="input" placeholder="e.g., View Technical Specifications" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="modal-link-preset">Quick Pick Existing Page or Section</label>
+            <select id="modal-link-preset" class="select"></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="modal-link-url">Target URL or Section Hash</label>
+            <input type="text" id="modal-link-url" class="input" placeholder="/#technical-specifications or https://..." />
+          </div>
+          <div class="field">
+            <div class="toggle-box">
+              <div>
+                <strong>Open Link in New Tab (Recommended for External URLs)</strong>
+                <div class="field-help">Adds <code>target="_blank" rel="noopener noreferrer"</code> cleanly.</div>
+              </div>
+              <input type="checkbox" id="modal-link-newtab" />
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
+            <button type="button" id="btn-confirm-insert-link" class="btn btn-primary">+ Insert Link into Editor</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         6. LIVE PUBLIC WEBSITE PREVIEW MODAL (MOBILE + DESKTOP)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="site-preview-modal" class="cms-modal-backdrop" hidden>
+      <div class="site-preview-modal-card">
+        <div class="site-preview-toolbar">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <strong style="font-size:0.9rem;">Live Website Preview</strong>
+            <select id="preview-route-select" class="select" style="width:auto; min-width:155px; min-height:32px; padding:4px 8px;">
+              <option value="/">Homepage (/)</option>
+              <option value="/news">Daily News Hub (/news)</option>
+              <option value="/privacy-policy">Privacy Policy</option>
+              <option value="/moreinfo">Security Gateway (/moreinfo)</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <button type="button" id="btn-preview-mobile" class="btn btn-sm btn-dark">📱 Mobile 390px</button>
+            <button type="button" id="btn-preview-desktop" class="btn btn-sm">🖥️ Desktop</button>
+            <button type="button" id="btn-preview-save-reload" class="btn btn-sm btn-primary">Save &amp; Refresh</button>
+            <button type="button" id="btn-close-preview-modal" class="btn btn-sm">✕ Close</button>
+          </div>
+        </div>
+        <div class="site-preview-frame-wrap">
+          <iframe id="site-preview-iframe" class="site-preview-iframe mobile-mode" title="Public Website Preview"></iframe>
         </div>
       </div>
     </div>

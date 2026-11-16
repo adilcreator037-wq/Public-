@@ -105,6 +105,8 @@ test('buildPartialRoutePayload and renderHamburgerDrawerHtml generate scoped SSR
   assert.equal(homePayload.viewType, 'home');
   assert.ok(homePayload.showHeroCtaGrid);
   assert.ok(homePayload.renderedMainHtml.includes('id="technical-specifications"'));
+  assert.ok(homePayload.renderedMainHtml.includes('class="table-scroll-wrapper"'));
+  assert.ok(homePayload.renderedMainHtml.includes('class="faq-item"'));
   assert.ok(homePayload.renderedMainHtml.includes('class="toc-jump-bar"'));
   assert.ok(homePayload.renderedMainHtml.includes('class="copy-hash-btn"'));
   assert.ok(!homePayload.renderedMainHtml.includes('GDPR/CCPA compliance'));
@@ -421,5 +423,111 @@ test('v12 7-Gate Security Engine & AES-256-GCM Link Vault: encrypts/decrypts URL
   assert.ok(!moreinfoFile.content.includes('secret-build.apk'));
 });
 
+test('resolveVaultSecret supports VAULT_ENCRYPTION_SECRET & parseFirebaseConfigSnippet parses JS/JSON snippets cleanly', async () => {
+  const {
+    resolveVaultSecret,
+    parseFirebaseConfigSnippet,
+    isValidFirebaseClientConfig
+  } = await import('./cms-engine');
 
+  assert.equal(
+    resolveVaultSecret({ VAULT_ENCRYPTION_SECRET: 'custom-vault-32-char-secret-2026' }),
+    'custom-vault-32-char-secret-2026'
+  );
+  assert.equal(
+    resolveVaultSecret({ LINK_VAULT_MASTER_SECRET: 'master-link-vault-secret-2026' }),
+    'master-link-vault-secret-2026'
+  );
 
+  // Encrypt with VAULT_ENCRYPTION_SECRET via env object and decrypt cleanly
+  const cipher = await encryptVaultValue('https://cdn.test.dev/app.apk', {
+    VAULT_ENCRYPTION_SECRET: 'custom-vault-32-char-secret-2026'
+  });
+  assert.ok(cipher.startsWith('v2.'));
+  const plain = await decryptVaultValue(cipher, {
+    VAULT_ENCRYPTION_SECRET: 'custom-vault-32-char-secret-2026'
+  });
+  assert.equal(plain, 'https://cdn.test.dev/app.apk');
+
+  // Parse pasted JS Firebase snippet
+  const jsSnippet = `
+    // For Firebase JS SDK v7.20.0 and later
+    const firebaseConfig = {
+      apiKey: "AIzaSyD-ExampleRealKey1234567890",
+      authDomain: "prod-app-123.firebaseapp.com",
+      projectId: "prod-app-123",
+      storageBucket: "prod-app-123.appspot.com",
+      messagingSenderId: "998877665544",
+      appId: "1:998877665544:web:abcdef123456"
+    };
+  `;
+  const parsed = parseFirebaseConfigSnippet(jsSnippet);
+  assert.ok(parsed);
+  assert.equal(parsed.apiKey, 'AIzaSyD-ExampleRealKey1234567890');
+  assert.equal(parsed.projectId, 'prod-app-123');
+  assert.equal(parsed.storageBucket, 'prod-app-123.appspot.com');
+  assert.equal(parsed.databaseId, '(default)');
+  assert.equal(isValidFirebaseClientConfig(parsed), true);
+
+  // Reject dummy placeholders
+  assert.equal(
+    isValidFirebaseClientConfig({
+      apiKey: 'DummyKey1234567890123456',
+      projectId: 'my-single-domain-cms'
+    }),
+    false
+  );
+});
+
+test('UI showTocJumpBar, hero CTA relSponsored, SEO priceCurrency, and rawJsonLd render accurately', () => {
+  const cfg = mergeSiteConfig({
+    uiConfig: {
+      ...MASTER_DEFAULT_CONFIG.uiConfig,
+      showTocJumpBar: false
+    },
+    securityGate: {
+      ...MASTER_DEFAULT_CONFIG.securityGate,
+      enabled: false
+    },
+    hero: {
+      ...MASTER_DEFAULT_CONFIG.hero,
+      primaryCta: {
+        label: 'Partner Mirror',
+        url: 'https://partner.example.com/pkg',
+        relSponsored: true
+      },
+      secondaryCta: {
+        label: 'Sponsored Guide',
+        url: 'https://guide.example.com',
+        relSponsored: true
+      }
+    },
+    seo: {
+      ...MASTER_DEFAULT_CONFIG.seo,
+      softwareDetails: {
+        ...MASTER_DEFAULT_CONFIG.seo.softwareDetails,
+        priceCurrency: 'EUR'
+      },
+      rawJsonLd: JSON.stringify({
+        "@type": "SpecialAnnouncement",
+        "name": "Version 5.0 Mirror Ready"
+      })
+    }
+  });
+
+  const homePayload = buildPartialRoutePayload('/', cfg);
+  assert.ok(!homePayload.renderedMainHtml.includes('class="toc-jump-bar"'));
+
+  const schema = buildJsonLdSchema(cfg, '/');
+  const swNode = schema['@graph'].find((n: any) => n['@type'] === 'SoftwareApplication');
+  assert.ok(swNode);
+  assert.equal(swNode.offers.priceCurrency, 'EUR');
+  const customNode = schema['@graph'].find((n: any) => n['@type'] === 'SpecialAnnouncement');
+  assert.ok(customNode);
+  assert.equal(customNode.name, 'Version 5.0 Mirror Ready');
+
+  const templateStub = `<!DOCTYPE html><html lang="en"><head><title>x</title><meta name="description" content="x"/><link rel="canonical" href="x"/><link rel="icon" href="x"/><meta property="og:title" content="x"/><meta property="og:description" content="x"/><meta property="og:url" content="x"/><meta property="og:image" content="x"/><meta name="twitter:title" content="x"/><meta name="twitter:description" content="x"/><meta name="twitter:image" content="x"/><script id="dynamic-json-ld" type="application/ld+json"></script></head><body><header class="sticky-header"><img id="navbar-logo-img" src="x"/><span id="navbar-logo-text" class="brand-logo-text">x</span><a href="/news" id="header-news-btn" class="header-news-link" data-spa-link>News</a><ul class="nav-drawer-list" id="drawer-links-list"></ul></header><div id="standalone-back-bar" class="back-home-bar hidden"><div></div></div><section id="hero-section" class="hero-container"><h1 id="hero-heading" class="hero-title">x</h1><div id="hero-cta-grid" class="hero-action-grid"><a id="hero-cta-secondary" class="btn-secondary" href="#">x</a><a id="hero-cta-primary" class="btn-primary" href="#">x</a></div></section><main id="dynamic-content" class="content-container prose-container"></main><footer class="site-footer"><div id="footer-brand-summary-block" class="footer-brand-summary-box"><div id="footer-brand-title" class="footer-brand-title">x</div><p id="footer-summary-text" class="footer-summary-text">x</p><a id="footer-contact-email-link" class="footer-contact-pill" href="x">x</a></div><div id="footer-disclaimer-block"><div id="footer-disclaimer-heading" class="footer-heading">x</div><p id="footer-disclaimer" class="footer-disclaimer-text">x</p></div><div id="footer-links-heading" class="footer-heading">x</div><div id="footer-links-list" class="footer-links-stack"></div><div id="footer-copyright" class="footer-copy">x</div></footer><script id="ssr-initial-state" type="application/json"></script></body></html>`;
+  const renderedHtml = renderCompleteStaticPageHtml(templateStub, cfg, '/');
+  assert.ok(renderedHtml.includes('id="hero-cta-secondary" class="btn-secondary" href="https://guide.example.com" rel="sponsored noopener"'));
+  assert.ok(renderedHtml.includes('id="hero-cta-primary" class="btn-primary" href="https://partner.example.com/pkg" rel="sponsored noopener"'));
+});

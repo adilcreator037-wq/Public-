@@ -8,31 +8,32 @@
  * ============================================================================
  */
 
-const navbarLogoLink = document.getElementById('navbar-logo');
+const navbarLogoLink = document.getElementById('navbar-logo-link');
 const navbarLogoImg = document.getElementById('navbar-logo-img');
 const navbarLogoText = document.getElementById('navbar-logo-text');
 const headerNewsBtn = document.getElementById('header-news-btn');
 const drawerLinksList = document.getElementById('drawer-links-list');
-const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-const mobileDrawer = document.getElementById('mobile-drawer');
-const menuIconBars = document.getElementById('menu-icon-bars');
-const menuIconClose = document.getElementById('menu-icon-close');
+const hamburgerToggle = document.getElementById('hamburger-toggle');
+const navDrawer = document.getElementById('nav-drawer');
 
-const breadcrumbNav = document.getElementById('page-breadcrumb-nav');
-const breadcrumbCurrent = document.getElementById('breadcrumb-current');
+const standaloneBackBar = document.getElementById('standalone-back-bar');
+const backHomeAnchor = document.getElementById('back-home-anchor');
+const backNewsAnchor = document.getElementById('back-news-anchor');
+const subpageSwitcherPills = document.getElementById('subpage-switcher-pills');
 const heroSectionEl = document.getElementById('hero-section');
 const heroHeading = document.getElementById('hero-heading');
 const heroCtaGrid = document.getElementById('hero-cta-grid');
 const heroCtaSecondary = document.getElementById('hero-cta-secondary');
 const heroCtaPrimary = document.getElementById('hero-cta-primary');
 const floatingBottomCta = document.getElementById('floating-bottom-cta');
+const floatingCtaBtn = document.getElementById('floating-cta-btn');
 
 const dynamicContent = document.getElementById('dynamic-content');
 const footerBrandSummaryBlock = document.getElementById('footer-brand-summary-block');
-const footerBrandLogoImg = document.getElementById('footer-brand-logo-img');
 const footerBrandTitle = document.getElementById('footer-brand-title');
 const footerSummaryText = document.getElementById('footer-summary-text');
 const footerContactEmailLink = document.getElementById('footer-contact-email-link');
+const footerDisclaimerBlock = document.getElementById('footer-disclaimer-block');
 const footerDisclaimerHeading = document.getElementById('footer-disclaimer-heading');
 const footerDisclaimer = document.getElementById('footer-disclaimer');
 const footerLinksHeading = document.getElementById('footer-links-heading');
@@ -64,49 +65,56 @@ function generateSlug(input) {
 function routePathToStaticJsonName(pathname) {
   const clean = (pathname || '/').split('?')[0].replace(/^\/+|\/+$/g, '');
   if (!clean) return 'index.json';
-  return `${clean.replace(/\//g, '__')}.json`;
+  return `${clean.replace(/\//g, '--')}.json`;
 }
 
 function resolveFontStackCss(fontFamily) {
-  if (fontFamily === 'serif') {
-    return 'Georgia, Cambria, "Times New Roman", Times, serif';
+  switch (fontFamily) {
+    case 'inter':
+      return '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    case 'jakarta':
+      return '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    case 'serif':
+      return 'Georgia, Cambria, "Times New Roman", Times, serif';
+    case 'mono':
+      return '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    default:
+      return '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
   }
-  if (fontFamily === 'mono') {
-    return '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-  }
-  return '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 }
 
 function setDrawerState(open) {
   isDrawerOpen = Boolean(open);
-  if (!mobileDrawer) return;
-  if (isDrawerOpen) {
-    mobileDrawer.classList.add('open');
-    if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'true');
-    if (menuIconBars) menuIconBars.classList.add('hidden');
-    if (menuIconClose) menuIconClose.classList.remove('hidden');
-  } else {
-    mobileDrawer.classList.remove('open');
-    if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'false');
-    if (menuIconBars) menuIconBars.classList.remove('hidden');
-    if (menuIconClose) menuIconClose.classList.add('hidden');
+  if (navDrawer) {
+    navDrawer.classList.toggle('hidden', !isDrawerOpen);
+  }
+  if (hamburgerToggle) {
+    hamburgerToggle.classList.toggle('is-active', isDrawerOpen);
+    hamburgerToggle.setAttribute('aria-expanded', isDrawerOpen ? 'true' : 'false');
   }
 }
 
-if (mobileMenuBtn) {
-  mobileMenuBtn.addEventListener('click', (e) => {
+if (hamburgerToggle) {
+  hamburgerToggle.addEventListener('click', (e) => {
     e.stopPropagation();
     setDrawerState(!isDrawerOpen);
   });
 }
 
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isDrawerOpen) {
+    setDrawerState(false);
+    if (hamburgerToggle) hamburgerToggle.focus();
+  }
+});
+
 document.addEventListener('click', (e) => {
   if (
     isDrawerOpen &&
-    mobileDrawer &&
-    !mobileDrawer.contains(e.target) &&
-    mobileMenuBtn &&
-    !mobileMenuBtn.contains(e.target)
+    navDrawer &&
+    !navDrawer.contains(e.target) &&
+    hamburgerToggle &&
+    !hamburgerToggle.contains(e.target)
   ) {
     setDrawerState(false);
   }
@@ -179,7 +187,7 @@ function applyUiThemeVariables(shell) {
   root.style.setProperty('--base-font-size', ui.baseFontSize || '16px');
   root.style.setProperty('--font-stack', resolveFontStackCss(ui.fontFamily));
 
-  const headerEl = document.querySelector('.site-header');
+  const headerEl = document.querySelector('.sticky-header');
   if (headerEl) {
     headerEl.style.position = ui.stickyHeader === false ? 'relative' : 'sticky';
   }
@@ -318,19 +326,41 @@ function enhanceContainerDom(container, ui = {}) {
   });
 
   // 2. Enhance SHA-256 Checksum cell with a 1-click Copy Checksum button
+  const showCopiedState = (btn) => {
+    btn.textContent = 'Copied';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 1800);
+  };
+
   const bindCopyBtn = (btn, text) => {
     if (!btn || btn.dataset.bound === '1') return;
     btn.dataset.bound = '1';
-    btn.addEventListener('click', () => {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => {
-          btn.textContent = 'Copied';
-          btn.classList.add('copied');
-          setTimeout(() => {
-            btn.textContent = 'Copy';
-            btn.classList.remove('copied');
-          }, 1800);
-        });
+    btn.addEventListener('click', async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          showCopiedState(btn);
+          return;
+        }
+      } catch {
+        // Fallback below
+      }
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showCopiedState(btn);
+      } catch {
+        // Ignore clipboard denial
       }
     });
   };
@@ -351,11 +381,11 @@ function enhanceContainerDom(container, ui = {}) {
     bindCopyBtn(btn, btn.getAttribute('data-copy-text') || text);
   });
 
-  // 3. Convert FAQ <h3> + <p> pairs into accessible collapsible <details class="faq-item">
+  // 3. Convert legacy raw FAQ <h3> + <p> pairs (only inside non-SSR rawHtml) into accessible <details class="faq-item">
   if (ui.enableFaqAccordion !== false) {
     const h3List = Array.from(container.querySelectorAll('h3'));
     h3List.forEach((h3) => {
-      if (h3.closest('.news-item-block') || h3.closest('details')) return;
+      if (h3.closest('.news-item-block') || h3.closest('details') || h3.closest('.faq-static-item')) return;
       const text = (h3.textContent || '').trim();
       const nextEl = h3.nextElementSibling;
       if (nextEl && nextEl.tagName === 'P' && (/^q\d*[:.\s-]/i.test(text) || text.endsWith('?'))) {
@@ -365,7 +395,9 @@ function enhanceContainerDom(container, ui = {}) {
         summary.textContent = text;
         const answerDiv = document.createElement('div');
         answerDiv.className = 'faq-answer';
-        answerDiv.innerHTML = nextEl.innerHTML;
+        const p = document.createElement('p');
+        p.innerHTML = nextEl.innerHTML;
+        answerDiv.appendChild(p);
         details.appendChild(summary);
         details.appendChild(answerDiv);
         h3.parentNode.replaceChild(details, h3);
@@ -377,6 +409,8 @@ function enhanceContainerDom(container, ui = {}) {
   // 4. Bind News Hub Category Filter Buttons
   const filterBtns = container.querySelectorAll('[data-news-cat]');
   filterBtns.forEach((btn) => {
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
     btn.addEventListener('click', async () => {
       const cat = btn.getAttribute('data-news-cat') || 'ALL';
       currentNewsCategory = cat;
@@ -413,6 +447,8 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   }
 
   if (headerNewsBtn) {
+    const isNewsActive = payload.viewType === 'news-hub' || payload.viewType === 'news-article';
+    headerNewsBtn.classList.toggle('is-active', isNewsActive);
     if (ui.showHeaderNewsButton === false) {
       headerNewsBtn.classList.add('hidden');
     } else {
@@ -427,49 +463,84 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
     drawerLinksList.innerHTML = buildDrawerHtmlClient(shell, payload.canonicalPath);
   }
 
-  if (breadcrumbNav && breadcrumbCurrent) {
-    if (payload.viewType === 'home' || ui.showBreadcrumbs === false) {
-      breadcrumbNav.classList.add('hidden');
-    } else {
-      breadcrumbNav.classList.remove('hidden');
-      if (payload.viewType === 'news-hub') {
-        breadcrumbCurrent.textContent = 'Daily News & Updates';
-      } else if (payload.viewType === 'news-article') {
-        breadcrumbCurrent.textContent = `News / ${payload.heroH1}`;
-      } else {
-        breadcrumbCurrent.textContent = payload.heroH1;
+  if (standaloneBackBar) {
+    const showBack = payload.viewType !== 'home' && ui.showBreadcrumbs !== false;
+    standaloneBackBar.classList.toggle('hidden', !showBack);
+    if (showBack) {
+      if (backHomeAnchor) {
+        backHomeAnchor.textContent = ui.backToHomeLabel || '← Back to Main Page';
+      }
+      if (backNewsAnchor) {
+        const showNewsBack = payload.viewType === 'news-article';
+        backNewsAnchor.classList.toggle('hidden', !showNewsBack);
+        backNewsAnchor.textContent = ui.allNewsBreadcrumbLabel || 'All Daily News →';
+      }
+      if (subpageSwitcherPills) {
+        if (ui.showSubpageSwitcherPills === false) {
+          subpageSwitcherPills.classList.add('hidden');
+          subpageSwitcherPills.innerHTML = '';
+        } else {
+          subpageSwitcherPills.classList.remove('hidden');
+          subpageSwitcherPills.innerHTML = (shell.allSubpagePills || [])
+            .map((pill) => {
+              const isActivePill =
+                payload.canonicalPath === pill.href ||
+                (pill.href === '/news' && payload.viewType === 'news-article');
+              return `<a href="${escapeHtml(pill.href)}" data-spa-link class="subpage-pill${
+                isActivePill ? ' active' : ''
+              }">${escapeHtml(pill.label)}</a>`;
+            })
+            .join('');
+        }
       }
     }
   }
 
   if (heroSectionEl) {
-    heroSectionEl.style.display = payload.showHeroSection === false ? 'none' : '';
+    heroSectionEl.classList.toggle('hidden', payload.showHeroSection === false);
   }
   if (heroHeading) {
     heroHeading.textContent = payload.heroH1 || '';
   }
   if (heroCtaGrid) {
-    if (payload.showHeroCtaGrid) {
-      heroCtaGrid.classList.remove('hidden');
-    } else {
-      heroCtaGrid.classList.add('hidden');
-    }
+    heroCtaGrid.classList.toggle('hidden', !payload.showHeroCtaGrid);
   }
 
   if (heroCtaSecondary && shell.heroCtas?.secondaryCta) {
-    heroCtaSecondary.textContent = shell.heroCtas.secondaryCta.label || 'Installation Guide';
-    heroCtaSecondary.href = shell.heroCtas.secondaryCta.url || '#';
+    const sec = shell.heroCtas.secondaryCta;
+    heroCtaSecondary.textContent = sec.label || 'Installation Guide';
+    heroCtaSecondary.href = sec.url || '#';
+    if (sec.relSponsored) {
+      heroCtaSecondary.setAttribute('rel', 'sponsored noopener');
+    } else {
+      heroCtaSecondary.removeAttribute('rel');
+    }
   }
   if (heroCtaPrimary && shell.heroCtas?.primaryCta) {
-    heroCtaPrimary.textContent = shell.heroCtas.primaryCta.label || 'Download Official Package';
-    heroCtaPrimary.href = shell.heroCtas.primaryCta.url || '#';
+    const pri = shell.heroCtas.primaryCta;
+    const priHref = pri.url || '#';
+    heroCtaPrimary.textContent = pri.label || 'Download Official Package';
+    heroCtaPrimary.href = priHref;
+    if (priHref === '/moreinfo' || priHref === '/download') {
+      heroCtaPrimary.setAttribute('rel', 'nofollow noopener');
+    } else if (pri.relSponsored) {
+      heroCtaPrimary.setAttribute('rel', 'sponsored noopener');
+    } else {
+      heroCtaPrimary.removeAttribute('rel');
+    }
   }
 
-  if (floatingBottomCta && shell.heroCtas?.floatingCta) {
+  if (floatingBottomCta && floatingCtaBtn && shell.heroCtas?.floatingCta) {
     const fl = shell.heroCtas.floatingCta;
     if (fl.enabled && payload.viewType === 'home') {
-      floatingBottomCta.textContent = fl.label || 'Download Faster';
-      floatingBottomCta.href = fl.url || '#';
+      const flHref = fl.url || '/moreinfo';
+      floatingCtaBtn.textContent = fl.label || 'Download Faster';
+      floatingCtaBtn.href = flHref;
+      if (flHref === '/moreinfo' || flHref === '/download') {
+        floatingCtaBtn.setAttribute('rel', 'nofollow noopener');
+      } else {
+        floatingCtaBtn.removeAttribute('rel');
+      }
       floatingBottomCta.classList.remove('hidden');
     } else {
       floatingBottomCta.classList.add('hidden');
@@ -487,10 +558,6 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
       footerBrandSummaryBlock.classList.add('hidden');
     } else {
       footerBrandSummaryBlock.classList.remove('hidden');
-      if (footerBrandLogoImg && brand.logoUrl) {
-        footerBrandLogoImg.src = brand.logoUrl;
-        footerBrandLogoImg.alt = `${brand.name || 'Brand'} Logo`;
-      }
       if (footerBrandTitle) footerBrandTitle.textContent = brand.name || '';
       if (footerSummaryText) {
         footerSummaryText.textContent = shell.navigation?.footerSummary || brand.tagline || '';
@@ -507,6 +574,9 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
     }
   }
 
+  if (footerDisclaimerBlock) {
+    footerDisclaimerBlock.classList.toggle('hidden', ui.showFooterDisclaimer === false);
+  }
   if (footerDisclaimerHeading) {
     footerDisclaimerHeading.textContent = shell.navigation?.disclaimerHeading || 'Legal Disclaimer';
   }
@@ -514,7 +584,23 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
     footerDisclaimer.textContent = shell.navigation?.disclaimer || '';
   }
   if (footerLinksHeading) {
+    footerLinksHeading.classList.toggle('hidden', ui.showFooterLinksHeading === false);
     footerLinksHeading.textContent = shell.navigation?.siteLinksHeading || 'Official Pages & Legal Links';
+  }
+  if (footerLinksList) {
+    const quickLinksHtml = (shell.navigation?.footerQuickLinks || [])
+      .map((ql) => {
+        const targetAttr = ql.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : ' data-spa-link';
+        return `<a href="${escapeHtml(ql.url)}"${targetAttr} class="footer-link">${escapeHtml(ql.label)}</a>`;
+      })
+      .join('');
+    const legalLinksHtml = (shell.footerPages || [])
+      .map(
+        (pg) =>
+          `<a href="/${escapeHtml(pg.slug)}" data-spa-link class="footer-link" title="${escapeHtml(pg.metaTitle)}">${escapeHtml(pg.label)}</a>`
+      )
+      .join('');
+    footerLinksList.innerHTML = [quickLinksHtml, legalLinksHtml].filter(Boolean).join('');
   }
   if (footerCopyright) {
     footerCopyright.textContent = shell.navigation?.copyright || '';
@@ -532,7 +618,7 @@ async function fetchStaticRoutePayload(pathname, newsCat = 'ALL') {
   if (newsCat === 'ALL') {
     const jsonFileName = routePathToStaticJsonName(cleanPath);
     try {
-      const staticRes = await fetch(`/static-routes/${jsonFileName}`);
+      const staticRes = await fetch(`/static-routes/${jsonFileName}`, { cache: 'no-cache' });
       if (staticRes.ok) {
         const staticPayload = await staticRes.json();
         if (staticPayload && staticPayload.canonicalPath) {
@@ -587,6 +673,7 @@ async function navigateToUrl(targetHref, pushState = true, newsCat = 'ALL') {
   }
 
   try {
+    currentNewsCategory = newsCat;
     const payload = await fetchStaticRoutePayload(targetPath, newsCat);
     if (pushState) {
       window.history.pushState({}, '', `${targetPath}${targetHash}`);

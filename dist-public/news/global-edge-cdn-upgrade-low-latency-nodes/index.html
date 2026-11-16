@@ -211,17 +211,20 @@
       transform: translateY(-7px) rotate(-45deg);
     }
 
-    /* Sticky Slide-Down Navigation Drawer (Anchored right under the 60px sticky header!) */
+    /* Fixed Overlay Navigation Drawer (Zero CLS — Always opens cleanly right under the 60px sticky header) */
     .nav-drawer {
       background-color: var(--bg-surface);
-      border-bottom: 2px solid #E5E7EB;
+      border-bottom: 2px solid var(--border-color, #E5E7EB);
       width: 100%;
-      position: sticky;
+      max-width: var(--max-container-width);
+      position: fixed;
       top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 95;
       max-height: calc(100vh - 60px);
       overflow-y: auto;
-      box-shadow: 0 20px 32px -8px rgba(15, 23, 42, 0.16);
+      box-shadow: 0 20px 32px -8px rgba(15, 23, 42, 0.2);
     }
 
     .nav-drawer-list {
@@ -365,9 +368,9 @@
       border-radius: 4px;
     }
 
+    /* Normal document flow prevents scroll-time intrinsic-size layout shifts */
     .cv-auto-section {
-      content-visibility: auto;
-      contain-intrinsic-size: 1px 320px;
+      display: block;
     }
 
     /* Above-the-Fold Hero Block */
@@ -471,6 +474,10 @@
       margin-bottom: 16px;
     }
 
+    .prose-container section[id] {
+      scroll-margin-top: 76px;
+    }
+
     .prose-container h2 {
       font-size: 22px;
       font-weight: 700;
@@ -478,7 +485,7 @@
       margin-top: 32px;
       margin-bottom: 12px;
       line-height: 1.35;
-      scroll-margin-top: 72px;
+      scroll-margin-top: 76px;
     }
 
     .prose-container h3 {
@@ -553,7 +560,11 @@
       padding: 3px 9px;
       border-radius: 4px;
       margin-top: 28px;
-      margin-bottom: -20px;
+      margin-bottom: 6px;
+    }
+
+    .section-eyebrow-badge + h2 {
+      margin-top: 4px;
     }
 
     .section-inline-cta {
@@ -646,8 +657,8 @@
     }
 
     .cms-accordion {
-      border: 1px solid #E5E7EB;
-      border-radius: 8px;
+      border: 1px solid var(--border-color, #E5E7EB);
+      border-radius: 10px;
       padding: 12px 16px;
       margin: 12px 0;
       background-color: #FAFAFA;
@@ -658,6 +669,82 @@
       color: var(--heading-color);
       cursor: pointer;
       font-size: 15.5px;
+    }
+
+    /* Native Accessible FAQ Accordions (.faq-item) — Pre-rendered by SSR for Zero CLS */
+    .faq-item {
+      border: 1px solid var(--border-color, #E2E8F0);
+      border-radius: var(--card-radius, 12px);
+      background-color: var(--bg-surface, #FFFFFF);
+      margin-bottom: 10px;
+      overflow: hidden;
+      transition: border-color 0.15s ease;
+    }
+
+    .faq-item[open] {
+      border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color, #E2E8F0));
+    }
+
+    .faq-item summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--heading-color);
+      line-height: 1.4;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .faq-item summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .faq-item summary::after {
+      content: '+';
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: 6px;
+      background-color: #F1F5F9;
+      color: var(--heading-color);
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .faq-item[open] summary::after {
+      content: '−';
+      background-color: var(--accent-soft);
+      color: var(--accent-color);
+    }
+
+    .faq-item summary:hover {
+      background-color: #F8FAFC;
+    }
+
+    .faq-answer {
+      padding: 0 16px 14px 16px;
+      border-top: 1px solid #F1F5F9;
+    }
+
+    .faq-answer p {
+      margin-top: 10px;
+      margin-bottom: 0;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+
+    .faq-static-item {
+      padding-bottom: 8px;
     }
 
     .prose-container ul,
@@ -760,11 +847,16 @@
       display: block;
       margin-bottom: 12px;
       text-decoration: none;
+      border-radius: 10px;
+      overflow: hidden;
     }
 
     .news-card-cover-img {
       margin: 0 !important;
-      max-height: 280px;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
     }
 
     .news-meta-line {
@@ -1049,6 +1141,7 @@
       display: none !important;
     }
   </style>
+  <script id="dynamic-jsonld-schema" type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://apexmobile.example.com/#website","url":"https://apexmobile.example.com","name":"ApexMobile","alternateName":"ApexMobile","description":"Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.","publisher":{"@id":"https://apexmobile.example.com/#organization"},"inLanguage":"en-US"},{"@type":"Organization","@id":"https://apexmobile.example.com/#organization","name":"ApexMobile","url":"https://apexmobile.example.com","email":"support@apexmobile.example.com","logo":{"@type":"ImageObject","@id":"https://apexmobile.example.com/#logo","url":"https://apexmobile.example.com/assets/app-icon.svg","contentUrl":"https://apexmobile.example.com/assets/app-icon.svg","width":512,"height":512,"caption":"ApexMobile"},"image":{"@id":"https://apexmobile.example.com/#logo"}},{"@type":"BreadcrumbList","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"ApexMobile","item":"https://apexmobile.example.com"},{"@type":"ListItem","position":2,"name":"Daily News","item":"https://apexmobile.example.com/news"},{"@type":"ListItem","position":3,"name":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","item":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes"}]},{"@type":"NewsArticle","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#article","headline":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","description":"ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.","image":["https://apexmobile.example.com/assets/app-icon.svg"],"datePublished":"October 21, 2026","articleSection":"Infrastructure News","mainEntityOfPage":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes","author":{"@type":"Organization","name":"Network Operations Team"},"publisher":{"@id":"https://apexmobile.example.com/#organization"}}]}</script>
 
   <meta name="theme-color" content="#EF4444" />
   <meta name="application-name" content="ApexMobile" />
@@ -1062,9 +1155,9 @@
   <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
   <link rel="preload" as="image" href="/assets/hero-banner.svg" fetchpriority="high" />
   <link rel="alternate" type="application/rss+xml" title="ApexMobile News RSS" href="/feed.xml" />
-  <script id="dynamic-jsonld-schema" type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://apexmobile.example.com/#website","url":"https://apexmobile.example.com","name":"ApexMobile","alternateName":"ApexMobile","description":"Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.","publisher":{"@id":"https://apexmobile.example.com/#organization"},"inLanguage":"en-US"},{"@type":"Organization","@id":"https://apexmobile.example.com/#organization","name":"ApexMobile","url":"https://apexmobile.example.com","email":"support@apexmobile.example.com","logo":{"@type":"ImageObject","@id":"https://apexmobile.example.com/#logo","url":"https://apexmobile.example.com/assets/app-icon.svg","contentUrl":"https://apexmobile.example.com/assets/app-icon.svg","width":512,"height":512,"caption":"ApexMobile"},"image":{"@id":"https://apexmobile.example.com/#logo"}},{"@type":"BreadcrumbList","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"ApexMobile","item":"https://apexmobile.example.com"},{"@type":"ListItem","position":2,"name":"Daily News","item":"https://apexmobile.example.com/news"},{"@type":"ListItem","position":3,"name":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","item":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes"}]},{"@type":"NewsArticle","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#article","headline":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","description":"ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.","image":["https://apexmobile.example.com/assets/app-icon.svg"],"datePublished":"October 21, 2026","articleSection":"Infrastructure News","mainEntityOfPage":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes","author":{"@type":"Organization","name":"Network Operations Team"},"publisher":{"@id":"https://apexmobile.example.com/#organization"}}]}</script>
+  
   <script>
-    window.__INITIAL_ROUTE_PAYLOAD__ = {"path":"/news/global-edge-cdn-upgrade-low-latency-nodes","canonicalPath":"/news/global-edge-cdn-upgrade-low-latency-nodes","viewType":"news-article","metaTitle":"Global Edge CDN Upgrade: 14 New Download Nodes | ApexMobile News","metaDescription":"ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.","ogImage":"/assets/hero-banner.svg","heroH1":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","showHeroSection":true,"showHeroCtaGrid":false,"renderedMainHtml":"\n    <div class=\"news-meta-line\" style=\"margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);\">\n      <span class=\"news-category-tag\">Infrastructure News<\/span>\n      <span>Published: <strong>October 21, 2026<\/strong><\/span>\n      <span>· By <strong>Network Operations Team<\/strong><\/span>\n      <span>· 3 min read<\/span>\n    <\/div>\n    \n    <p>To ensure users worldwide experience instant download speeds regardless of peak traffic, we have deployed 14 additional edge caching nodes across key metropolitan regions.<\/p>\n\n<h3 id=\"regional-performance-gains\">Regional Performance Gains<\/h3>\n<ul>\n  <li><strong>Asia-Pacific &amp; India:<\/strong> Average download throughput increased by 62% with direct Singapore, Tokyo, and Mumbai routing.<\/li>\n  <li><strong>Europe &amp; UK:<\/strong> Redundant failover mirrors active in Frankfurt, London, and Amsterdam.<\/li>\n  <li><strong>Automatic Mirror Selection:<\/strong> The primary download button automatically routes requests to the geographically closest verified node.<\/li>\n<\/ul>\n    \n    \n        <div class=\"internal-crawl-hub\" style=\"margin-top:24px; padding:14px 16px; border:1px solid var(--border-color, #E2E8F0); border-radius:10px; background:var(--bg-page, #F8FAFC);\">\n          <div style=\"font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#64748B; margin-bottom:8px;\">Official Portal Guides &amp; Resources<\/div>\n          <div style=\"display:flex; flex-wrap:wrap; gap:8px;\">\n            <a href=\"/\" data-spa-link class=\"footer-link\">🏠 ApexMobile Overview<\/a>\n            <a href=\"/#core-features\" data-spa-link class=\"footer-link\">§ Why Choose ApexMobile?<\/a><a href=\"/#install-guide\" data-spa-link class=\"footer-link\">§ Step-by-Step Installation Guide<\/a>\n          <\/div>\n        <\/div>\n      \n    \n        <hr style=\"border:none; border-top:1px solid #E5E7EB; margin:32px 0 20px 0;\" />\n        <h2>More Daily News &amp; Updates<\/h2>\n        \n              <div class=\"news-item-block\">\n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Release Update<\/span>\n                  <span>November 4, 2026<\/span>\n                <\/div>\n                <a href=\"/news/apexmobile-v4-8-2-release-notes\" data-spa-link class=\"news-title-link\" style=\"font-size:16.5px;\">ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine<\/a>\n              <\/div>\n            \n              <div class=\"news-item-block\">\n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Security Advisory<\/span>\n                  <span>October 28, 2026<\/span>\n                <\/div>\n                <a href=\"/news/security-audit-sha256-verification-report\" data-spa-link class=\"news-title-link\" style=\"font-size:16.5px;\">Security Audit Complete: 100% Clean SHA-256 Verification Report<\/a>\n              <\/div>\n            \n      \n  ","jsonLd":{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://apexmobile.example.com/#website","url":"https://apexmobile.example.com","name":"ApexMobile","alternateName":"ApexMobile","description":"Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.","publisher":{"@id":"https://apexmobile.example.com/#organization"},"inLanguage":"en-US"},{"@type":"Organization","@id":"https://apexmobile.example.com/#organization","name":"ApexMobile","url":"https://apexmobile.example.com","email":"support@apexmobile.example.com","logo":{"@type":"ImageObject","@id":"https://apexmobile.example.com/#logo","url":"https://apexmobile.example.com/assets/app-icon.svg","contentUrl":"https://apexmobile.example.com/assets/app-icon.svg","width":512,"height":512,"caption":"ApexMobile"},"image":{"@id":"https://apexmobile.example.com/#logo"}},{"@type":"BreadcrumbList","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"ApexMobile","item":"https://apexmobile.example.com"},{"@type":"ListItem","position":2,"name":"Daily News","item":"https://apexmobile.example.com/news"},{"@type":"ListItem","position":3,"name":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","item":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes"}]},{"@type":"NewsArticle","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#article","headline":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","description":"ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.","image":["https://apexmobile.example.com/assets/app-icon.svg"],"datePublished":"October 21, 2026","articleSection":"Infrastructure News","mainEntityOfPage":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes","author":{"@type":"Organization","name":"Network Operations Team"},"publisher":{"@id":"https://apexmobile.example.com/#organization"}}]},"shell":{"brand":{"name":"ApexMobile","shortName":"ApexMobile","tagline":"Verified Mobile Release Portal","logoUrl":"/assets/app-icon.svg","faviconUrl":"/assets/app-icon.svg","searchLogoUrl":"/assets/app-icon.svg","appleTouchIconUrl":"/assets/app-icon.svg","accentColor":"#EF4444","themeColor":"#EF4444","contactEmail":"support@apexmobile.example.com"},"uiConfig":{"maxContainerWidth":"768px","pageBackgroundColor":"#F8FAFC","surfaceBackgroundColor":"#FFFFFF","headerBackgroundColor":"#FFFFFF","headerTextColor":"#111827","footerBackgroundColor":"#0F172A","footerTextColor":"#F8FAFC","borderColor":"#E2E8F0","cardBorderRadius":"12px","buttonTextColor":"#FFFFFF","textColor":"#1F2937","headingColor":"#111827","fontFamily":"system","baseFontSize":"16px","showHeaderNewsButton":true,"headerNewsButtonLabel":"News","showNewsCountInHeader":true,"autoIncludeSectionsInDrawer":true,"showNewsInDrawer":true,"showLegalLinksInDrawer":true,"showCtaInDrawer":true,"showHeroSection":true,"showHeroCtaButtons":true,"homepageNewsLimit":5,"newsReadMoreLabel":"Read Full News Article →","newsViewAllLabel":"View All Daily News →","backToHomeLabel":"← Back to Main Page","allNewsBreadcrumbLabel":"All Daily News →","showSubpageSwitcherPills":true,"showFooterDisclaimer":true,"showFooterLinksHeading":true,"homepageSectionOrder":["specs","sections","rawHtml","news","faqs"]},"heroCtas":{"secondaryCta":{"label":"Installation Guide","url":"#install-guide","relSponsored":false},"primaryCta":{"label":"Download Official Package","url":"/moreinfo","relSponsored":true},"floatingCta":{"enabled":true,"label":"⚡ Download v4.8.2","url":"/moreinfo"}},"packageVersion":"v4.8.2 (Stable Build)","headerLinks":[{"id":"nav-1","label":"Core Features","url":"#core-features","metaTitle":"Core Features & Architecture | ApexMobile","metaDescription":"Explore the core features and low-latency performance of ApexMobile."},{"id":"nav-2","label":"Specs & Checksum","url":"#technical-specifications","metaTitle":"Technical Specifications & SHA-256 | ApexMobile","metaDescription":"View version specifications and SHA-256 verification checksums."},{"id":"nav-3","label":"Installation Guide","url":"#install-guide","metaTitle":"Installation Guide | ApexMobile","metaDescription":"Step-by-step installation guide for Android and iOS."},{"id":"nav-4","label":"Daily News (/news)","url":"/news","metaTitle":"Daily News & Release Updates | ApexMobile","metaDescription":"Browse all daily news updates, changelogs, and announcements."},{"id":"nav-5","label":"FAQs","url":"#frequently-asked-questions","metaTitle":"Frequently Asked Questions | ApexMobile","metaDescription":"Answers to common questions about ApexMobile."}],"autoSectionLinks":[{"label":"Why Choose ApexMobile?","url":"#core-features","metaTitle":"Core Features & Architecture | ApexMobile"},{"label":"Step-by-Step Installation Guide","url":"#install-guide","metaTitle":"How to Install ApexMobile on Android & iOS | Step-by-Step Guide"}],"recentNewsDrawerItems":[{"title":"ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine","slug":"apexmobile-v4-8-2-release-notes","category":"Release Update","date":"November 4, 2026"},{"title":"Security Audit Complete: 100% Clean SHA-256 Verification Report","slug":"security-audit-sha256-verification-report","category":"Security Advisory","date":"October 28, 2026"},{"title":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","slug":"global-edge-cdn-upgrade-low-latency-nodes","category":"Infrastructure News","date":"October 21, 2026"}],"headerPages":[],"footerPages":[{"label":"Privacy Policy","slug":"privacy-policy","metaTitle":"Privacy Policy — Data Protection & Zero-Tracking | ApexMobile"},{"label":"Terms and Conditions","slug":"terms-and-conditions","metaTitle":"Terms and Conditions — Official Usage Agreement | ApexMobile"},{"label":"DMCA Disclaimer","slug":"dmca-disclaimer","metaTitle":"DMCA Notice & Copyright Takedown Policy | ApexMobile"},{"label":"Contact Support","slug":"contact-support","metaTitle":"Contact Support & Editorial Desk | ApexMobile"}],"allSubpagePills":[{"label":"📰 News","href":"/news"},{"label":"Privacy Policy","href":"/privacy-policy"},{"label":"Terms and Conditions","href":"/terms-and-conditions"},{"label":"DMCA Disclaimer","href":"/dmca-disclaimer"},{"label":"Contact Support","href":"/contact-support"}],"newsCount":3,"navigation":{"footerSummary":"Official release portal providing cryptographically verified mobile packages, SHA-256 checksums, step-by-step installation guides, and daily changelog updates.","showFooterBrandSummary":true,"showFooterContactEmail":true,"footerQuickLinks":[{"id":"fql-1","label":"Official Download & Checksums","url":"/#technical-specifications","openInNewTab":false},{"id":"fql-2","label":"Installation Guide","url":"/#install-guide","openInNewTab":false},{"id":"fql-3","label":"Daily News Archive","url":"/news","openInNewTab":false}],"disclaimerHeading":"Legal & Trademark Disclaimer","disclaimer":"ApexMobile is an independent software documentation and verified distribution portal. All third-party trademarks, operating system names, and brand insignias remain the property of their respective owners. Packages are provided with cryptographic SHA-256 checksums for user verification.","siteLinksHeading":"Official Legal & Support Pages","copyright":"© 2026 ApexMobile. All rights reserved."}},"updatedAt":1793897560079};
+    window.__INITIAL_ROUTE_PAYLOAD__ = {"path":"/news/global-edge-cdn-upgrade-low-latency-nodes","canonicalPath":"/news/global-edge-cdn-upgrade-low-latency-nodes","viewType":"news-article","metaTitle":"Global Edge CDN Upgrade: 14 New Download Nodes | ApexMobile News","metaDescription":"ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.","ogImage":"/assets/hero-banner.svg","heroH1":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","showHeroSection":true,"showHeroCtaGrid":false,"renderedMainHtml":"\n    <div class=\"news-meta-line\" style=\"margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);\">\n      <span class=\"news-category-tag\">Infrastructure News<\/span>\n      <span>Published: <strong>October 21, 2026<\/strong><\/span>\n      <span>· By <strong>Network Operations Team<\/strong><\/span>\n      <span>· 3 min read<\/span>\n    <\/div>\n    \n    <p>To ensure users worldwide experience instant download speeds regardless of peak traffic, we have deployed 14 additional edge caching nodes across key metropolitan regions.<\/p>\n\n<h3 id=\"regional-performance-gains\">Regional Performance Gains<\/h3>\n<ul>\n  <li><strong>Asia-Pacific &amp; India:<\/strong> Average download throughput increased by 62% with direct Singapore, Tokyo, and Mumbai routing.<\/li>\n  <li><strong>Europe &amp; UK:<\/strong> Redundant failover mirrors active in Frankfurt, London, and Amsterdam.<\/li>\n  <li><strong>Automatic Mirror Selection:<\/strong> The primary download button automatically routes requests to the geographically closest verified node.<\/li>\n<\/ul>\n    \n    \n        <div class=\"internal-crawl-hub\" style=\"margin-top:24px; padding:14px 16px; border:1px solid var(--border-color, #E2E8F0); border-radius:10px; background:var(--bg-page, #F8FAFC);\">\n          <div style=\"font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#64748B; margin-bottom:8px;\">Official Portal Guides &amp; Resources<\/div>\n          <div style=\"display:flex; flex-wrap:wrap; gap:8px;\">\n            <a href=\"/\" data-spa-link class=\"footer-link\">🏠 ApexMobile Overview<\/a>\n            <a href=\"/#core-features\" data-spa-link class=\"footer-link\">§ Why Choose ApexMobile?<\/a><a href=\"/#install-guide\" data-spa-link class=\"footer-link\">§ Step-by-Step Installation Guide<\/a>\n          <\/div>\n        <\/div>\n      \n    \n        <hr style=\"border:none; border-top:1px solid #E5E7EB; margin:32px 0 20px 0;\" />\n        <h2>More Daily News &amp; Updates<\/h2>\n        \n              <div class=\"news-item-block\">\n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Release Update<\/span>\n                  <span>November 4, 2026<\/span>\n                <\/div>\n                <a href=\"/news/apexmobile-v4-8-2-release-notes\" data-spa-link class=\"news-title-link\" style=\"font-size:16.5px;\">ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine<\/a>\n              <\/div>\n            \n              <div class=\"news-item-block\">\n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Security Advisory<\/span>\n                  <span>October 28, 2026<\/span>\n                <\/div>\n                <a href=\"/news/security-audit-sha256-verification-report\" data-spa-link class=\"news-title-link\" style=\"font-size:16.5px;\">Security Audit Complete: 100% Clean SHA-256 Verification Report<\/a>\n              <\/div>\n            \n      \n  ","jsonLd":{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://apexmobile.example.com/#website","url":"https://apexmobile.example.com","name":"ApexMobile","alternateName":"ApexMobile","description":"Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.","publisher":{"@id":"https://apexmobile.example.com/#organization"},"inLanguage":"en-US"},{"@type":"Organization","@id":"https://apexmobile.example.com/#organization","name":"ApexMobile","url":"https://apexmobile.example.com","email":"support@apexmobile.example.com","logo":{"@type":"ImageObject","@id":"https://apexmobile.example.com/#logo","url":"https://apexmobile.example.com/assets/app-icon.svg","contentUrl":"https://apexmobile.example.com/assets/app-icon.svg","width":512,"height":512,"caption":"ApexMobile"},"image":{"@id":"https://apexmobile.example.com/#logo"}},{"@type":"BreadcrumbList","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"ApexMobile","item":"https://apexmobile.example.com"},{"@type":"ListItem","position":2,"name":"Daily News","item":"https://apexmobile.example.com/news"},{"@type":"ListItem","position":3,"name":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","item":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes"}]},{"@type":"NewsArticle","@id":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes/#article","headline":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","description":"ApexMobile expands its global edge distribution network with 14 new high-speed mirror nodes for sub-50ms download initialization.","image":["https://apexmobile.example.com/assets/app-icon.svg"],"datePublished":"October 21, 2026","articleSection":"Infrastructure News","mainEntityOfPage":"https://apexmobile.example.com/news/global-edge-cdn-upgrade-low-latency-nodes","author":{"@type":"Organization","name":"Network Operations Team"},"publisher":{"@id":"https://apexmobile.example.com/#organization"}}]},"shell":{"brand":{"name":"ApexMobile","shortName":"ApexMobile","tagline":"Verified Mobile Release Portal","logoUrl":"/assets/app-icon.svg","faviconUrl":"/assets/app-icon.svg","searchLogoUrl":"/assets/app-icon.svg","appleTouchIconUrl":"/assets/app-icon.svg","accentColor":"#EF4444","themeColor":"#EF4444","contactEmail":"support@apexmobile.example.com"},"uiConfig":{"maxContainerWidth":"768px","pageBackgroundColor":"#F8FAFC","surfaceBackgroundColor":"#FFFFFF","headerBackgroundColor":"#FFFFFF","headerTextColor":"#111827","footerBackgroundColor":"#0F172A","footerTextColor":"#F8FAFC","borderColor":"#E2E8F0","cardBorderRadius":"12px","buttonTextColor":"#FFFFFF","textColor":"#1F2937","headingColor":"#111827","fontFamily":"system","baseFontSize":"16px","showHeaderNewsButton":true,"headerNewsButtonLabel":"News","showNewsCountInHeader":true,"autoIncludeSectionsInDrawer":true,"showNewsInDrawer":true,"showLegalLinksInDrawer":true,"showCtaInDrawer":true,"showHeroSection":true,"showHeroCtaButtons":true,"homepageNewsLimit":5,"newsReadMoreLabel":"Read Full News Article →","newsViewAllLabel":"View All Daily News →","backToHomeLabel":"← Back to Main Page","allNewsBreadcrumbLabel":"All Daily News →","showSubpageSwitcherPills":true,"showFooterDisclaimer":true,"showFooterLinksHeading":true,"stickyHeader":true,"showBreadcrumbs":true,"enableFaqAccordion":true,"showTocJumpBar":true,"homepageSectionOrder":["specs","sections","rawHtml","news","faqs"]},"heroCtas":{"secondaryCta":{"label":"Installation Guide","url":"#install-guide","relSponsored":false},"primaryCta":{"label":"Download Official Package","url":"/moreinfo","relSponsored":true},"floatingCta":{"enabled":true,"label":"⚡ Download v4.8.2","url":"/moreinfo"}},"packageVersion":"v4.8.2 (Stable Build)","headerLinks":[{"id":"nav-1","label":"Core Features","url":"#core-features","metaTitle":"Core Features & Architecture | ApexMobile","metaDescription":"Explore the core features and low-latency performance of ApexMobile."},{"id":"nav-2","label":"Specs & Checksum","url":"#technical-specifications","metaTitle":"Technical Specifications & SHA-256 | ApexMobile","metaDescription":"View version specifications and SHA-256 verification checksums."},{"id":"nav-3","label":"Installation Guide","url":"#install-guide","metaTitle":"Installation Guide | ApexMobile","metaDescription":"Step-by-step installation guide for Android and iOS."},{"id":"nav-4","label":"Daily News (/news)","url":"/news","metaTitle":"Daily News & Release Updates | ApexMobile","metaDescription":"Browse all daily news updates, changelogs, and announcements."},{"id":"nav-5","label":"FAQs","url":"#frequently-asked-questions","metaTitle":"Frequently Asked Questions | ApexMobile","metaDescription":"Answers to common questions about ApexMobile."}],"autoSectionLinks":[{"label":"Why Choose ApexMobile?","url":"#core-features","metaTitle":"Core Features & Architecture | ApexMobile"},{"label":"Step-by-Step Installation Guide","url":"#install-guide","metaTitle":"How to Install ApexMobile on Android & iOS | Step-by-Step Guide"}],"recentNewsDrawerItems":[{"title":"ApexMobile v4.8.2 Released with 45% Faster Cold-Start Engine","slug":"apexmobile-v4-8-2-release-notes","category":"Release Update","date":"November 4, 2026"},{"title":"Security Audit Complete: 100% Clean SHA-256 Verification Report","slug":"security-audit-sha256-verification-report","category":"Security Advisory","date":"October 28, 2026"},{"title":"Global Edge CDN Upgrade: 14 New Low-Latency Download Nodes Live","slug":"global-edge-cdn-upgrade-low-latency-nodes","category":"Infrastructure News","date":"October 21, 2026"}],"headerPages":[],"footerPages":[{"label":"Privacy Policy","slug":"privacy-policy","metaTitle":"Privacy Policy — Data Protection & Zero-Tracking | ApexMobile"},{"label":"Terms and Conditions","slug":"terms-and-conditions","metaTitle":"Terms and Conditions — Official Usage Agreement | ApexMobile"},{"label":"DMCA Disclaimer","slug":"dmca-disclaimer","metaTitle":"DMCA Notice & Copyright Takedown Policy | ApexMobile"},{"label":"Contact Support","slug":"contact-support","metaTitle":"Contact Support & Editorial Desk | ApexMobile"}],"allSubpagePills":[{"label":"📰 News","href":"/news"},{"label":"Privacy Policy","href":"/privacy-policy"},{"label":"Terms and Conditions","href":"/terms-and-conditions"},{"label":"DMCA Disclaimer","href":"/dmca-disclaimer"},{"label":"Contact Support","href":"/contact-support"}],"newsCount":3,"navigation":{"footerSummary":"Official release portal providing cryptographically verified mobile packages, SHA-256 checksums, step-by-step installation guides, and daily changelog updates.","showFooterBrandSummary":true,"showFooterContactEmail":true,"footerQuickLinks":[{"id":"fql-1","label":"Official Download & Checksums","url":"/#technical-specifications","openInNewTab":false},{"id":"fql-2","label":"Installation Guide","url":"/#install-guide","openInNewTab":false},{"id":"fql-3","label":"Daily News Archive","url":"/news","openInNewTab":false}],"disclaimerHeading":"Legal & Trademark Disclaimer","disclaimer":"ApexMobile is an independent software documentation and verified distribution portal. All third-party trademarks, operating system names, and brand insignias remain the property of their respective owners. Packages are provided with cryptographic SHA-256 checksums for user verification.","siteLinksHeading":"Official Legal & Support Pages","copyright":"© 2026 ApexMobile. All rights reserved."}},"updatedAt":1794799501367};
   </script>
 </head>
 <body>
@@ -1088,7 +1181,7 @@
 
       <div class="header-right-actions">
         <!-- Quick Daily News Hub Link -->
-        <a href="/news" id="header-news-btn" class="header-news-link " data-spa-link><span class="header-news-dot"></span><span>News (3)</span></a>
+        <a href="/news" id="header-news-btn" class="header-news-link is-active" data-spa-link><span class="header-news-dot"></span><span>News (3)</span></a>
 
         <!-- Animated Hamburger Button -->
         <button
@@ -1196,12 +1289,12 @@
     </nav>
 
     <!-- Standalone Page Breadcrumb & Quick Switcher Bar -->
-    <div id="standalone-back-bar" class="back-home-bar hidden">
+    <div id="standalone-back-bar" class="back-home-bar">
       <div class="back-home-row">
         <a href="/" id="back-home-anchor" class="back-home-link" data-spa-link>← Back to Main Page</a>
-        <a href="/news" id="back-news-anchor" class="back-home-link hidden" data-spa-link>All Daily News →</a>
+        <a href="/news" id="back-news-anchor" class="back-home-link" data-spa-link>All Daily News →</a>
       </div>
-      <div id="subpage-switcher-pills" class="subpage-tabs-row"></div>
+      <div id="subpage-switcher-pills" class="subpage-tabs-row"><a href="/news" data-spa-link class="subpage-pill active">📰 News</a><a href="/privacy-policy" data-spa-link class="subpage-pill">Privacy Policy</a><a href="/terms-and-conditions" data-spa-link class="subpage-pill">Terms and Conditions</a><a href="/dmca-disclaimer" data-spa-link class="subpage-pill">DMCA Disclaimer</a><a href="/contact-support" data-spa-link class="subpage-pill">Contact Support</a></div>
     </div>
 
     <!-- Above-the-Fold Hero Block -->
@@ -1211,7 +1304,7 @@
       <!-- 2-Column Action Button Grid -->
       <div id="hero-cta-grid" class="hero-action-grid hidden">
         <a id="hero-cta-secondary" class="btn-secondary" href="#install-guide">Installation Guide</a>
-        <a id="hero-cta-primary" class="btn-primary" href="#technical-specifications">Download Official Package</a>
+        <a id="hero-cta-primary" class="btn-primary" href="/moreinfo" rel="nofollow noopener">Download Official Package</a>
       </div>
     </section>
 
@@ -1286,10 +1379,8 @@
     </footer>
 
     <!-- Floating Bottom Pill CTA -->
-    <div id="floating-bottom-cta" class="floating-cta-wrapper">
-      <a id="floating-cta-btn" class="floating-cta-button" href="#technical-specifications">
-        ⚡ Download v4.8.2
-      </a>
+    <div id="floating-bottom-cta" class="floating-cta-wrapper hidden">
+      <a id="floating-cta-btn" class="floating-cta-button" href="/moreinfo" rel="nofollow noopener">⚡ Download v4.8.2</a>
     </div>
 
   </div>

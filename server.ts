@@ -24,6 +24,10 @@ import {
   evaluateGateG1,
   handleSessionInit,
   handleSessionClearance,
+  parseFirebaseConfigSnippet,
+  normalizeFirebaseClientConfig,
+  isValidFirebaseClientConfig,
+  sanitizeTurnstileKey,
   GateRequestContext,
   SiteConfig,
   GitHubDeployLogItem
@@ -101,87 +105,110 @@ function getAdminAuthEnv() {
 }
 
 /**
- * Optional Bootstrap Firebase Environment Variable Reader (Used ONLY by Admin Studio)
+ * Optional Bootstrap Firebase Environment Variable Reader (Used ONLY by Authenticated Admin Studio)
  */
 function getFirebaseEnvConfig() {
-  let jsonEnv: Record<string, string> = {};
-  const rawJsonEnv = (process.env.FIREBASE_CONFIG_JSON || process.env.VITE_FIREBASE_CONFIG_JSON || '').trim();
-  if (rawJsonEnv) {
-    try {
-      jsonEnv = JSON.parse(rawJsonEnv);
-    } catch {
-      // Ignore malformed JSON string and fall back to individual keys
-    }
-  }
-
-  const apiKey = (
-    jsonEnv.apiKey ||
-    process.env.FIREBASE_API_KEY ||
-    process.env.VITE_FIREBASE_API_KEY ||
-    process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
-    ''
-  ).trim();
-
-  const projectId = (
-    jsonEnv.projectId ||
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-    ''
-  ).trim();
-
-  const authDomain = (
-    jsonEnv.authDomain ||
-    process.env.FIREBASE_AUTH_DOMAIN ||
-    process.env.VITE_FIREBASE_AUTH_DOMAIN ||
-    process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ||
-    (projectId ? `${projectId}.firebaseapp.com` : '')
-  ).trim();
-
-  const storageBucket = (
-    jsonEnv.storageBucket ||
-    process.env.FIREBASE_STORAGE_BUCKET ||
-    process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
-    (projectId ? `${projectId}.appspot.com` : '')
-  ).trim();
-
-  const messagingSenderId = (
-    jsonEnv.messagingSenderId ||
-    process.env.FIREBASE_MESSAGING_SENDER_ID ||
-    process.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ||
-    ''
-  ).trim();
-
-  const appId = (
-    jsonEnv.appId ||
-    process.env.FIREBASE_APP_ID ||
-    process.env.VITE_FIREBASE_APP_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_APP_ID ||
-    ''
-  ).trim();
-
-  const databaseId = (
-    jsonEnv.databaseId ||
-    process.env.FIREBASE_DATABASE_ID ||
-    process.env.VITE_FIREBASE_DATABASE_ID ||
-    '(default)'
-  ).trim();
-
-  const isConfigured = Boolean(
-    apiKey &&
-    projectId &&
-    !apiKey.includes('DummyKey') &&
-    !apiKey.includes('YOUR_') &&
-    !projectId.includes('my-single-domain-cms')
+  const rawJsonEnv = cleanEnvVal(
+    process.env.FIREBASE_CONFIG_JSON || process.env.VITE_FIREBASE_CONFIG_JSON
   );
+  const parsedSnippet = rawJsonEnv ? parseFirebaseConfigSnippet(rawJsonEnv) : null;
+
+  const candidate = normalizeFirebaseClientConfig({
+    apiKey:
+      parsedSnippet?.apiKey ||
+      cleanEnvVal(process.env.FIREBASE_API_KEY) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_API_KEY) ||
+      cleanEnvVal(process.env.NEXT_PUBLIC_FIREBASE_API_KEY),
+    projectId:
+      parsedSnippet?.projectId ||
+      cleanEnvVal(process.env.FIREBASE_PROJECT_ID) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_PROJECT_ID) ||
+      cleanEnvVal(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID),
+    authDomain:
+      parsedSnippet?.authDomain ||
+      cleanEnvVal(process.env.FIREBASE_AUTH_DOMAIN) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_AUTH_DOMAIN) ||
+      cleanEnvVal(process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN),
+    storageBucket:
+      parsedSnippet?.storageBucket ||
+      cleanEnvVal(process.env.FIREBASE_STORAGE_BUCKET) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_STORAGE_BUCKET) ||
+      cleanEnvVal(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET),
+    messagingSenderId:
+      parsedSnippet?.messagingSenderId ||
+      cleanEnvVal(process.env.FIREBASE_MESSAGING_SENDER_ID) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_MESSAGING_SENDER_ID) ||
+      cleanEnvVal(process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID),
+    appId:
+      parsedSnippet?.appId ||
+      cleanEnvVal(process.env.FIREBASE_APP_ID) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_APP_ID) ||
+      cleanEnvVal(process.env.NEXT_PUBLIC_FIREBASE_APP_ID),
+    databaseId:
+      parsedSnippet?.databaseId ||
+      cleanEnvVal(process.env.FIREBASE_DATABASE_ID) ||
+      cleanEnvVal(process.env.VITE_FIREBASE_DATABASE_ID) ||
+      '(default)'
+  });
+
+  const isConfigured = isValidFirebaseClientConfig(candidate);
 
   return {
     isConfigured,
-    config: isConfigured
-      ? { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, databaseId }
-      : null
+    config: isConfigured ? candidate : null
+  };
+}
+
+function buildSafeEnvDiagnostics(
+  adminEnv: ReturnType<typeof getAdminAuthEnv>,
+  fbEnv: ReturnType<typeof getFirebaseEnvConfig>,
+  includeFirebaseConfig = false,
+  siteConfig?: SiteConfig
+) {
+  const sessionSecretSet = Boolean(
+    cleanEnvVal(process.env.ADMIN_SESSION_SECRET) ||
+    cleanEnvVal(process.env.ADMIN_SECRET) ||
+    cleanEnvVal(process.env.SESSION_SECRET)
+  );
+  const vaultSecretSet = Boolean(
+    cleanEnvVal(process.env.VAULT_ENCRYPTION_SECRET) ||
+    cleanEnvVal(process.env.LINK_VAULT_MASTER_SECRET) ||
+    cleanEnvVal(process.env.AES_KEY) ||
+    cleanEnvVal(process.env.AES_SECRET) ||
+    cleanEnvVal(process.env.VAULT_SECRET_KEY) ||
+    cleanEnvVal(process.env.HMAC_SECRET)
+  );
+  const turnstileSiteKeyEnv = sanitizeTurnstileKey(
+    process.env.VITE_TURNSTILE_SITE_KEY ||
+    process.env.TURNSTILE_SITE_KEY ||
+    process.env.CF_TURNSTILE_SITE_KEY ||
+    siteConfig?.securityGate?.turnstileSiteKey ||
+    ''
+  );
+  const turnstileSecretEnv = sanitizeTurnstileKey(
+    process.env.TURNSTILE_SECRET_KEY ||
+    process.env.VITE_TURNSTILE_SECRET_KEY ||
+    process.env.CF_TURNSTILE_SECRET_KEY ||
+    siteConfig?.securityGate?.turnstileSecretKey ||
+    ''
+  );
+  const githubTokenEnv = cleanEnvVal(
+    process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+  );
+
+  return {
+    adminEmailConfigured: adminEnv.isCustomEmail,
+    adminPasswordConfigured: adminEnv.isCustomPassword,
+    adminApiKeyRequired: adminEnv.requiresApiKey,
+    adminSessionSecretCustom: sessionSecretSet,
+    vaultSecretCustom: vaultSecretSet,
+    turnstileSiteKeyConfigured: Boolean(turnstileSiteKeyEnv),
+    turnstileSecretKeyConfigured: Boolean(turnstileSecretEnv),
+    githubTokenConfigured: Boolean(githubTokenEnv),
+    firebaseEnvConfigured: fbEnv.isConfigured,
+    firebaseProjectId: fbEnv.config?.projectId || null,
+    ...(includeFirebaseConfig ? { firebaseConfig: fbEnv.config } : {}),
+    runtime: 'Node.js Express'
   };
 }
 
@@ -438,18 +465,99 @@ async function startServer() {
     });
   });
 
-  // 2. Environment Firebase Config Endpoint (Used ONLY by Admin Studio)
-  app.get('/api/firebase-config', (_req, res) => {
+  // 2. Environment Firebase Config Endpoint (Protected: Authenticated Admin Studio ONLY)
+  app.get('/api/firebase-config', requireAdminAuth, (_req, res) => {
     const fbEnv = getFirebaseEnvConfig();
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
       success: true,
       ...fbEnv
     });
   });
 
-  // 3. Live Admin Configuration Endpoint (Used by Admin Studio — Never cached)
-  app.get('/api/config', (_req, res) => {
+  // 2b. Live Firebase Firestore REST Connectivity Diagnostic (`POST /api/firebase/test`)
+  app.post('/api/firebase/test', requireAdminAuth, async (req, res) => {
+    const fbEnv = getFirebaseEnvConfig();
+    const rawCandidate = req.body?.firebaseConfig || {};
+    const cfg = normalizeFirebaseClientConfig(
+      rawCandidate.apiKey && rawCandidate.projectId ? rawCandidate : fbEnv.config || {}
+    );
+
+    if (!isValidFirebaseClientConfig(cfg)) {
+      res.status(400).json({
+        success: false,
+        code: 'invalid-config',
+        error: 'Valid Firebase API Key and Project ID are required.'
+      });
+      return;
+    }
+
+    const dbId = encodeURIComponent(cfg.databaseId || '(default)');
+    const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      cfg.projectId
+    )}/databases/${dbId}/documents/siteConfig/main?key=${encodeURIComponent(cfg.apiKey)}`;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const fbRes = await fetch(endpoint, { signal: controller.signal });
+      clearTimeout(timer);
+
+      if (fbRes.ok) {
+        res.json({
+          success: true,
+          status: 'connected',
+          documentExists: true,
+          projectId: cfg.projectId,
+          databaseId: cfg.databaseId,
+          message: `Connected to Firestore (${cfg.projectId}) — live siteConfig/main document found.`
+        });
+        return;
+      }
+
+      const errData: any = await fbRes.json().catch(() => ({}));
+      const msg = String(errData?.error?.message || fbRes.statusText || '');
+      const statusText = String(errData?.error?.status || '');
+
+      if (fbRes.status === 404 && !msg.toLowerCase().includes('database')) {
+        res.json({
+          success: true,
+          status: 'connected-empty',
+          documentExists: false,
+          projectId: cfg.projectId,
+          databaseId: cfg.databaseId,
+          message: `Connected to Firestore (${cfg.projectId}). Document siteConfig/main will be created on your next Publish.`
+        });
+        return;
+      }
+
+      if (fbRes.status === 403 || statusText === 'PERMISSION_DENIED') {
+        res.status(403).json({
+          success: false,
+          code: 'permission-denied',
+          error: `Firestore Permission Denied for ${cfg.projectId}. Check your Firestore Security Rules or API Key restrictions.`
+        });
+        return;
+      }
+
+      res.status(fbRes.status).json({
+        success: false,
+        code: statusText || `http-${fbRes.status}`,
+        error: msg || `Firestore check failed with HTTP ${fbRes.status}`
+      });
+    } catch (err: any) {
+      res.status(502).json({
+        success: false,
+        code: 'network-error',
+        error: `Could not reach Firestore REST API: ${err?.message || 'Timeout'}`
+      });
+    }
+  });
+
+  // 3. Live Admin Configuration Endpoint (Protected: Authenticated Admin Studio ONLY — Never cached)
+  app.get('/api/config', requireAdminAuth, (_req, res) => {
     const config = loadPersistedSiteConfig();
+    const adminEnv = getAdminAuthEnv();
     const fbEnv = getFirebaseEnvConfig();
     const seoAudit = auditSiteSeoHealth(config);
 
@@ -458,6 +566,7 @@ async function startServer() {
       success: true,
       config,
       firebaseEnv: fbEnv,
+      envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, true, config),
       seoAudit
     });
   });
@@ -558,21 +667,26 @@ async function startServer() {
     const { email = '', password = '', apiKey = '' } = req.body || {};
     const adminEnv = getAdminAuthEnv();
 
-    const emailMatches = safeTimingCompare(email.trim().toLowerCase(), adminEnv.email.toLowerCase());
-    const passMatches = safeTimingCompare(password.trim(), adminEnv.password);
-    const apiKeyMatches = !adminEnv.requiresApiKey || safeTimingCompare(apiKey.trim(), adminEnv.apiKey);
+    const cleanEmail = String(email || '').trim();
+    const cleanPass = String(password || '').trim();
+    const cleanKey = String(apiKey || '').trim();
 
-    if (
-      !(adminEnv.requiresApiKey && apiKey.trim() && apiKeyMatches) &&
-      (!emailMatches || !passMatches || !apiKeyMatches)
-    ) {
+    const apiKeyAuthenticated = Boolean(
+      adminEnv.requiresApiKey && cleanKey && safeTimingCompare(cleanKey, adminEnv.apiKey)
+    );
+    const credentialsAuthenticated = Boolean(
+      cleanEmail &&
+      safeTimingCompare(cleanEmail.toLowerCase(), adminEnv.email.toLowerCase()) &&
+      safeTimingCompare(cleanPass, adminEnv.password)
+    );
+
+    if (!apiKeyAuthenticated && !credentialsAuthenticated) {
       recordFailedLoginAttempt(clientIp);
       res.status(401).json({
         success: false,
-        error:
-          adminEnv.requiresApiKey && !apiKeyMatches
-            ? 'Invalid Admin API Key, Email, or Password. Check your .env configuration.'
-            : 'Invalid Admin Email or Password. Check ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.'
+        error: cleanKey
+          ? 'Invalid Admin API Key. Check ADMIN_API_KEY in your environment variables.'
+          : 'Invalid Admin Email or Password. Check ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.'
       });
       return;
     }
@@ -580,7 +694,9 @@ async function startServer() {
     clearLoginAttempts(clientIp);
     const token = createAdminToken(adminEnv.email);
     const fbEnv = getFirebaseEnvConfig();
+    const config = loadPersistedSiteConfig();
 
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
       success: true,
       token,
@@ -588,13 +704,7 @@ async function startServer() {
         email: adminEnv.email,
         role: 'Master Administrator'
       },
-      envDiagnostics: {
-        adminEmailConfigured: adminEnv.isCustomEmail,
-        adminPasswordConfigured: adminEnv.isCustomPassword,
-        adminApiKeyRequired: adminEnv.requiresApiKey,
-        firebaseEnvConfigured: fbEnv.isConfigured,
-        firebaseProjectId: fbEnv.config?.projectId || null
-      }
+      envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, true, config)
     });
   });
 
@@ -602,26 +712,22 @@ async function startServer() {
   app.get('/api/admin/verify', (req, res) => {
     const authHeader = req.headers.authorization || '';
     const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const verification = verifyAdminToken(bearerToken);
+    const headerApiKey = ((req.headers['x-admin-api-key'] as string) || '').trim();
+    const verification = verifyAdminToken(bearerToken || headerApiKey);
     const adminEnv = getAdminAuthEnv();
     const fbEnv = getFirebaseEnvConfig();
+    const config = verification.valid ? loadPersistedSiteConfig() : undefined;
 
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
       authenticated: verification.valid,
       user: verification.valid ? { email: verification.email } : null,
       loginHints: {
         requiresApiKey: adminEnv.requiresApiKey,
         usingDefaultDevCredentials: !adminEnv.isCustomEmail && !adminEnv.isCustomPassword,
-        defaultEmailHint: !adminEnv.isCustomEmail ? adminEnv.email : undefined
+        defaultEmailHint: !adminEnv.isCustomEmail && !adminEnv.isCustomPassword ? adminEnv.email : undefined
       },
-      envDiagnostics: {
-        adminEmailConfigured: adminEnv.isCustomEmail,
-        adminPasswordConfigured: adminEnv.isCustomPassword,
-        adminApiKeyRequired: adminEnv.requiresApiKey,
-        firebaseEnvConfigured: fbEnv.isConfigured,
-        firebaseProjectId: fbEnv.config?.projectId || null,
-        firebaseConfig: fbEnv.config
-      }
+      envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, verification.valid, config)
     });
   });
 
@@ -862,9 +968,12 @@ async function startServer() {
   // --------------------------------------------------------------------------
   const getVaultMasterSecret = () =>
     (
-      process.env.VAULT_ENCRYPTION_SECRET ||
-      process.env.AES_SECRET ||
-      process.env.HMAC_SECRET ||
+      cleanEnvVal(process.env.VAULT_ENCRYPTION_SECRET) ||
+      cleanEnvVal(process.env.LINK_VAULT_MASTER_SECRET) ||
+      cleanEnvVal(process.env.AES_KEY) ||
+      cleanEnvVal(process.env.AES_SECRET) ||
+      cleanEnvVal(process.env.VAULT_SECRET_KEY) ||
+      cleanEnvVal(process.env.HMAC_SECRET) ||
       getAdminAuthEnv().secret ||
       'master-cms-v12-aes-256-gcm-vault-secret-key-2026'
     ).trim();
@@ -1046,17 +1155,15 @@ async function startServer() {
       appType: 'custom'
     });
 
-    // Serve Admin HTML with injected Firebase env config (Admin runs 100% on Live Firebase)
+    // Serve Admin HTML with strict noindex & no-store security headers
+    // Note: Firebase runtime config is fetched ONLY after Admin authentication via /api/admin/verify & /api/config
     app.get(['/admin', '/admin/', '/admin.html'], async (_req, res, next) => {
       try {
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+        res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
         const adminHtmlPath = path.resolve(process.cwd(), 'admin.html');
         let template = fs.readFileSync(adminHtmlPath, 'utf-8');
         template = await vite.transformIndexHtml('/admin.html', template);
-        const fbEnv = getFirebaseEnvConfig();
-        template = template.replace(
-          '</head>',
-          `  <script>window.__SERVER_FIREBASE_CONFIG__ = ${JSON.stringify(fbEnv.config).replace(/<\//g, '<\\/')};</script>\n</head>`
-        );
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e) {
         next(e);
@@ -1124,13 +1231,10 @@ async function startServer() {
     app.use(express.static(distPath, { index: false }));
 
     app.get(['/admin', '/admin/', '/admin.html'], (_req, res) => {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+      res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
       const adminHtmlPath = path.join(distPath, 'admin.html');
-      let rawHtml = fs.readFileSync(adminHtmlPath, 'utf-8');
-      const fbEnv = getFirebaseEnvConfig();
-      rawHtml = rawHtml.replace(
-        '</head>',
-        `  <script>window.__SERVER_FIREBASE_CONFIG__ = ${JSON.stringify(fbEnv.config).replace(/<\//g, '<\\/')};</script>\n</head>`
-      );
+      const rawHtml = fs.readFileSync(adminHtmlPath, 'utf-8');
       res.status(200).set({ 'Content-Type': 'text/html' }).end(rawHtml);
     });
 

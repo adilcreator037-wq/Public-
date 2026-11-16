@@ -1,31 +1,26 @@
 /**
  * Cloudflare Pages Function: GET /api/admin/verify
- * Verifies the admin bearer token or API key against Cloudflare environment secrets.
+ * Verifies the admin bearer token or API key against Cloudflare environment secrets
+ * and returns safe (non-secret) environment diagnostics.
  */
 
 import {
-  getAdminCredentials,
-  verifyAdminToken,
+  verifyAdminRequest,
+  getFirebaseEnvFromEnv,
+  buildEdgeEnvDiagnostics,
+  readSiteConfigFromFirestoreRest,
   jsonResponse
 } from '../../_shared/auth.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
 
-  const authHeader = request.headers.get('authorization') || '';
-  const bearerToken = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : '';
-  const headerApiKey = request.headers.get('x-admin-api-key') || '';
-
-  const adminCreds = getAdminCredentials(env);
-  const tokenToVerify = bearerToken || headerApiKey;
-
-  const verification = await verifyAdminToken(
-    tokenToVerify,
-    adminCreds.secret,
-    adminCreds.apiKey
-  );
+  const { verification, adminCreds } = await verifyAdminRequest(request, env);
+  const fbEnv = getFirebaseEnvFromEnv(env);
+  const siteConfig =
+    verification.valid && fbEnv.isConfigured
+      ? await readSiteConfigFromFirestoreRest(fbEnv.config)
+      : null;
 
   return jsonResponse({
     authenticated: verification.valid,
@@ -34,15 +29,17 @@ export async function onRequestGet(context) {
       : null,
     loginHints: {
       requiresApiKey: adminCreds.requiresApiKey,
-      usingDefaultDevCredentials:
-        !adminCreds.isCustomEmail && !adminCreds.isCustomPassword
+      usingDefaultDevCredentials: !adminCreds.isCustomEmail && !adminCreds.isCustomPassword,
+      defaultEmailHint:
+        !adminCreds.isCustomEmail && !adminCreds.isCustomPassword ? adminCreds.email : undefined
     },
-    envDiagnostics: {
-      adminEmailConfigured: adminCreds.isCustomEmail,
-      adminPasswordConfigured: adminCreds.isCustomPassword,
-      adminApiKeyRequired: adminCreds.requiresApiKey,
-      runtime: 'Cloudflare Pages Functions'
-    }
+    envDiagnostics: buildEdgeEnvDiagnostics(
+      adminCreds,
+      fbEnv,
+      env,
+      verification.valid,
+      siteConfig
+    )
   });
 }
 

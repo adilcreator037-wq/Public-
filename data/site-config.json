@@ -43,6 +43,10 @@
     "showSubpageSwitcherPills": true,
     "showFooterDisclaimer": true,
     "showFooterLinksHeading": true,
+    "stickyHeader": true,
+    "showBreadcrumbs": true,
+    "enableFaqAccordion": true,
+    "showTocJumpBar": true,
     "homepageSectionOrder": [
       "specs",
       "sections",
@@ -101,7 +105,7 @@
     "appSerialId": "APM-482",
     "devicePolicyMode": "universal_human",
     "primaryDownloadUrl": "http://localhost:3000/news",
-    "encryptedPrimaryUrl": "v2.LGFew0Vgc8bF3pQR.kNLEvrSzUEzgSIgEq8zGy6NDEfgLVxon6eApxyCbjvZNrZiRuPSR8RIP",
+    "encryptedPrimaryUrl": "v2.kXCKA2JCPjyYJhXD.nDouaC4AYF-2Iq7t7qdpxwKnieKzLDrQC_qwZOWr9bf7tlj5r0ozaeXn",
     "turnstileSiteKey": "",
     "turnstileSecretKey": "",
     "proceedButtonLabel": "PROCEED",
@@ -446,5 +450,5 @@
     },
     "rawJsonLd": ""
   },
-  "updatedAt": 1793897560079
+  "updatedAt": 1794799501367
 }

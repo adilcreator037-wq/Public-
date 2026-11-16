@@ -211,17 +211,20 @@
       transform: translateY(-7px) rotate(-45deg);
     }
 
-    /* Sticky Slide-Down Navigation Drawer (Anchored right under the 60px sticky header!) */
+    /* Fixed Overlay Navigation Drawer (Zero CLS — Always opens cleanly right under the 60px sticky header) */
     .nav-drawer {
       background-color: var(--bg-surface);
-      border-bottom: 2px solid #E5E7EB;
+      border-bottom: 2px solid var(--border-color, #E5E7EB);
       width: 100%;
-      position: sticky;
+      max-width: var(--max-container-width);
+      position: fixed;
       top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 95;
       max-height: calc(100vh - 60px);
       overflow-y: auto;
-      box-shadow: 0 20px 32px -8px rgba(15, 23, 42, 0.16);
+      box-shadow: 0 20px 32px -8px rgba(15, 23, 42, 0.2);
     }
 
     .nav-drawer-list {
@@ -365,9 +368,9 @@
       border-radius: 4px;
     }
 
+    /* Normal document flow prevents scroll-time intrinsic-size layout shifts */
     .cv-auto-section {
-      content-visibility: auto;
-      contain-intrinsic-size: 1px 320px;
+      display: block;
     }
 
     /* Above-the-Fold Hero Block */
@@ -471,6 +474,10 @@
       margin-bottom: 16px;
     }
 
+    .prose-container section[id] {
+      scroll-margin-top: 76px;
+    }
+
     .prose-container h2 {
       font-size: 22px;
       font-weight: 700;
@@ -478,7 +485,7 @@
       margin-top: 32px;
       margin-bottom: 12px;
       line-height: 1.35;
-      scroll-margin-top: 72px;
+      scroll-margin-top: 76px;
     }
 
     .prose-container h3 {
@@ -553,7 +560,11 @@
       padding: 3px 9px;
       border-radius: 4px;
       margin-top: 28px;
-      margin-bottom: -20px;
+      margin-bottom: 6px;
+    }
+
+    .section-eyebrow-badge + h2 {
+      margin-top: 4px;
     }
 
     .section-inline-cta {
@@ -646,8 +657,8 @@
     }
 
     .cms-accordion {
-      border: 1px solid #E5E7EB;
-      border-radius: 8px;
+      border: 1px solid var(--border-color, #E5E7EB);
+      border-radius: 10px;
       padding: 12px 16px;
       margin: 12px 0;
       background-color: #FAFAFA;
@@ -658,6 +669,82 @@
       color: var(--heading-color);
       cursor: pointer;
       font-size: 15.5px;
+    }
+
+    /* Native Accessible FAQ Accordions (.faq-item) — Pre-rendered by SSR for Zero CLS */
+    .faq-item {
+      border: 1px solid var(--border-color, #E2E8F0);
+      border-radius: var(--card-radius, 12px);
+      background-color: var(--bg-surface, #FFFFFF);
+      margin-bottom: 10px;
+      overflow: hidden;
+      transition: border-color 0.15s ease;
+    }
+
+    .faq-item[open] {
+      border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color, #E2E8F0));
+    }
+
+    .faq-item summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--heading-color);
+      line-height: 1.4;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .faq-item summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .faq-item summary::after {
+      content: '+';
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: 6px;
+      background-color: #F1F5F9;
+      color: var(--heading-color);
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .faq-item[open] summary::after {
+      content: '−';
+      background-color: var(--accent-soft);
+      color: var(--accent-color);
+    }
+
+    .faq-item summary:hover {
+      background-color: #F8FAFC;
+    }
+
+    .faq-answer {
+      padding: 0 16px 14px 16px;
+      border-top: 1px solid #F1F5F9;
+    }
+
+    .faq-answer p {
+      margin-top: 10px;
+      margin-bottom: 0;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+
+    .faq-static-item {
+      padding-bottom: 8px;
     }
 
     .prose-container ul,
@@ -760,11 +847,16 @@
       display: block;
       margin-bottom: 12px;
       text-decoration: none;
+      border-radius: 10px;
+      overflow: hidden;
     }
 
     .news-card-cover-img {
       margin: 0 !important;
-      max-height: 280px;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
     }
 
     .news-meta-line {
@@ -1049,6 +1141,7 @@
       display: none !important;
     }
   </style>
+  <script id="dynamic-jsonld-schema" type="application/ld+json">{}</script>
 </head>
 <body>
   <div class="app-viewport">
@@ -1112,7 +1205,7 @@
       <!-- 2-Column Action Button Grid -->
       <div id="hero-cta-grid" class="hero-action-grid">
         <a id="hero-cta-secondary" class="btn-secondary" href="#install-guide">Installation Guide</a>
-        <a id="hero-cta-primary" class="btn-primary" href="#technical-specifications">Download Official Package</a>
+        <a id="hero-cta-primary" class="btn-primary" href="/moreinfo" rel="nofollow noopener">Download Official Package</a>
       </div>
     </section>
 
@@ -1141,7 +1234,7 @@
 
     <!-- Floating Bottom Pill CTA -->
     <div id="floating-bottom-cta" class="floating-cta-wrapper">
-      <a id="floating-cta-btn" class="floating-cta-button" href="#technical-specifications">
+      <a id="floating-cta-btn" class="floating-cta-button" href="/moreinfo" rel="nofollow noopener">
         ⚡ Download v4.8.2
       </a>
     </div>
