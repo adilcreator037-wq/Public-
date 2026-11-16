@@ -272,38 +272,9 @@ export function compileStaticSiteBundle(
     }
   }
 
-  // 10. Include Admin Studio HTML/JS in the bundle for Cloudflare Pages
-  const adminHtmlPath = path.resolve(process.cwd(), 'admin.html');
-  const adminJsPath = path.resolve(process.cwd(), 'admin.js');
-  const fbConfigPath = path.resolve(process.cwd(), 'firebase-config.js');
-
-  if (fs.existsSync(adminHtmlPath)) {
-    const content = fs.readFileSync(adminHtmlPath, 'utf-8');
-    files.push({
-      path: 'admin.html',
-      content,
-      description: 'Master CMS Admin Studio HTML'
-    });
-    files.push({
-      path: 'admin/index.html',
-      content,
-      description: 'Master CMS Admin Studio Route (/admin)'
-    });
-  }
-  if (fs.existsSync(adminJsPath)) {
-    files.push({
-      path: 'admin.js',
-      content: fs.readFileSync(adminJsPath, 'utf-8'),
-      description: 'Master CMS Admin Studio Controller'
-    });
-  }
-  if (fs.existsSync(fbConfigPath)) {
-    files.push({
-      path: 'firebase-config.js',
-      content: fs.readFileSync(fbConfigPath, 'utf-8'),
-      description: 'Admin Studio Firebase & Edge API Client'
-    });
-  }
+  // NOTE: Admin Studio files (`admin.html`, `admin.js`, `admin.css`, `firebase-config.js`) are
+  // strictly excluded from the compiled public static website bundle so the public portal and
+  // the Admin CMS remain 100% isolated in separate worlds with zero interconnection.
 
   // 7. Write to disk if requested (populates `/public/static-routes` and `/dist-public`)
   if (options?.writeToDisk) {
@@ -322,6 +293,16 @@ export function compileStaticSiteBundle(
 
     if (options.distPublicDir) {
       fs.mkdirSync(options.distPublicDir, { recursive: true });
+      for (const legacyAdminPath of ['admin.html', 'admin.js', 'admin.css', 'firebase-config.js', 'admin/index.html']) {
+        const staleFull = path.join(options.distPublicDir, legacyAdminPath);
+        if (fs.existsSync(staleFull)) {
+          try {
+            fs.unlinkSync(staleFull);
+          } catch {
+            // ignore
+          }
+        }
+      }
       for (const file of files) {
         const destPath = path.join(options.distPublicDir, file.path);
         fs.mkdirSync(path.dirname(destPath), { recursive: true });

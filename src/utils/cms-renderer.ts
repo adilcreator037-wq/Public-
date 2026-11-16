@@ -60,6 +60,36 @@ export function renderHomeContentHtml(config: SiteConfig): string {
     `);
   }
 
+  // 2b. On-Page Quick Jump Table of Contents (Boosts SEO sitelinks & reader scannability)
+  const tocLinks: Array<{ href: string; label: string }> = [];
+  if (specs.enabled !== false) {
+    tocLinks.push({ href: '#technical-specifications', label: 'Specifications' });
+  }
+  for (const sec of sections) {
+    if (sec.visible !== false && sec.heading) {
+      const slug = generateSlug(sec.slug || sec.heading || 'section');
+      tocLinks.push({ href: `#${slug}`, label: sec.badgeText || sec.heading });
+    }
+  }
+  if (news.enabled !== false && Array.isArray(news.articles) && news.articles.length > 0) {
+    tocLinks.push({ href: '#latest-news', label: `Daily News (${news.articles.length})` });
+  }
+  if (faqs.enabled !== false && Array.isArray(faqs.items) && faqs.items.length > 0) {
+    tocLinks.push({ href: '#frequently-asked-questions', label: 'FAQs' });
+  }
+  if (tocLinks.length >= 2) {
+    introParts.push(`
+      <nav class="toc-jump-bar" aria-label="On-page table of contents">
+        <span class="toc-jump-label">On this page</span>
+        <div class="toc-jump-links">
+          ${tocLinks
+            .map((t) => `<a href="${escapeHtml(t.href)}" class="toc-jump-chip">${escapeHtml(t.label)}</a>`)
+            .join('')}
+        </div>
+      </nav>
+    `);
+  }
+
   // Build ordered blocks according to uiConfig.homepageSectionOrder
   const blockMap: Record<HomepageBlockKey, string> = {
     specs: '',
@@ -122,7 +152,14 @@ export function renderHomeContentHtml(config: SiteConfig): string {
             </tr>
             <tr>
               <th>SHA-256 Checksum</th>
-              <td><code>${escapeHtml(specs.sha256 || '')}</code></td>
+              <td>
+                <code>${escapeHtml(specs.sha256 || '')}</code>
+                ${
+                  specs.sha256
+                    ? `<button type="button" class="copy-hash-btn" data-copy-text="${escapeHtml(specs.sha256)}" aria-label="Copy SHA-256 checksum">Copy</button>`
+                    : ''
+                }
+              </td>
             </tr>
             ${customRowsHtml}
           </tbody>
@@ -485,7 +522,7 @@ export function renderHamburgerDrawerHtml(
   items.push(`
     <li>
       <a href="/" data-spa-link class="nav-drawer-link ${activeCanonicalPath === '/' ? 'active-nav-link' : ''}">
-        <span>🏠 Home Overview</span>
+        <span>Home Overview</span>
         <span class="drawer-link-badge">Main</span>
       </a>
     </li>
@@ -520,7 +557,7 @@ export function renderHamburgerDrawerHtml(
       items.push(`
         <li>
           <a href="${escapeHtml(fullHref)}" data-spa-link class="nav-drawer-link" title="${escapeHtml(sec.metaTitle || sec.label)}">
-            <span>§ ${escapeHtml(sec.label)}</span>
+            <span>${escapeHtml(sec.label)}</span>
             <span class="drawer-link-arrow">↘</span>
           </a>
         </li>
@@ -535,7 +572,7 @@ export function renderHamburgerDrawerHtml(
       items.push(`
         <li>
           <a href="/news" data-spa-link class="nav-drawer-link ${activeCanonicalPath === '/news' ? 'active-nav-link' : ''}">
-            <span>📰 All Daily News &amp; Updates</span>
+            <span>All Daily News &amp; Updates</span>
             <span class="drawer-link-badge">${shell.newsCount} Posts</span>
           </a>
         </li>
@@ -590,7 +627,7 @@ export function renderHamburgerDrawerHtml(
     items.push(`
       <li class="drawer-cta-footer">
         <a href="${escapeHtml(primaryHref)}" data-spa-link class="drawer-cta-btn">
-          <span>⚡ ${escapeHtml(shell.heroCtas.primaryCta.label)}</span>
+          <span>${escapeHtml(shell.heroCtas.primaryCta.label)}</span>
           ${shell.packageVersion ? `<span class="drawer-cta-ver">${escapeHtml(shell.packageVersion)}</span>` : ''}
         </a>
       </li>
@@ -949,6 +986,10 @@ export function renderCompleteStaticPageHtml(
 
   extraHeadTags.push(`<meta name="theme-color" content="${themeColor}" />`);
   extraHeadTags.push(`<meta name="application-name" content="${brandName}" />`);
+  extraHeadTags.push(`<meta property="og:site_name" content="${brandName}" />`);
+  extraHeadTags.push(`<meta property="og:locale" content="en_US" />`);
+  extraHeadTags.push(`<meta property="og:image:width" content="1200" />`);
+  extraHeadTags.push(`<meta property="og:image:height" content="630" />`);
   extraHeadTags.push(`<meta name="apple-mobile-web-app-title" content="${escapeHtml(config.brand?.shortName || config.brand?.name || 'ApexMobile')}" />`);
   extraHeadTags.push(`<link rel="apple-touch-icon" sizes="180x180" href="${appleIconHref}" />`);
 

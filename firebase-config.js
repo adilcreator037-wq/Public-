@@ -34,18 +34,6 @@ let serverInjectedFirebaseConfig =
     : null;
 let firestoreDb = null;
 
-function broadcastPublicStaticRefresh(updatedConfig) {
-  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-    try {
-      const ch = new BroadcastChannel('apex_cms_sync_channel');
-      ch.postMessage({ type: 'SITE_CONFIG_UPDATED', config: updatedConfig });
-      ch.close();
-    } catch {
-      // Ignore BroadcastChannel errors
-    }
-  }
-}
-
 /**
  * Resolve active Firebase configuration from:
  * 1. Admin custom override in localStorage (`firebase_custom_config`)
@@ -349,8 +337,6 @@ export async function saveSiteConfigRemote(configData) {
     serverError = err.message;
   }
 
-  broadcastPublicStaticRefresh(savedServerConfig || normalized);
-
   const githubSuffix =
     githubPushResult && githubPushResult.status === 'success'
       ? ` + Pushed ${githubPushResult.filesPushed} static files to GitHub (${githubPushResult.commitSha?.slice(0, 7)})!`
@@ -409,21 +395,54 @@ export async function verifyGitHubRepoRemote(githubConfig) {
       body: JSON.stringify({ githubConfig })
     });
     const data = await res.json();
-    return data;
+    const isOk = Boolean(data.ok || data.success);
+    return {
+      ...data,
+      ok: isOk,
+      success: isOk,
+      fullName: data.repoFullName || data.fullName || '',
+      defaultBranch: data.defaultBranch || 'main',
+      private: Boolean(data.privateRepo ?? data.private),
+      canPush: Boolean(isOk && (data.permissions?.push ?? true)),
+      error: isOk ? null : data.message || data.error || 'Repository verification failed.'
+    };
   } catch (err) {
     return {
       ok: false,
-      message: `Could not reach GitHub verification endpoint: ${err.message}`
+      success: false,
+      message: `Could not reach GitHub verification endpoint: ${err.message}`,
+      error: `Could not reach GitHub verification endpoint: ${err.message}`
     };
   }
 }
 
 /**
  * Compile 100% Static Public Website Bundle & Push Atomic Commit to GitHub
- * via Fine-Grained Token (`POST /api/github/publish`)
+ * via Fine-Grained Token (`POST /api/github/publish`).
+ * Supports calling as `(githubConfig, siteConfig)` or `(siteConfig, customCommitMessage)`.
  */
-export async function publishStaticSiteToGitHubRemote(configData, customCommitMessage = '') {
+export async function publishStaticSiteToGitHubRemote(firstArg, secondArg = '') {
   const token = getAdminAuthToken();
+  let configData = firstArg;
+  let customCommitMessage = typeof secondArg === 'string' ? secondArg : '';
+
+  if (
+    secondArg &&
+    typeof secondArg === 'object' &&
+    firstArg &&
+    typeof firstArg === 'object' &&
+    ('repoOwner' in firstArg || 'fineGrainedToken' in firstArg)
+  ) {
+    configData = {
+      ...secondArg,
+      githubConfig: {
+        ...(secondArg.githubConfig || {}),
+        ...firstArg
+      }
+    };
+    customCommitMessage = firstArg.commitMessage || secondArg.githubConfig?.commitMessage || '';
+  }
+
   const normalized = mergeSiteConfig(configData, MASTER_DEFAULT_CONFIG);
 
   // Also sync latest config to Firebase Firestore if active
@@ -452,12 +471,23 @@ export async function publishStaticSiteToGitHubRemote(configData, customCommitMe
     const data = await res.json();
     if (data.config) {
       localStorage.setItem('siteConfig_main', JSON.stringify(data.config));
-      broadcastPublicStaticRefresh(data.config);
     }
-    return data;
+    const pub = data.publishResult || {};
+    const isOk = Boolean(data.success && (pub.ok ?? true));
+    return {
+      ...data,
+      success: isOk,
+      ok: isOk,
+      filesCount: pub.filesPushed || data.compiledBundle?.totalFiles || 0,
+      compiledLocalFiles: data.compiledBundle?.totalFiles || 0,
+      commitSha: pub.commitSha || '',
+      commitUrl: pub.commitUrl || '',
+      error: isOk ? null : pub.message || data.error || 'GitHub publish failed.'
+    };
   } catch (err) {
     return {
       success: false,
+      ok: false,
       error: `Failed to publish static site to GitHub: ${err.message}`
     };
   }
@@ -517,7 +547,6 @@ export async function resetSiteConfigRemote() {
       const data = await res.json();
       if (data.config) {
         localStorage.setItem('siteConfig_main', JSON.stringify(data.config));
-        broadcastPublicStaticRefresh(data.config);
         return data.config;
       }
     }

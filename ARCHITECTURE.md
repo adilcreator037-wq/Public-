@@ -84,38 +84,51 @@ This project is engineered as a **Master Cloneable CMS & Static Website Generato
 
 ---
 
-## 5. Hardened Admin Authentication & Brute-Force Protection (`server.ts`)
+## 5. Hardened Admin Authentication & Dual-Runtime Backend (`server.ts` + `/functions/`)
 
-1. **Constant-Time Credential Verification (`crypto.timingSafeEqual`)**:
-   - Admin login (`/api/admin/login`) and session/Bearer token checks compare SHA-256 digests using `crypto.timingSafeEqual` (`safeTimingCompare`) to eliminate timing side-channel attacks.
+1. **Constant-Time Credential Verification (`crypto.timingSafeEqual` / Web Crypto HMAC-SHA256)**:
+   - Admin login (`/api/admin/login`) and session/Bearer token checks (`/api/admin/verify`) validate `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_API_KEY` on both Node.js (`server.ts`) and Cloudflare Pages Serverless Functions (`/functions/api/admin/login.js` & `/functions/api/admin/verify.js`).
 2. **IP Rate Limiting & Security Headers**:
-   - `/api/admin/login` enforces a strict rate limit (`15 failed attempts per 10-minute window` per IP, returning `HTTP 429 Too Many Requests` with `Retry-After` seconds).
-   - Responses include hardened security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cache-Control: no-store` on `/api/admin/*`).
+   - `/api/admin/login` enforces brute-force protection and hardened security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cache-Control: no-store`).
+3. **Cloudflare Pages Edge Functions (`/functions/`)**:
+   - Compiled and bundled automatically into `/dist-public/functions/` by `compileStaticSiteBundle()` so deploying to Cloudflare Pages supports `/api/admin/login`, `/api/admin/verify`, `/api/config`, `/api/v1/app/session-init`, and `/api/v1/app/session-clearance` out of the box.
 
 ---
 
 ## 6. Smartphone-First Admin Studio UX (`/admin.html` & `/admin.js`)
 
-1. **Ultra-Compact Sticky Top Region (`88px` Total = `<11%` of Mobile Viewport)**:
-   - Top bar (`.topbar-inner`) is a single `48px` row (`Logo + Brand Title + Live Site + Publish + Sign Out`).
-   - Section switcher (`.mobile-nav-bar`) is a single `40px` horizontal touch-scrollable pill strip (`1. Overview`, `2. News`, `3. Brand & Colors`, `4. Specs`, `5. Sections`, `6. FAQs`, `7. Footer & Legal`, `8. SEO & Links`).
-   - The detailed `"📍 Currently Editing"` context banner and dropdown selector scroll naturally with the workspace so they never crowd out form inputs when the smartphone keyboard opens.
+1. **Genuine Topbar Hamburger Menu (`#admin-hamburger-btn`) & Zero Duplication**:
+   - Top bar (`.topbar-inner`) is a single `48px` sticky row featuring a genuine 3-bar **Hamburger Menu button (`#admin-hamburger-btn`)** on mobile/tablet (`< 1024px`) that opens a slide-out navigation drawer (`#admin-nav-drawer`), paired with a single sticky left sidebar (`.studio-sidebar`) on desktop (`>= 1024px`).
+   - All duplicate horizontal tab strips, duplicate dropdowns, and duplicated inputs across workspaces have been eliminated. Every setting exists in **one single sequential workspace (1 to 8)** matching the top-to-bottom layout of the public website:
+     - `1. Website Map & Audit` (`overview`)
+     - `2. Brand, Hero & Colors` (`brand` — includes Header & 3-Bar Hamburger Menu custom links + 60fps Live Theme Mini-Preview Card)
+     - `3. Package Specs Table` (`specs`)
+     - `4. Content Sections` (`sections`)
+     - `5. Daily News Publisher` (`news`)
+     - `6. FAQs Manager` (`faqs`)
+     - `7. Footer & Legal Pages` (`pages`)
+     - `8. Security, SEO & Deploy` (`domain` — single authoritative `/moreinfo` 7-Gate Security & AES-256-GCM Link Vault, Smart Internal Links, Sitemap/Manifest, SERP Simulator, Firebase, and GitHub Publisher)
+2. **Lag-Free 60fps Color & Theme Customizer**:
+   - Color picker `input` events are throttled with `requestAnimationFrame` and immediately update `#live-theme-preview-card` without full-DOM layout thrashing.
+   - Rich HTML preview boxes (`.live-preview-box`) are lazy-populated only when toggled open.
 
 ---
 
-## 7. Modular Codebase Organization
+## 7. Modular Codebase Organization (See `/FILE_INVENTORY.md` for Full Audit Log)
 
 | File Path | Responsibility |
 | :--- | :--- |
-| `/src/utils/cms-types.ts` | TypeScript interfaces (`SiteConfig`, `InternalLinkRule`, `FooterQuickLink`, `UiCustomizationConfig`, `DomainSeoConfig`), `stripHtmlToExcerpt`, `MASTER_DEFAULT_CONFIG`, and `mergeSiteConfig()`. |
-| `/src/utils/cms-seo.ts` | Route resolver (`resolveRouteView`), `sanitizeEditorialHtmlForSeo`, `applySmartInternalLinks`, `@graph` JSON-LD schema (`buildJsonLdSchema`), `generateSitemapXml`, `generateWebManifestJson`, `generateRobotsTxt`, `generateRssFeedXml`, and 9-point `auditSiteSeoHealth`. |
-| `/src/utils/cms-renderer.ts` | Scoped HTML renderers (`renderHamburgerDrawerHtml`, `buildPartialRoutePayload`, `renderCompleteStaticPageHtml` with inline theme CSS vars, LCP preload & internal crawl hubs). |
-| `/src/utils/static-compiler.ts` | Static site compiler (`compileStaticSiteBundle`) outputting all pre-rendered HTML pages, `/manifest.webmanifest`, `/sitemap.xml`, and `/static-routes/*.json` into `/dist-public`. |
-| `/src/utils/github-publisher.ts` | GitHub REST API Git Data integration (`verifyGitHubRepoAccess`, `pushStaticFilesToGitHub`) using a GitHub Fine-Grained Personal Access Token (`github_pat_...`). |
-| `/src/utils/cms-engine.ts` | Barrel index re-exporting all CMS modules. |
-| `/app.js` | Lightweight **100% Static Public Website Router** (zero Firebase imports). |
-| `/admin.html` & `/admin.js` | **Live-Firebase Admin Studio** with `88px` mobile sticky chrome, 1-Tap Color Theme Presets, Visual Color Pickers, Full Footer Customizer, Smart Internal Link Manager, and GitHub Static Publisher. |
-| `/firebase-config.js` | Admin-only Live Firebase v10+ Firestore & API client. |
-| `/server.ts` | Express server with hardened constant-time Admin Auth, rate limiting, content sanitization, static route serving, and GitHub publisher routes. |
-| `/SECURITY_AND_DOWNLOAD_ARCHITECTURE.md` | Complete architectural blueprint for the **Isolated, Bot-Shielded Security & Download Gate (`/download` / `/more-info`)**, detailing `robots.txt` disallow rules, `noindex` headers, and Admin Studio integration. |
+| `/FILE_INVENTORY.md` | Authoritative file inventory table (`WANTED` vs `DELETED`) and mandatory header change log. |
+| `/src/utils/cms-engine.ts` & `/src/utils/cms-seo.ts` | TypeScript interfaces (`SiteConfig`), `MASTER_DEFAULT_CONFIG`, `mergeSiteConfig()`, JSON-LD `@graph` schema (`Organization`, `WebSite`, `WebPage`, `SoftwareApplication`, `HowTo`, `FAQPage`, `NewsArticle`, `BreadcrumbList`), sitemap/manifest/robots generators, and 9-point `auditSiteSeoHealth()`. |
+| `/src/utils/cms-renderer.ts` | Server-side & static HTML renderer (`renderHamburgerDrawerHtml`, `buildPartialRoutePayload` with auto-generated `<nav class="toc-jump-bar">` and 1-click SHA-256 copy button, `renderCompleteStaticPageHtml` with inline theme CSS vars). |
+| `/src/utils/static-compiler.ts` | Static site compiler (`compileStaticSiteBundle`) outputting all pre-rendered public HTML pages, `/static-routes/*.json`, `/moreinfo`, and `/functions/` into `/dist-public` while strictly excluding all Admin files (`admin.html`, `admin.js`, `admin.css`, `firebase-config.js`). |
+| `/src/utils/github-publisher.ts` | GitHub Fine-Grained Token Git Data API publisher with automatic empty-repository initialization (`bootstrapEmptyGitHubRepoIfNeeded`) and automatic target branch creation. |
+| `/functions/*` | Cloudflare Pages Serverless Functions (`_middleware.js`, `_shared/auth.js`, `api/admin/*`, `api/config.js`, `api/v1/app/*`, `api/[[catchall]].js`). |
+| `/index.html` & `/app.js` | Ultra-lightweight **100% Standalone Static Public Website** (zero imports from Admin/CMS engine, `< 2ms` `preserveSsrDom` initial hydration, zero Firebase imports). |
+| `/admin.html`, `/admin.css` & `/admin.js` | **Live-Firebase Admin Studio** with dedicated `Plus Jakarta Sans` + `JetBrains Mono` SaaS stylesheet, Hamburger Menu drawer, sequential 1–8 workspaces, 1-click News/Section templates, Static Bundle Inspector, and GitHub Static Publisher. |
+| `/moreinfo.html` & `/moreinfo.js` | **100% SEO-Isolated (`noindex, nofollow`) v12 7-Gate Security Gateway** with Cloudflare Turnstile and AES-256-GCM RAM link decryption. |
+| `/firebase-config.js` | Admin-only Live Firebase Firestore (`siteConfig/main`) & API client. |
+| `/server.ts` | Express server with hardened Admin Auth, v12 7-Gate security routes, AES-256-GCM link vault, `/api/static-bundle` inspector, and static compiler. |
+| `/SECURITY_AND_DOWNLOAD_ARCHITECTURE.md` | Detailed specification of the v12 7-Gate `/moreinfo` Security Gateway and AES-256-GCM Link Vault. |
+
 

@@ -9,1316 +9,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <style>
-      :root {
-        --bg: #f8fafc;
-        --surface: #ffffff;
-        --surface-muted: #f1f5f9;
-        --border: #e2e8f0;
-        --border-focus: #0f172a;
-        --text-main: #0f172a;
-        --text-sub: #475569;
-        --text-muted: #64748b;
-        --accent: #ef4444;
-        --accent-hover: #dc2626;
-        --accent-soft: #fef2f2;
-        --success: #059669;
-        --success-soft: #ecfdf5;
-        --warning: #d97706;
-        --radius: 10px;
-      }
-
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-
-      /* Strict Mobile & Desktop Viewport Lock — Zero Horizontal Wobble & Sticky Support */
-      html,
-      body {
-        width: 100%;
-        max-width: 100%;
-        overflow-x: clip;
-        overscroll-behavior-x: none;
-        touch-action: pan-y;
-        background-color: var(--bg);
-        color: var(--text-main);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 13.5px;
-        line-height: 1.45;
-        -webkit-font-smoothing: antialiased;
-        -webkit-text-size-adjust: 100%;
-      }
-
-      a {
-        color: inherit;
-        text-decoration: none;
-      }
-
-      button,
-      input,
-      textarea,
-      select {
-        font: inherit;
-        color: inherit;
-      }
-
-      /* ─── 1. LOGIN OVERLAY ─── */
-      .auth-overlay {
-        min-height: 100vh;
-        width: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 14px;
-        background: var(--bg);
-      }
-
-      .auth-overlay[hidden] {
-        display: none !important;
-      }
-
-      .auth-card {
-        width: 100%;
-        max-width: 400px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 22px 18px;
-        box-shadow: 0 12px 32px -12px rgba(15, 23, 42, 0.1);
-      }
-
-      .auth-brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 14px;
-      }
-
-      .auth-brand img {
-        width: 38px;
-        height: 38px;
-        border-radius: 8px;
-        flex-shrink: 0;
-      }
-
-      .auth-brand h1 {
-        font-size: 1.08rem;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-      }
-
-      .auth-brand p {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-      }
-
-      .auth-tabs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 5px;
-        background: var(--surface-muted);
-        padding: 4px;
-        border-radius: 8px;
-        margin-bottom: 14px;
-      }
-
-      .auth-tab {
-        min-height: 34px;
-        border: none;
-        border-radius: 6px;
-        background: transparent;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: var(--text-sub);
-        cursor: pointer;
-      }
-
-      .auth-tab.active {
-        background: var(--surface);
-        color: var(--text-main);
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-      }
-
-      .auth-error {
-        display: none;
-        background: var(--accent-soft);
-        border: 1px solid #fecaca;
-        color: #b91c1c;
-        padding: 8px 10px;
-        border-radius: 8px;
-        font-size: 0.78rem;
-        margin-bottom: 12px;
-      }
-
-      .auth-error.visible {
-        display: block;
-      }
-
-      .auth-hint {
-        margin-top: 12px;
-        padding: 8px 10px;
-        background: var(--surface-muted);
-        border-radius: 8px;
-        font-size: 0.73rem;
-        color: var(--text-sub);
-        line-height: 1.4;
-      }
-
-      .auth-hint code {
-        font-family: 'JetBrains Mono', monospace;
-        background: #e2e8f0;
-        padding: 1px 4px;
-        border-radius: 4px;
-        font-size: 0.71rem;
-      }
-
-      /* ─── 2. STUDIO SHELL (SIDEBAR ON DESKTOP, COMPACT STICKY SELECTOR ON MOBILE) ─── */
-      .cms-shell {
-        width: 100%;
-        max-width: 100%;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-
-      .cms-shell[hidden] {
-        display: none !important;
-      }
-
-      .topbar {
-        position: sticky;
-        top: 0;
-        z-index: 60;
-        background: rgba(255, 255, 255, 0.97);
-        backdrop-filter: blur(8px);
-        border-bottom: 1px solid var(--border);
-        width: 100%;
-      }
-
-      .topbar-inner {
-        max-width: 1360px;
-        margin: 0 auto;
-        height: 48px;
-        padding: 0 12px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: nowrap;
-      }
-
-      .topbar-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
-        flex: 1;
-      }
-
-      .topbar-logo {
-        width: 26px;
-        height: 26px;
-        border-radius: 6px;
-        flex-shrink: 0;
-      }
-
-      .topbar-title {
-        font-size: 0.85rem;
-        font-weight: 800;
-        color: var(--text-main);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .topbar-status {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.68rem;
-        color: var(--text-muted);
-        white-space: nowrap;
-      }
-
-      .status-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--success);
-        flex-shrink: 0;
-      }
-
-      .topbar-actions {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        flex-wrap: nowrap;
-        flex-shrink: 0;
-      }
-
-      /* Compact 40px Sticky Quick-Tab Strip (Total sticky height = 88px, strictly < 15% of mobile screen) */
-      .mobile-nav-bar {
-        position: sticky;
-        top: 48px;
-        z-index: 55;
-        display: flex;
-        align-items: center;
-        height: 40px;
-        padding: 0 10px;
-        background: rgba(255, 255, 255, 0.97);
-        backdrop-filter: blur(8px);
-        border-bottom: 1px solid var(--border);
-        width: 100%;
-      }
-
-      /* Non-sticky Context Banner inside Main Workspace so it never blocks scrolling */
-      .workspace-context-banner {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding: 10px 12px;
-        margin-bottom: 12px;
-        background: #ffffff;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-      }
-
-      .editing-context-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-
-      .editing-context-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.74rem;
-        font-weight: 800;
-        color: #0f172a;
-        background: #f1f5f9;
-        border: 1px solid #cbd5e1;
-        padding: 3px 8px;
-        border-radius: 6px;
-      }
-
-      .editing-context-target {
-        font-size: 0.71rem;
-        font-weight: 700;
-        color: #1e40af;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        padding: 2px 7px;
-        border-radius: 5px;
-      }
-
-      .mobile-nav-controls {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-      }
-
-      .mobile-nav-select {
-        flex: 1;
-        min-height: 34px;
-        padding: 4px 10px;
-        border-radius: 7px;
-        border: 1px solid var(--border);
-        background: var(--surface-muted);
-        font-size: 0.79rem;
-        font-weight: 700;
-        color: var(--text-main);
-      }
-
-      .quick-tab-strip {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        overflow-x: auto;
-        scrollbar-width: none;
-        width: 100%;
-      }
-
-      .quick-tab-strip::-webkit-scrollbar {
-        display: none;
-      }
-
-      .quick-tab-pill {
-        min-height: 28px;
-        padding: 4px 10px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        font-size: 0.74rem;
-        font-weight: 700;
-        color: var(--text-sub);
-        white-space: nowrap;
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-
-      .quick-tab-pill.active {
-        background: var(--text-main);
-        color: #ffffff;
-        border-color: var(--text-main);
-      }
-
-      /* 1-Tap Color Theme Preset Buttons & Visual Color Swatch Input Pair */
-      .theme-preset-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
-        margin-bottom: 14px;
-      }
-
-      @media (min-width: 640px) {
-        .theme-preset-grid {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-      }
-
-      .theme-preset-btn {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 10px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: var(--text-main);
-        cursor: pointer;
-        text-align: left;
-        transition: border-color 0.15s ease, transform 0.1s ease;
-      }
-
-      .theme-preset-btn:hover {
-        border-color: var(--accent);
-      }
-
-      .theme-preset-swatches {
-        display: inline-flex;
-        align-items: center;
-        gap: 2px;
-        flex-shrink: 0;
-      }
-
-      .theme-preset-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        border: 1px solid rgba(0, 0, 0, 0.15);
-      }
-
-      .color-input-pair {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      .color-swatch-picker {
-        width: 38px;
-        height: 36px;
-        padding: 2px;
-        border-radius: 7px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-
-      /* Sub-Card Filter Bar inside large workspaces */
-      .subcard-filter-bar {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        overflow-x: auto;
-        scrollbar-width: none;
-        padding: 6px 8px;
-        margin-bottom: 12px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-      }
-
-      .subcard-filter-bar::-webkit-scrollbar {
-        display: none;
-      }
-
-      .subcard-pill {
-        min-height: 28px;
-        padding: 3px 9px;
-        border-radius: 6px;
-        border: 1px solid transparent;
-        background: var(--surface-muted);
-        font-size: 0.73rem;
-        font-weight: 700;
-        color: var(--text-sub);
-        white-space: nowrap;
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-
-      .subcard-pill.active {
-        background: var(--accent);
-        color: #ffffff;
-      }
-
-      /* Main Layout Container */
-      .studio-body {
-        width: 100%;
-        max-width: 1360px;
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        flex: 1;
-        padding-bottom: 84px;
-      }
-
-      @media (min-width: 1024px) {
-        .studio-body {
-          grid-template-columns: 240px minmax(0, 1fr);
-          gap: 20px;
-          padding: 16px 16px 90px;
-          align-items: start;
-        }
-      }
-
-      /* Desktop Left Sidebar */
-      .studio-sidebar {
-        display: none;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 10px;
-        position: sticky;
-        top: 76px;
-      }
-
-      @media (min-width: 1024px) {
-        .studio-sidebar {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-      }
-
-      .sidebar-group-label {
-        font-size: 0.68rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--text-muted);
-        padding: 8px 10px 4px;
-      }
-
-      .nav-tab {
-        width: 100%;
-        min-height: 40px;
-        padding: 8px 12px;
-        border: none;
-        border-radius: 8px;
-        background: transparent;
-        font-size: 0.83rem;
-        font-weight: 600;
-        color: var(--text-sub);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        text-align: left;
-        transition: background-color 0.15s ease, color 0.15s ease;
-      }
-
-      .nav-tab:hover {
-        background: var(--surface-muted);
-        color: var(--text-main);
-      }
-
-      .nav-tab.active {
-        background: var(--text-main);
-        color: #ffffff;
-      }
-
-      .nav-count {
-        font-size: 0.7rem;
-        padding: 2px 7px;
-        border-radius: 999px;
-        background: rgba(15, 23, 42, 0.08);
-        font-weight: 700;
-      }
-
-      .nav-tab.active .nav-count {
-        background: rgba(255, 255, 255, 0.2);
-        color: #ffffff;
-      }
-
-      /* ─── 3. MAIN WORKSPACE CONTENT ─── */
-      .cms-main {
-        width: 100%;
-        min-width: 0;
-        padding: 12px;
-      }
-
-      @media (min-width: 1024px) {
-        .cms-main {
-          padding: 0;
-        }
-      }
-
-      .tab-panel {
-        display: none;
-        width: 100%;
-        min-width: 0;
-      }
-
-      .tab-panel.active {
-        display: block;
-      }
-
-      .panel-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 12px;
-        flex-wrap: wrap;
-      }
-
-      .panel-header h2 {
-        font-size: 1.05rem;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-      }
-
-      .panel-header p {
-        font-size: 0.77rem;
-        color: var(--text-sub);
-        margin-top: 2px;
-      }
-
-      /* Overview Stat Cards */
-      .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-
-      @media (min-width: 640px) {
-        .stats-grid {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-        }
-      }
-
-      .stat-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 10px 12px;
-      }
-
-      .stat-label {
-        font-size: 0.69rem;
-        font-weight: 700;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-      }
-
-      .stat-value {
-        font-size: 1.15rem;
-        font-weight: 800;
-        color: var(--text-main);
-        margin-top: 2px;
-      }
-
-      .stat-sub {
-        font-size: 0.69rem;
-        color: var(--success);
-        font-weight: 600;
-        margin-top: 1px;
-      }
-
-      /* Cards & Forms */
-      .card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 9px;
-        padding: 13px 12px;
-        margin-bottom: 12px;
-        width: 100%;
-        min-width: 0;
-      }
-
-      @media (min-width: 680px) {
-        .card {
-          padding: 16px 16px;
-          margin-bottom: 14px;
-        }
-      }
-
-      .card-title {
-        font-size: 0.88rem;
-        font-weight: 800;
-        margin-bottom: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-
-      .card-desc {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        margin-bottom: 10px;
-      }
-
-      .form-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        gap: 10px;
-        width: 100%;
-        min-width: 0;
-      }
-
-      @media (min-width: 680px) {
-        .form-grid.cols-2 {
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        }
-        .form-grid.cols-3 {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-      }
-
-      .field {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        min-width: 0;
-        width: 100%;
-      }
-
-      .field.span-full {
-        grid-column: 1 / -1;
-      }
-
-      .field-label {
-        font-size: 0.74rem;
-        font-weight: 700;
-        color: var(--text-main);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-
-      .field-tag {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.65rem;
-        font-weight: 500;
-        color: var(--text-muted);
-        background: var(--surface-muted);
-        padding: 1px 5px;
-        border-radius: 4px;
-      }
-
-      .input,
-      .textarea,
-      .select {
-        width: 100%;
-        max-width: 100%;
-        min-height: 36px;
-        padding: 6px 10px;
-        border: 1px solid var(--border);
-        border-radius: 7px;
-        background: var(--surface);
-        font-size: 0.81rem;
-        color: var(--text-main);
-        transition: border-color 0.15s ease;
-      }
-
-      .input:focus,
-      .textarea:focus,
-      .select:focus {
-        outline: none;
-        border-color: var(--border-focus);
-        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
-      }
-
-      .textarea {
-        min-height: 76px;
-        resize: vertical;
-        line-height: 1.45;
-      }
-
-      .textarea.code {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.75rem;
-        background: #fafafa;
-      }
-
-      .field-help {
-        font-size: 0.7rem;
-        color: var(--text-muted);
-      }
-
-      /* Input + Upload Button Group */
-      .input-upload-row {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-        width: 100%;
-      }
-
-      .input-upload-row .input {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .img-mini-preview {
-        margin-top: 5px;
-        max-height: 74px;
-        width: auto;
-        max-width: 100%;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        object-fit: cover;
-        display: block;
-        background: #f1f5f9;
-      }
-
-      .img-mini-preview[src=''] {
-        display: none;
-      }
-
-      /* Live Visual Preview Box for HTML Editors */
-      .live-preview-box {
-        margin-top: 8px;
-        padding: 12px 14px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: #ffffff;
-        font-size: 0.86rem;
-        line-height: 1.55;
-        color: #1f2937;
-        display: none;
-      }
-
-      .live-preview-box.visible {
-        display: block;
-      }
-
-      .live-preview-box h2,
-      .live-preview-box h3 {
-        margin: 10px 0 5px;
-        color: #111827;
-      }
-
-      .live-preview-box p,
-      .live-preview-box ul {
-        margin-bottom: 8px;
-      }
-
-      .live-preview-box ul {
-        padding-left: 18px;
-      }
-
-      .live-preview-box img {
-        max-width: 100%;
-        height: auto;
-        border-radius: 8px;
-        margin: 8px 0;
-      }
-
-      /* Toggle Switch Row */
-      .toggle-box {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 8px 10px;
-        border: 1px solid var(--border);
-        border-radius: 7px;
-        background: var(--surface-muted);
-        font-size: 0.78rem;
-      }
-
-      .toggle-box input[type='checkbox'] {
-        width: 17px;
-        height: 17px;
-        accent-color: var(--accent);
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-
-      /* Buttons */
-      .btn {
-        min-height: 36px;
-        padding: 6px 12px;
-        border-radius: 7px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        color: var(--text-main);
-        font-size: 0.78rem;
-        font-weight: 600;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 5px;
-        white-space: nowrap;
-        transition: background-color 0.15s ease, border-color 0.15s ease;
-      }
-
-      .btn:hover {
-        background: var(--surface-muted);
-      }
-
-      .btn-primary {
-        background: var(--accent);
-        color: #ffffff;
-        border-color: var(--accent);
-        font-weight: 700;
-      }
-
-      .btn-primary:hover {
-        background: var(--accent-hover);
-        border-color: var(--accent-hover);
-      }
-
-      .btn-dark {
-        background: var(--text-main);
-        color: #ffffff;
-        border-color: var(--text-main);
-      }
-
-      .btn-dark:hover {
-        background: #1e293b;
-      }
-
-      .btn-danger {
-        color: #b91c1c;
-        border-color: #fecaca;
-        background: #fef2f2;
-      }
-
-      .btn-danger:hover {
-        background: #fee2e2;
-      }
-
-      .btn-sm {
-        min-height: 30px;
-        padding: 4px 8px;
-        font-size: 0.73rem;
-      }
-
-      /* Accordion Cards */
-      .item-list {
-        display: flex;
-        flex-direction: column;
-        gap: 9px;
-        width: 100%;
-      }
-
-      .item-card {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        overflow: hidden;
-        width: 100%;
-      }
-
-      .item-card-header {
-        padding: 12px 14px;
-        background: var(--surface-muted);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        cursor: pointer;
-        user-select: none;
-        flex-wrap: wrap;
-      }
-
-      .item-card-title-wrap {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
-        flex: 1;
-      }
-
-      .item-badge {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.7rem;
-        font-weight: 600;
-        padding: 2px 7px;
-        border-radius: 5px;
-        background: #e2e8f0;
-        color: var(--text-main);
-        flex-shrink: 0;
-      }
-
-      .item-card-title {
-        font-size: 0.88rem;
-        font-weight: 700;
-        color: var(--text-main);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .item-card-actions {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-
-      .item-card-body {
-        padding: 16px 14px;
-        border-top: 1px solid var(--border);
-        display: none;
-      }
-
-      .item-card.open .item-card-body {
-        display: block;
-      }
-
-      .seo-subbox {
-        margin-top: 12px;
-        padding: 12px;
-        border-radius: 8px;
-        background: #f8fafc;
-        border: 1px dashed #cbd5e1;
-      }
-
-      .seo-subbox-title {
-        font-size: 0.75rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #0f172a;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-
-      .html-toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-bottom: 8px;
-      }
-
-      /* Sub-selector tabs for Legal Pages */
-      .page-selector-bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 16px;
-      }
-
-      .page-tab-btn {
-        min-height: 38px;
-        padding: 6px 14px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        font-size: 0.82rem;
-        font-weight: 700;
-        color: var(--text-sub);
-        cursor: pointer;
-      }
-
-      .page-tab-btn.active {
-        background: var(--text-main);
-        color: #ffffff;
-        border-color: var(--text-main);
-      }
-
-      /* Orderable Block Row */
-      .order-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: var(--surface-muted);
-        margin-bottom: 8px;
-      }
-
-      /* SEO Checklist */
-      .audit-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .audit-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: var(--surface-muted);
-        flex-wrap: wrap;
-      }
-
-      .audit-badge-pass {
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: var(--success);
-        background: var(--success-soft);
-        padding: 2px 8px;
-        border-radius: 999px;
-      }
-
-      /* Google SERP Preview */
-      .serp-box {
-        padding: 14px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: #ffffff;
-        word-break: break-word;
-      }
-
-      .serp-url {
-        font-size: 0.76rem;
-        color: #475569;
-        margin-bottom: 3px;
-      }
-
-      .serp-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #1a0dab;
-        margin-bottom: 4px;
-        line-height: 1.3;
-      }
-
-      .serp-desc {
-        font-size: 0.82rem;
-        color: #4d5156;
-        line-height: 1.45;
-      }
-
-      /* Modal for Inserting Images & Rich Components */
-      .cms-modal-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 80;
-        background: rgba(15, 23, 42, 0.55);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 16px;
-      }
-
-      .cms-modal-backdrop[hidden] {
-        display: none !important;
-      }
-
-      .cms-modal-card {
-        width: 100%;
-        max-width: 540px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
-        max-height: 90vh;
-        overflow-y: auto;
-      }
-
-      /* Placement Badges & Visual Page Anatomy Map */
-      .placement-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: #1e40af;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        padding: 3px 9px;
-        border-radius: 6px;
-      }
-
-      .visual-map-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .visual-map-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 11px 14px;
-        border: 1px solid var(--border);
-        border-left: 4px solid var(--accent);
-        border-radius: 8px;
-        background: #f8fafc;
-        flex-wrap: wrap;
-      }
-
-      .visual-map-item strong {
-        font-size: 0.85rem;
-        color: var(--text-main);
-      }
-
-      .visual-map-item span {
-        font-size: 0.76rem;
-        color: var(--text-sub);
-        display: block;
-      }
-
-      /* Bottom Save Bar */
-      .bottom-save-bar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 45;
-        background: rgba(255, 255, 255, 0.96);
-        backdrop-filter: blur(8px);
-        border-top: 1px solid var(--border);
-        padding: 10px 16px;
-      }
-
-      .bottom-save-inner {
-        max-width: 1120px;
-        margin: 0 auto;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-      }
-
-      .save-feedback {
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: var(--text-sub);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .toast {
-        position: fixed;
-        bottom: 72px;
-        right: 16px;
-        left: 16px;
-        max-width: 380px;
-        margin-left: auto;
-        z-index: 90;
-        background: #0f172a;
-        color: #ffffff;
-        padding: 12px 16px;
-        border-radius: 10px;
-        font-size: 0.84rem;
-        font-weight: 600;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
-        display: none;
-      }
-
-      .toast.visible {
-        display: block;
-      }
-
-      .toast.error {
-        background: #b91c1c;
-      }
-
-      .toast.success {
-        background: #059669;
-      }
-
-      /* ─── 4. SMARTPHONE MOBILE TOUCH OPTIMIZATIONS (< 680px) ─── */
-      @media (max-width: 679px) {
-        .card {
-          padding: 10px 10px;
-          margin-bottom: 10px;
-          border-radius: 8px;
-        }
-        .card-title {
-          font-size: 0.84rem;
-        }
-        .card-desc {
-          font-size: 0.72rem;
-          margin-bottom: 8px;
-        }
-        .form-grid {
-          gap: 8px;
-        }
-        .field-label {
-          font-size: 0.71rem;
-        }
-        .input, .textarea, .select {
-          min-height: 34px;
-          padding: 5px 8px;
-          font-size: 0.78rem;
-          border-radius: 6px;
-        }
-        .textarea {
-          min-height: 64px;
-        }
-        .btn {
-          min-height: 34px;
-          padding: 5px 10px;
-          font-size: 0.76rem;
-        }
-        .btn-sm {
-          min-height: 28px;
-          padding: 3px 8px;
-          font-size: 0.7rem;
-        }
-        .toggle-box {
-          padding: 6px 8px;
-          min-height: 36px;
-        }
-        .toggle-box strong {
-          font-size: 0.76rem;
-        }
-        .toggle-box .field-help {
-          font-size: 0.67rem;
-        }
-        .quick-tab-pill {
-          padding: 4px 9px;
-          font-size: 0.71rem;
-        }
-        .topbar-inner {
-          height: 44px;
-          padding: 0 8px;
-        }
-        .cms-main {
-          padding: 8px 6px;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="/admin.css" />
   </head>
   <body>
     <!-- Hidden Global Device Image File Picker -->
@@ -1423,10 +117,21 @@
          2. MAIN ADMIN STUDIO SHELL
          ═══════════════════════════════════════════════════════════════════════ -->
     <div id="cms-shell" class="cms-shell" hidden>
-      <!-- Single-Row 48px Top Header -->
+      <!-- Single-Row 48px Top Header with Genuine Hamburger Menu -->
       <header class="topbar">
         <div class="topbar-inner">
           <div class="topbar-left">
+            <button
+              type="button"
+              id="admin-hamburger-btn"
+              class="admin-hamburger-btn"
+              aria-label="Open Admin Navigation Menu"
+              aria-expanded="false"
+            >
+              <span class="admin-hamburger-bar"></span>
+              <span class="admin-hamburger-bar"></span>
+              <span class="admin-hamburger-bar"></span>
+            </button>
             <img id="topbar-logo" class="topbar-logo" src="/assets/app-icon.svg" alt="Logo" width="26" height="26" />
             <div style="min-width: 0">
               <div class="topbar-title" id="topbar-brand-title">Master CMS Studio</div>
@@ -1439,87 +144,88 @@
 
           <div class="topbar-actions">
             <a href="/" target="_blank" rel="noopener" class="btn btn-sm">Site ↗</a>
-            <button type="button" id="btn-top-save" class="btn btn-primary btn-sm">Publish</button>
+            <button type="button" id="btn-top-save" class="btn btn-primary btn-sm">Publish Changes</button>
             <button type="button" id="btn-logout" class="btn btn-sm">Exit</button>
           </div>
         </div>
       </header>
 
-      <!-- Sleek 40px Sticky 1-Tap Section Bar (Strictly < 15% Mobile Sticky Cap) -->
-      <div class="mobile-nav-bar" id="sticky-editing-banner">
-        <div class="quick-tab-strip" role="tablist" aria-label="Quick Section Strip">
-          <button type="button" class="quick-tab-pill active" data-quick-tab="overview">🏠 1. Website Map</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="news">📰 2. Post News</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="brand">🎨 3. Colors &amp; Brand</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="specs">📦 4. App Specs</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="sections">📑 5. Sections</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="faqs">❓ 6. FAQs</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="pages">📄 7. Footer &amp; Legal</button>
-          <button type="button" class="quick-tab-pill" data-quick-tab="domain">🚀 8. SEO &amp; Deploy</button>
+      <!-- Mobile / Tablet Hamburger Slide-Out Navigation Drawer -->
+      <div id="admin-nav-backdrop" class="admin-nav-backdrop"></div>
+      <nav id="admin-nav-drawer" class="admin-nav-drawer" aria-label="Admin Hamburger Menu">
+        <div class="sidebar-group-label" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Sequential Website Setup (1–8)</span>
+          <button type="button" id="admin-drawer-close" class="btn btn-sm">✕</button>
         </div>
-      </div>
+        <button type="button" class="nav-tab active" data-tab="overview">
+          <span>1. Website Map &amp; Audit</span>
+          <span class="nav-count" id="drawer-count-seo">100%</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="brand">
+          <span>2. Brand, Hero &amp; Colors</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="specs">
+          <span>3. Package Specs Table</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="sections">
+          <span>4. Content Sections</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="news">
+          <span>5. Daily News Publisher</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="faqs">
+          <span>6. FAQs Manager</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="pages">
+          <span>7. Footer &amp; Legal Pages</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="domain">
+          <span>8. Security, SEO &amp; Deploy</span>
+        </button>
+      </nav>
 
       <div class="studio-body">
-        <!-- Desktop Left Sidebar Navigation -->
+        <!-- Desktop Left Sidebar Navigation (Identical Sequential Order 1 to 8) -->
         <aside class="studio-sidebar" aria-label="Admin Workspaces">
-          <div class="sidebar-group-label">Dashboard &amp; Daily Publishing</div>
+          <div class="sidebar-group-label">Top-to-Bottom Website Flow</div>
           <button type="button" class="nav-tab active" data-tab="overview">
             <span>1. Website Map &amp; Audit</span>
             <span class="nav-count" id="count-seo-score">100%</span>
           </button>
-          <button type="button" class="nav-tab" data-tab="news">
-            <span>2. Daily News Publisher</span>
-            <span class="nav-count" id="count-news">0</span>
-          </button>
-
-          <div class="sidebar-group-label">Design, Content &amp; Sections</div>
           <button type="button" class="nav-tab" data-tab="brand">
-            <span>3. Colors, Brand &amp; Hero</span>
+            <span>2. Brand, Hero &amp; Colors</span>
           </button>
           <button type="button" class="nav-tab" data-tab="specs">
-            <span>4. Package Specs Table</span>
+            <span>3. Package Specs Table</span>
           </button>
           <button type="button" class="nav-tab" data-tab="sections">
-            <span>5. Content Sections</span>
+            <span>4. Content Sections</span>
             <span class="nav-count" id="count-sections">0</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="news">
+            <span>5. Daily News Publisher</span>
+            <span class="nav-count" id="count-news">0</span>
           </button>
           <button type="button" class="nav-tab" data-tab="faqs">
             <span>6. FAQs Manager</span>
             <span class="nav-count" id="count-faqs">0</span>
           </button>
-
-          <div class="sidebar-group-label">Footer, SEO &amp; Cloud</div>
           <button type="button" class="nav-tab" data-tab="pages">
             <span>7. Footer &amp; Legal Pages</span>
             <span class="nav-count" id="count-pages">0</span>
           </button>
           <button type="button" class="nav-tab" data-tab="domain">
-            <span>8. Internal Links, SEO &amp; GitHub</span>
+            <span>8. Security, SEO &amp; Deploy</span>
           </button>
         </aside>
 
         <!-- Main Workspace Area -->
         <main class="cms-main">
-          <!-- Non-Sticky Context Card (Shows active section + dropdown switcher without blocking mobile screen) -->
+          <!-- Single Non-Sticky Status Breadcrumb Row -->
           <div class="workspace-context-banner">
             <div class="editing-context-row">
-              <span class="editing-context-badge" id="editing-now-label">📍 Editing: 1. Website Map &amp; Overview</span>
-              <span class="editing-context-target" id="editing-now-target">Tap any section below to edit</span>
-            </div>
-            <div class="mobile-nav-controls">
-              <label for="mobile-tab-select" style="font-size: 0.74rem; font-weight: 800; color: var(--text-sub)">
-                Switch Section:
-              </label>
-              <select id="mobile-tab-select" class="mobile-nav-select">
-                <option value="overview">1. Visual Website Map &amp; SEO Health</option>
-                <option value="news">2. Post Daily News (/news)</option>
-                <option value="brand">3. Website Colors, Brand, Hero &amp; 3-Bar Menu</option>
-                <option value="specs">4. App Package Specs &amp; SHA-256 Table</option>
-                <option value="sections">5. Homepage Content Sections &amp; Guides</option>
-                <option value="faqs">6. FAQs Questions &amp; Answers</option>
-                <option value="pages">7. Full Footer Editor &amp; Legal Pages</option>
-                <option value="domain">8. Internal Links, Sitemap, Manifest &amp; GitHub</option>
-              </select>
+              <span class="editing-context-badge" id="editing-now-label">1. Website Map &amp; Overview</span>
+              <span class="editing-context-target" id="editing-now-target">Public Site: Master Overview &amp; SEO Audit</span>
             </div>
           </div>
           <!-- ───────────────────────────────────────────────────────────────────
@@ -1529,10 +235,10 @@
             <div class="panel-header">
               <div>
                 <h2>Master Site Overview, Visual Page Map &amp; SEO Health</h2>
-                <p>Admin runs 100% on Live Firebase data and compiles your Public Website into 100% static HTML &amp; JSON files.</p>
+                <p>Admin Studio manages live content and compiles your Public Website into standalone static HTML &amp; JSON files.</p>
               </div>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button type="button" class="btn btn-dark" data-jump-tab="domain">🚀 Push Static Site to GitHub</button>
+                <button type="button" class="btn btn-dark" data-jump-tab="domain">Push Static Site to GitHub</button>
                 <button type="button" class="btn btn-primary" data-jump-tab="news">+ Publish Daily News Post</button>
               </div>
             </div>
@@ -1572,13 +278,10 @@
               <div class="visual-map-list">
                 <div class="visual-map-item">
                   <div>
-                    <strong>1. Top Sticky Header Bar &amp; Slide-Down Menu</strong>
-                    <span>Controls App Logo, Brand Name, Top-Right "News" button, and Hamburger Menu links.</span>
+                    <strong>1. Top Sticky Header Bar &amp; 3-Bar Hamburger Menu</strong>
+                    <span>Controls App Logo, Brand Name, Top-Right "News" button, and 3-Bar Hamburger Menu links.</span>
                   </div>
-                  <div style="display:flex; gap:6px;">
-                    <button type="button" class="btn btn-sm" data-jump-tab="brand">Edit Logo &amp; Brand →</button>
-                    <button type="button" class="btn btn-sm" data-jump-tab="domain">Edit Menu Links →</button>
-                  </div>
+                  <button type="button" class="btn btn-sm" data-jump-tab="brand">Edit Header &amp; Menu →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
@@ -1654,16 +357,23 @@
             </div>
 
             <!-- Quick Daily News Composer Card -->
-            <div class="card" style="border: 2px solid #0f172a">
+            <div class="card" style="border: 1.5px solid #0f172a">
               <div class="card-title">
-                <span id="news-composer-heading">✍️ Publish a New Daily News Article</span>
+                <span id="news-composer-heading">Publish a New Daily News Article</span>
                 <button type="button" id="btn-news-autofill-seo" class="btn btn-sm">
-                  ⚡ Auto-Fill SEO Meta from Headline
+                  Auto-Fill SEO Meta from Headline
                 </button>
               </div>
               <div class="card-desc">
-                Fill in your news headline, optional featured cover image, summary, and body below, then click
+                Choose a 1-click template below or write your own headline, cover image, summary, and body, then click
                 <strong>Publish News Post Now</strong>.
+              </div>
+
+              <div class="template-bar">
+                <span class="template-bar-label">1-Click News Templates:</span>
+                <button type="button" class="btn btn-sm" data-news-template="release">+ Release Update</button>
+                <button type="button" class="btn btn-sm" data-news-template="security">+ Security Patch Advisory</button>
+                <button type="button" class="btn btn-sm" data-news-template="guide">+ Feature Walkthrough</button>
               </div>
 
               <input type="hidden" id="composer-news-id" value="" />
@@ -1997,11 +707,17 @@
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-color">Primary Accent Color (Hex)</label>
-                  <input type="text" id="brand-color" class="input" placeholder="#EF4444" />
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="brand-color" value="#EF4444" />
+                    <input type="text" id="brand-color" class="input" placeholder="#EF4444" />
+                  </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-theme-color">Browser Status Bar Theme Color (Hex)</label>
-                  <input type="text" id="brand-theme-color" class="input" placeholder="#EF4444" />
+                  <div class="color-input-pair">
+                    <input type="color" class="color-swatch-picker" data-color-sync="brand-theme-color" value="#EF4444" />
+                    <input type="text" id="brand-theme-color" class="input" placeholder="#EF4444" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -2030,11 +746,11 @@
                   <input type="text" id="hero-h1" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="hero-meta-title">Hero Meta Title</label>
+                  <label class="field-label" for="hero-meta-title">Hero Section Meta Title</label>
                   <input type="text" id="hero-meta-title" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="hero-meta-desc">Hero Meta Description</label>
+                  <label class="field-label" for="hero-meta-desc">Hero Section Meta Description</label>
                   <input type="text" id="hero-meta-desc" class="input" />
                 </div>
                 <div class="field span-full">
@@ -2122,47 +838,14 @@
                   <input type="text" id="cta-right-url" class="input" />
                 </div>
                 <div class="field span-full" style="background:#ECFDF5; border:1px solid #A7F3D0; border-radius:10px; padding:12px;">
-                  <label class="field-label" for="cta-protected-redirect-url" style="color:#065F46;">
-                    <span>🔒 Protected Destination Link (Where <code>/moreinfo</code> PROCEED Button Redirects User)</span>
-                    <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">Full /moreinfo Settings →</button>
-                  </label>
-                  <input
-                    type="text"
-                    id="cta-protected-redirect-url"
-                    class="input"
-                    placeholder="https://cdn.example.com/releases/ApexMobile-v4.8.2.apk"
-                  />
-                  <div class="field-help" style="color:#047857;">
-                    When a user clicks the Download button on the homepage, they go to <code>/moreinfo</code> first. Only after Turnstile &amp; backend verification pass and they tap <strong>PROCEED</strong> does the server decrypt and redirect them to this link.
-                  </div>
-
-                  <!-- Quick Turnstile Keys inside Workspace 3 -->
-                  <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #A7F3D0; display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:8px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
                     <div>
-                      <label class="field-label" for="cta-turnstile-site-key" style="color:#065F46; font-size:0.72rem;">
-                        Cloudflare Turnstile Site Key
-                      </label>
-                      <input
-                        type="text"
-                        id="cta-turnstile-site-key"
-                        class="input"
-                        placeholder="0x4AAAAAA... (Auto test key on localhost)"
-                        style="background:#ffffff; border-color:#A7F3D0; font-size:0.75rem;"
-                      />
+                      <strong style="color:#065F46; font-size:0.8rem;">🔒 Protected Destination Link &amp; Turnstile Security Gate (<code>/moreinfo</code>)</strong>
+                      <div class="field-help" style="color:#047857; margin-top:2px;">
+                        Your protected download destination URL, AES-256-GCM encryption vault, and Cloudflare Turnstile keys are managed in one unified place in Workspace 8.
+                      </div>
                     </div>
-                    <div>
-                      <label class="field-label" for="cta-turnstile-secret-key" style="color:#065F46; font-size:0.72rem;">
-                        Cloudflare Turnstile Secret Key
-                      </label>
-                      <input
-                        type="password"
-                        id="cta-turnstile-secret-key"
-                        class="input"
-                        placeholder="0x4AAAAAA... (Server siteverify)"
-                        autocomplete="off"
-                        style="background:#ffffff; border-color:#A7F3D0; font-size:0.75rem;"
-                      />
-                    </div>
+                    <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">Configure /moreinfo Security Vault →</button>
                   </div>
                 </div>
                 <div class="field span-full">
@@ -2185,14 +868,14 @@
               </div>
             </div>
 
-            <!-- Sub-Card 4: Sticky Header & 3-Bar Hamburger Menu Drawer Controls -->
+            <!-- Sub-Card 4: Sticky Header & 3-Bar Hamburger Menu Drawer Controls + Custom Links -->
             <div class="card" data-brand-card="drawer">
               <div class="card-title">
                 <span>4. Sticky Header &amp; 3-Bar Hamburger Menu Drawer Controls</span>
                 <span class="placement-badge">📍 Top Sticky Header + 3-Bar Slide-Down Menu</span>
               </div>
               <div class="card-desc">
-                Control what automatically populates inside the top-right 3-bar Hamburger Menu Drawer when clicked, plus quick link to edit custom menu items.
+                Control what automatically populates inside the top-right 3-bar Hamburger Menu Drawer on your public website, and manage custom menu links right below.
               </div>
               <div class="form-grid cols-2" style="margin-top: 8px">
                 <div class="field">
@@ -2216,7 +899,7 @@
                   <div class="toggle-box">
                     <div>
                       <strong>Show Article Count Badge in News Button</strong>
-                      <div class="field-help">Displays e.g. "News 3" in the sticky header.</div>
+                      <div class="field-help">Displays e.g. "News (3)" in the sticky header.</div>
                     </div>
                     <input type="checkbox" id="ui-show-news-count" />
                   </div>
@@ -2257,11 +940,16 @@
                     <input type="checkbox" id="ui-drawer-show-cta" />
                   </div>
                 </div>
-                <div class="field span-full">
-                  <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">
-                    ☰ Edit Custom Header Menu Links in Workspace 8 →
-                  </button>
+              </div>
+
+              <!-- Consolidated Custom Header 3-Bar Hamburger Navigation Links -->
+              <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px">
+                <div class="card-title">
+                  <span>Custom Header 3-Bar Hamburger Navigation Links</span>
+                  <button type="button" id="btn-add-menu-link" class="btn btn-sm btn-primary">+ Add Custom Menu Link</button>
                 </div>
+                <div class="card-desc">Add or reorder custom links inside the top-right 3-bar slide-down navigation drawer.</div>
+                <div id="menu-links-list" class="item-list"></div>
               </div>
             </div>
 
@@ -2269,10 +957,31 @@
             <div class="card" data-brand-card="theme">
               <div class="card-title">
                 <span>5. Full Website Color Designer, 1-Tap Themes, Fonts &amp; Section Order</span>
-                <span class="placement-badge">📍 Zero-SEO-Impact Inline CSS Variables</span>
+                <span class="placement-badge">📍 Zero-Lag 60fps Live Preview + Inline CSS Variables</span>
               </div>
               <div class="card-desc">
-                Tap any preset below to recolor the entire website in 1 second, or customize each individual color (Header, Page Background, Cards, Buttons, Text, and Footer). Compiled as inline CSS variables so FCP/LCP speed stays 100%.
+                Tap any preset below or pick custom colors. Preview updates instantaneously at 60fps below and compiles into zero-blocking inline CSS variables on your public website.
+              </div>
+
+              <!-- Instant 60fps Live Theme Mini-Preview Card -->
+              <div id="live-theme-preview-card" class="live-theme-preview-card" style="background:#F8FAFC; padding:12px;">
+                <div id="ltp-surface" style="background:#FFFFFF; border:1px solid #E2E8F0; border-radius:10px; overflow:hidden;">
+                  <div id="ltp-header" style="background:#FFFFFF; color:#111827; padding:8px 12px; border-bottom:1px solid #E2E8F0; display:flex; align-items:center; justify-content:space-between; font-weight:800; font-size:0.82rem;">
+                    <span id="ltp-brand">ApexMobile</span>
+                    <span id="ltp-accent-pill" style="font-size:0.68rem; padding:2px 8px; border-radius:6px; background:#FEF2F2; color:#EF4444;">☰ Menu</span>
+                  </div>
+                  <div style="padding:12px;">
+                    <div id="ltp-heading" style="color:#111827; font-weight:800; font-size:0.9rem; margin-bottom:4px;">Live Website Theme &amp; Color Preview</div>
+                    <div id="ltp-text" style="color:#1F2937; font-size:0.76rem; margin-bottom:10px;">Instant mobile-first rendering with zero external font blocking.</div>
+                    <div style="display:flex; gap:8px;">
+                      <span id="ltp-btn-secondary" style="border:1.5px solid #EF4444; color:#EF4444; padding:5px 10px; border-radius:8px; font-size:0.73rem; font-weight:700;">Install Guide</span>
+                      <span id="ltp-btn-primary" style="background:#EF4444; color:#FFFFFF; padding:5px 12px; border-radius:8px; font-size:0.73rem; font-weight:700;">Download Official Build</span>
+                    </div>
+                  </div>
+                  <div id="ltp-footer" style="background:#0F172A; color:#F8FAFC; padding:7px 12px; font-size:0.7rem; text-align:center;">
+                    © Official Verified Portal • Instant Static Edge Delivery
+                  </div>
+                </div>
               </div>
 
               <div class="field-label" style="margin-bottom: 6px">
@@ -2568,7 +1277,14 @@
                   Add, reorder, and customize homepage sections with images, callout boxes, tables, CTA buttons, and per-section SEO meta tags.
                 </p>
               </div>
-              <button type="button" id="btn-add-section" class="btn btn-primary">+ Add Content Section</button>
+              <button type="button" id="btn-add-section" class="btn btn-primary">+ Add Blank Section</button>
+            </div>
+
+            <div class="template-bar">
+              <span class="template-bar-label">1-Click Section Templates:</span>
+              <button type="button" class="btn btn-sm" data-section-template="features">+ Feature Overview Grid</button>
+              <button type="button" class="btn btn-sm" data-section-template="install">+ Step-by-Step Installation Guide</button>
+              <button type="button" class="btn btn-sm" data-section-template="changelog">+ Version Changelog Table</button>
             </div>
 
             <div id="sections-list" class="item-list"></div>
@@ -2772,8 +1488,7 @@
               <button type="button" class="subcard-pill" data-domain-subtab="sitemap">3. Domain, Sitemap &amp; Manifest</button>
               <button type="button" class="subcard-pill" data-domain-subtab="serp">4. Google SERP &amp; Meta</button>
               <button type="button" class="subcard-pill" data-domain-subtab="schema">5. App Star Schema</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="menu">6. Custom 3-Bar Links</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="firebase">7. Live Firebase &amp; Backup</button>
+              <button type="button" class="subcard-pill" data-domain-subtab="firebase">6. Live Firebase &amp; Backup</button>
             </div>
 
             <!-- v12 7-Gate Security Gateway & AES-256-GCM Encrypted Link Vault Card -->
@@ -3061,14 +1776,36 @@
 
               <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px">
                 <button type="button" id="btn-verify-github" class="btn btn-dark">
-                  🔍 Verify GitHub Token &amp; Repo Access
+                  Verify GitHub Token &amp; Repo Access
                 </button>
                 <button type="button" id="btn-publish-github" class="btn btn-primary">
-                  🚀 Compile &amp; Push Static Website to GitHub Now
+                  Compile &amp; Push Static Website to GitHub Now
+                </button>
+                <button type="button" id="btn-inspect-static-bundle" class="btn">
+                  Inspect Compiled Static Public Files
                 </button>
               </div>
 
               <div id="gh-verify-feedback" style="margin-top: 10px; display: none" class="seo-subbox"></div>
+
+              <div id="static-bundle-inspector-box" style="margin-top: 12px; display: none" class="seo-subbox">
+                <div class="seo-subbox-title">
+                  <span>Compiled Public Static Bundle (<code>/dist-public</code> — 100% Isolated from Admin)</span>
+                  <span class="field-tag" id="static-bundle-count-tag">0 files</span>
+                </div>
+                <div style="overflow-x: auto; max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px; background: #ffffff">
+                  <table class="bundle-inspector-table">
+                    <thead>
+                      <tr>
+                        <th>Static File Path</th>
+                        <th>Size</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody id="static-bundle-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
 
               <!-- Recent Static Compilation & GitHub Push History -->
               <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px">
@@ -3239,20 +1976,10 @@
               </div>
             </div>
 
-            <!-- 5. Header Hamburger Navigation Links -->
-            <div class="card" data-domain-card="menu">
-              <div class="card-title">
-                <span>5. Custom Header 3-Bar Hamburger Navigation Links</span>
-                <button type="button" id="btn-add-menu-link" class="btn btn-sm btn-primary">+ Add Menu Link</button>
-              </div>
-              <div class="card-desc">Manage the custom primary links inside the top-right 3-bar slide-down navigation drawer.</div>
-              <div id="menu-links-list" class="item-list"></div>
-            </div>
-
-            <!-- 6. Firebase Cloud Persistence & Master Clone Backup -->
+            <!-- 5. Firebase Cloud Persistence & Master Clone Backup -->
             <div class="card" data-domain-card="firebase">
               <div class="card-title">
-                <span>6. Live Admin Firebase Cloud Persistence (.env or Runtime Keys) &amp; Backup</span>
+                <span>5. Live Admin Firebase Cloud Persistence (.env or Runtime Keys) &amp; Backup</span>
                 <span class="field-tag" id="fb-env-badge">Checking .env...</span>
               </div>
               <div class="card-desc">

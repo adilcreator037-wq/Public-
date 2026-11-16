@@ -280,12 +280,33 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
     return { "@context": "https://schema.org", "@graph": graph };
   }
 
-  // Home Page Schemas: SoftwareApplication + FAQPage
+  // Home Page Schemas: WebPage + BreadcrumbList + SoftwareApplication + HowTo + FAQPage
+  graph.push(
+    {
+      "@type": "WebPage",
+      "@id": `${baseCanonical}/#webpage`,
+      "url": baseCanonical,
+      "name": route.metaTitle,
+      "description": route.metaDescription,
+      "isPartOf": { "@id": `${baseCanonical}/#website` },
+      "about": { "@id": `${baseCanonical}/#organization` },
+      "inLanguage": "en-US"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": `${baseCanonical}/#breadcrumb`,
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": config.brand?.name || "Home", "item": baseCanonical }
+      ]
+    }
+  );
+
   if (config.seo?.enableSoftwareSchema && config.seo?.softwareDetails) {
     const sw = config.seo.softwareDetails;
     const rawReviews = String(sw.reviewCount || '1000').replace(/[^\d]/g, '') || '1000';
     graph.push({
       "@type": "SoftwareApplication",
+      "@id": `${baseCanonical}/#software`,
       "name": sw.name || config.brand?.name || 'Application',
       "operatingSystem": sw.operatingSystem || config.packageSpecs?.operatingSystem || 'Android, iOS',
       "applicationCategory": sw.applicationCategory || 'UtilitiesApplication',
@@ -294,7 +315,8 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
       "offers": {
         "@type": "Offer",
         "price": sw.price || "0.00",
-        "priceCurrency": sw.priceCurrency || "USD"
+        "priceCurrency": sw.priceCurrency || "USD",
+        "availability": "https://schema.org/InStock"
       },
       "aggregateRating": {
         "@type": "AggregateRating",
@@ -304,6 +326,39 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
         "worstRating": "1"
       }
     });
+  }
+
+  // Extract HowTo steps from either <ol><li>...</li></ol> or <h3>Step N...</h3><p>...</p>
+  const installSec = (config.sections || []).find(
+    (s) => s.visible !== false && /install|setup|guide|how\s+to/i.test(s.heading || '')
+  );
+  if (installSec && installSec.htmlContent) {
+    const html = installSec.htmlContent;
+    const liMatches = Array.from(html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)).map((m, idx) => ({
+      name: `Step ${idx + 1}`,
+      text: String(m[1]).replace(/<[^>]+>/g, '').trim()
+    }));
+    const h3StepMatches = Array.from(
+      html.matchAll(/<h3[^>]*>([\s\S]*?)<\/h3>\s*<p[^>]*>([\s\S]*?)<\/p>/gi)
+    ).map((m, idx) => ({
+      name: String(m[1]).replace(/<[^>]+>/g, '').trim() || `Step ${idx + 1}`,
+      text: String(m[2]).replace(/<[^>]+>/g, '').trim()
+    }));
+    const steps = liMatches.length >= 2 ? liMatches : h3StepMatches;
+    if (steps.length >= 2) {
+      graph.push({
+        "@type": "HowTo",
+        "@id": `${baseCanonical}/#howto-install`,
+        "name": installSec.heading,
+        "description": installSec.metaDescription || route.metaDescription,
+        "step": steps.map((st, idx) => ({
+          "@type": "HowToStep",
+          "position": idx + 1,
+          "name": st.name,
+          "text": st.text
+        }))
+      });
+    }
   }
 
   const combinedFaqs: Array<{ question: string; answer: string }> = [];

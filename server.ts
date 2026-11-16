@@ -203,6 +203,19 @@ function getEnvSeededDefaultConfig(): SiteConfig {
   if (envEmail) {
     base.brand.contactEmail = envEmail;
   }
+
+  // Seed GitHub static publisher settings from environment variables if provided
+  const envGhOwner = cleanEnvVal(process.env.GITHUB_REPO_OWNER || process.env.GITHUB_OWNER);
+  const envGhRepo = cleanEnvVal(process.env.GITHUB_REPO_NAME || process.env.GITHUB_REPO);
+  const envGhBranch = cleanEnvVal(process.env.GITHUB_BRANCH);
+  const envGhToken = cleanEnvVal(
+    process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+  );
+  if (envGhOwner) base.githubConfig.repoOwner = envGhOwner;
+  if (envGhRepo) base.githubConfig.repoName = envGhRepo;
+  if (envGhBranch) base.githubConfig.branch = envGhBranch;
+  if (envGhToken) base.githubConfig.fineGrainedToken = envGhToken;
+
   if (envBrand || envCanonical || envEmail) {
     const b = base.brand.name;
     const c = base.seo.canonicalUrl;
@@ -677,13 +690,38 @@ async function startServer() {
   // 12. Verify GitHub Fine-Grained Token & Repository Write Access (`POST /api/github/verify`)
   app.post('/api/github/verify', requireAdminAuth, async (req, res) => {
     const ghCfg = req.body?.githubConfig || req.body || {};
+    const persisted = loadPersistedSiteConfig();
+    const envToken = cleanEnvVal(
+      process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+    );
     const result = await verifyGitHubRepoAccess({
-      repoOwner: ghCfg.repoOwner || '',
-      repoName: ghCfg.repoName || '',
-      branch: ghCfg.branch || 'main',
-      fineGrainedToken: ghCfg.fineGrainedToken || ''
+      repoOwner: ghCfg.repoOwner || persisted.githubConfig?.repoOwner || cleanEnvVal(process.env.GITHUB_REPO_OWNER),
+      repoName: ghCfg.repoName || persisted.githubConfig?.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME),
+      branch: ghCfg.branch || persisted.githubConfig?.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main',
+      fineGrainedToken: ghCfg.fineGrainedToken || persisted.githubConfig?.fineGrainedToken || envToken
     });
     res.json(result);
+  });
+
+  // 12b. Inspect Compiled Static Public Website Bundle (`GET /api/static-bundle`)
+  app.get('/api/static-bundle', requireAdminAuth, (_req, res) => {
+    const config = loadPersistedSiteConfig();
+    const bundle = buildStaticPublicFilesOnDisk(config);
+    if (!bundle) {
+      res.status(500).json({ success: false, error: 'Failed compiling static public website bundle.' });
+      return;
+    }
+    res.json({
+      success: true,
+      compiledAt: bundle.compiledAt,
+      totalFiles: bundle.totalFiles,
+      routesCompiled: bundle.routesCompiled,
+      filesList: bundle.files.map((f) => ({
+        path: f.path,
+        sizeBytes: Buffer.byteLength(f.content, 'utf-8'),
+        description: f.description
+      }))
+    });
   });
 
   // 13. Compile Static Public Website & Push Atomic Commit to GitHub (`POST /api/github/publish`)
@@ -692,6 +730,19 @@ async function startServer() {
     const customCommitMessage = String(req.body?.commitMessage || '').trim();
 
     let saved = savePersistedSiteConfig(incomingConfig);
+    const envToken = cleanEnvVal(
+      process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+    );
+    if (!saved.githubConfig.fineGrainedToken && envToken) {
+      saved.githubConfig.fineGrainedToken = envToken;
+    }
+    if (!saved.githubConfig.repoOwner && process.env.GITHUB_REPO_OWNER) {
+      saved.githubConfig.repoOwner = cleanEnvVal(process.env.GITHUB_REPO_OWNER);
+    }
+    if (!saved.githubConfig.repoName && process.env.GITHUB_REPO_NAME) {
+      saved.githubConfig.repoName = cleanEnvVal(process.env.GITHUB_REPO_NAME);
+    }
+
     const bundle = buildStaticPublicFilesOnDisk(saved);
 
     if (!bundle) {

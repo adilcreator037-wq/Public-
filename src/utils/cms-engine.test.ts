@@ -105,6 +105,8 @@ test('buildPartialRoutePayload and renderHamburgerDrawerHtml generate scoped SSR
   assert.equal(homePayload.viewType, 'home');
   assert.ok(homePayload.showHeroCtaGrid);
   assert.ok(homePayload.renderedMainHtml.includes('id="technical-specifications"'));
+  assert.ok(homePayload.renderedMainHtml.includes('class="toc-jump-bar"'));
+  assert.ok(homePayload.renderedMainHtml.includes('class="copy-hash-btn"'));
   assert.ok(!homePayload.renderedMainHtml.includes('GDPR/CCPA compliance'));
 
   const drawerHtml = renderHamburgerDrawerHtml(homePayload.shell, '/');
@@ -141,7 +143,7 @@ test('sanitizeEditorialHtmlForSeo and applySmartInternalLinks automatically enha
   assert.equal(excerpt, 'Hello World from mobile editor!');
 });
 
-test('compileStaticSiteBundle compiles 100% static HTML, manifest.webmanifest, and per-route JSON with zero Firebase references on public pages', () => {
+test('compileStaticSiteBundle compiles 100% static HTML, manifest.webmanifest, and per-route JSON with zero Admin or Firebase files in public bundle', () => {
   assert.equal(routePathToStaticJsonName('/'), 'index.json');
   assert.equal(routePathToStaticJsonName('/news'), 'news.json');
   assert.equal(routePathToStaticJsonName('/news/my-post'), 'news--my-post.json');
@@ -149,6 +151,12 @@ test('compileStaticSiteBundle compiles 100% static HTML, manifest.webmanifest, a
 
   const bundle = compileStaticSiteBundle(MASTER_DEFAULT_CONFIG);
   assert.ok(bundle.totalFiles >= 16);
+
+  // Strict Public vs Admin separation: no admin files in public static bundle
+  assert.ok(!bundle.files.some((f) => f.path.includes('admin.html')));
+  assert.ok(!bundle.files.some((f) => f.path.includes('admin.js')));
+  assert.ok(!bundle.files.some((f) => f.path.includes('admin.css')));
+  assert.ok(!bundle.files.some((f) => f.path.includes('firebase-config.js')));
 
   const indexFile = bundle.files.find((f) => f.path === 'index.html');
   assert.ok(indexFile);
@@ -173,7 +181,7 @@ test('compileStaticSiteBundle compiles 100% static HTML, manifest.webmanifest, a
   assert.ok(privacyJsonFile);
 });
 
-test('buildJsonLdSchema generates Organization 512x512 Search Logo, BreadcrumbList, and route-specific schema', () => {
+test('buildJsonLdSchema generates Organization 512x512 Search Logo, WebPage, HowTo, BreadcrumbList, and route-specific schema', () => {
   const config = MASTER_DEFAULT_CONFIG;
 
   const homeSchema = buildJsonLdSchema(config, '/');
@@ -182,8 +190,11 @@ test('buildJsonLdSchema generates Organization 512x512 Search Logo, BreadcrumbLi
   assert.equal(orgNode.logo['@type'], 'ImageObject');
   assert.equal(orgNode.logo.width, 512);
   assert.equal(orgNode.logo.height, 512);
+  assert.ok(homeSchema['@graph'].some((item: any) => item['@type'] === 'WebPage'));
+  assert.ok(homeSchema['@graph'].some((item: any) => item['@type'] === 'BreadcrumbList'));
   assert.ok(homeSchema['@graph'].some((item: any) => item['@type'] === 'FAQPage'));
   assert.ok(homeSchema['@graph'].some((item: any) => item['@type'] === 'SoftwareApplication'));
+  assert.ok(homeSchema['@graph'].some((item: any) => item['@type'] === 'HowTo'));
 
   const hubSchema = buildJsonLdSchema(config, '/news');
   assert.ok(hubSchema['@graph'].some((item: any) => item['@type'] === 'CollectionPage'));

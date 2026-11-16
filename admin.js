@@ -373,28 +373,28 @@ async function unlockAdminStudio() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   2. WORKSPACE TAB SWITCHING (SIDEBAR + MOBILE SELECT + STICKY CONTEXT BAR)
+   2. WORKSPACE TAB SWITCHING (DESKTOP SIDEBAR + MOBILE HAMBURGER DRAWER)
    ═══════════════════════════════════════════════════════════════════════════ */
 const WORKSPACE_CONTEXT_MAP = {
   overview: {
-    label: '1. Overview & Page Map',
+    label: '1. Website Map & Audit',
     target: 'Public Site: Master Overview & SEO Audit'
   },
-  news: {
-    label: '2. Daily News Publisher',
-    target: 'Public Site: Homepage #latest-news & /news/:slug'
-  },
   brand: {
-    label: '3. Brand, Hero & Menu',
-    target: 'Public Site: Sticky Header, Search Logo, Hero & 3-Bar Menu'
+    label: '2. Brand, Hero & Colors',
+    target: 'Public Site: Sticky Header, Search Logo, Hero, 3-Bar Menu & Colors'
   },
   specs: {
-    label: '4. Package Specs Table',
+    label: '3. Package Specs Table',
     target: 'Public Site: #technical-specifications & SHA-256 Table'
   },
   sections: {
-    label: '5. Content Sections',
+    label: '4. Content Sections',
     target: 'Public Site: Homepage Body Editorial Sections'
+  },
+  news: {
+    label: '5. Daily News Publisher',
+    target: 'Public Site: Homepage #latest-news & /news/:slug'
   },
   faqs: {
     label: '6. FAQs Manager',
@@ -405,30 +405,46 @@ const WORKSPACE_CONTEXT_MAP = {
     target: 'Public Site: Footer & /privacy-policy, /terms, /dmca'
   },
   domain: {
-    label: '8. GitHub, Sitemap & SEO',
-    target: 'Public Site: GitHub Push, /sitemap.xml & /manifest.webmanifest'
+    label: '8. Security, SEO & Deploy',
+    target: 'Public Site: /moreinfo Security Gate, Sitemap & GitHub Push'
   }
 };
 
+function closeAdminNavDrawer() {
+  const btn = $('admin-hamburger-btn');
+  const drawer = $('admin-nav-drawer');
+  const backdrop = $('admin-nav-backdrop');
+  btn?.classList.remove('is-open');
+  btn?.setAttribute('aria-expanded', 'false');
+  drawer?.classList.remove('is-open');
+  backdrop?.classList.remove('is-open');
+}
+
+function toggleAdminNavDrawer() {
+  const btn = $('admin-hamburger-btn');
+  const drawer = $('admin-nav-drawer');
+  const backdrop = $('admin-nav-backdrop');
+  if (!drawer) return;
+  const willOpen = !drawer.classList.contains('is-open');
+  btn?.classList.toggle('is-open', willOpen);
+  btn?.setAttribute('aria-expanded', String(willOpen));
+  drawer.classList.toggle('is-open', willOpen);
+  backdrop?.classList.toggle('is-open', willOpen);
+}
+
 function switchTab(tabId) {
   activeTab = tabId;
+  closeAdminNavDrawer();
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
-  });
-  document.querySelectorAll('.quick-tab-pill').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.quickTab === tabId);
   });
   document.querySelectorAll('.tab-panel').forEach((panel) => {
     panel.classList.toggle('active', panel.id === `panel-${tabId}`);
   });
-  const mobileSelect = $('mobile-tab-select');
-  if (mobileSelect && mobileSelect.value !== tabId) {
-    mobileSelect.value = tabId;
-  }
 
   const ctx = WORKSPACE_CONTEXT_MAP[tabId] || WORKSPACE_CONTEXT_MAP.overview;
   if ($('editing-now-label')) {
-    $('editing-now-label').textContent = `📍 Currently Editing: ${ctx.label}`;
+    $('editing-now-label').textContent = `📍 ${ctx.label}`;
   }
   if ($('editing-now-target')) {
     $('editing-now-target').textContent = ctx.target;
@@ -446,7 +462,7 @@ function filterBrandSubcards(subKey) {
     card.style.display = subKey === 'all' || key === subKey ? 'block' : 'none';
   });
   const subLabels = {
-    all: 'Public Site: Sticky Header, Search Logo, Hero & 3-Bar Menu',
+    all: 'Public Site: Sticky Header, Search Logo, Hero, 3-Bar Menu & Colors',
     identity: 'Public Site: Sticky Header Logo, Favicon, Search Logo & PWA Manifest',
     hero: 'Public Site: Top Homepage H1, Intro & 16:9 LCP Banner',
     ctas: 'Public Site: 2-Column Download Buttons & Floating Pill CTA',
@@ -467,12 +483,13 @@ function filterDomainSubcards(subKey) {
     card.style.display = subKey === 'all' || key === subKey ? 'block' : 'none';
   });
   const subLabels = {
-    all: 'Public Site: GitHub Push, /sitemap.xml & /manifest.webmanifest',
+    all: 'Public Site: /moreinfo Security Gate, Sitemap & GitHub Push',
+    security: 'Public Site: /moreinfo 7-Gate Security & AES-256-GCM Link Vault',
+    internallinks: 'Public Site: Smart Contextual Internal Linking Engine',
     github: 'Public Site: GitHub Fine-Grained Token Static Bundle Publisher',
     sitemap: 'Public Site: /sitemap.xml (<image:image>), /manifest.webmanifest & /robots.txt',
     serp: 'Public Site: Homepage <head> Meta & Google Search Result Preview',
     schema: 'Public Site: SoftwareApplication Star Rating JSON-LD Schema',
-    menu: 'Public Site: Top-Right 3-Bar Hamburger Custom Links',
     firebase: 'Admin Studio: Live Firebase Cloud Persistence & JSON Backup'
   };
   if ($('editing-now-target') && subLabels[subKey]) {
@@ -674,12 +691,9 @@ function populateAllFields() {
   setVal('sec-app-slug', sec.appSlug || 'apexmobile');
   setVal('sec-serial-id', sec.appSerialId || 'APM-482');
   setVal('sec-primary-url', sec.primaryDownloadUrl || '');
-  setVal('cta-protected-redirect-url', sec.primaryDownloadUrl || '');
   setVal('sec-encrypted-url', sec.encryptedPrimaryUrl || '');
   setVal('sec-turnstile-site-key', sec.turnstileSiteKey || '');
-  setVal('cta-turnstile-site-key', sec.turnstileSiteKey || '');
   setVal('sec-turnstile-secret-key', sec.turnstileSecretKey || '');
-  setVal('cta-turnstile-secret-key', sec.turnstileSecretKey || '');
   setChecked('sec-paused', Boolean(sec.isPaused));
   setChecked('sec-coming-soon', Boolean(sec.isComingSoon));
   setVal('sec-daily-cap', sec.dailyIssueCap ?? 0);
@@ -786,6 +800,7 @@ function refreshOverviewAndSeoAudit() {
   if ($('stat-sitemap-count')) $('stat-sitemap-count').textContent = String(audit.totalUrlsInSitemap);
 
   if ($('count-seo-score')) $('count-seo-score').textContent = `${audit.score}%`;
+  if ($('drawer-count-seo')) $('drawer-count-seo').textContent = `${audit.score}%`;
   if ($('count-news')) $('count-news').textContent = String(newsCount);
   if ($('count-sections')) $('count-sections').textContent = String(sectionsCount);
   if ($('count-faqs')) $('count-faqs').textContent = String(faqsCount);
@@ -1171,7 +1186,7 @@ function renderSectionsList() {
             <textarea id="sec-html-${idx}" class="textarea code" rows="6" data-collection="sections" data-index="${idx}" data-key="htmlContent" data-preview-target="sec-preview-${idx}">${escapeHtml(
         sec.htmlContent
       )}</textarea>
-            <div id="sec-preview-${idx}" class="live-preview-box">${sec.htmlContent || ''}</div>
+            <div id="sec-preview-${idx}" class="live-preview-box"></div>
           </div>
         </div>
       </div>
@@ -1516,7 +1531,7 @@ function renderPagesList() {
         <textarea id="page-html-${idx}" class="textarea code" rows="9" data-collection="pages" data-index="${idx}" data-key="htmlContent" data-preview-target="page-preview-${idx}">${escapeHtml(
     pg.htmlContent
   )}</textarea>
-        <div id="page-preview-${idx}" class="live-preview-box">${pg.htmlContent || ''}</div>
+        <div id="page-preview-${idx}" class="live-preview-box"></div>
       </div>
     </div>
   `;
@@ -1575,6 +1590,66 @@ function renderMenuLinksList() {
     .join('');
 }
 
+function updateLiveThemePreviewCard() {
+  const card = $('live-theme-preview-card');
+  if (!card) return;
+  const accent = $('brand-color')?.value.trim() || '#EF4444';
+  const btnText = $('ui-btn-text-color')?.value.trim() || '#FFFFFF';
+  const bgPage = $('ui-bg-page')?.value.trim() || '#F8FAFC';
+  const bgSurface = $('ui-bg-surface')?.value.trim() || '#FFFFFF';
+  const bgHeader = $('ui-header-bg')?.value.trim() || '#FFFFFF';
+  const textHeader = $('ui-header-text')?.value.trim() || '#111827';
+  const bgFooter = $('ui-footer-bg')?.value.trim() || '#0F172A';
+  const textFooter = $('ui-footer-text')?.value.trim() || '#F8FAFC';
+  const borderCol = $('ui-border-color')?.value.trim() || '#E2E8F0';
+  const textCol = $('ui-text-color')?.value.trim() || '#1F2937';
+  const headingCol = $('ui-heading-color')?.value.trim() || '#111827';
+  const radius = $('ui-card-radius')?.value || '10px';
+  const brandName = $('brand-name')?.value.trim() || 'ApexMobile';
+
+  card.style.background = bgPage;
+  const surf = $('ltp-surface');
+  if (surf) {
+    surf.style.background = bgSurface;
+    surf.style.borderColor = borderCol;
+    surf.style.borderRadius = radius;
+  }
+  const hdr = $('ltp-header');
+  if (hdr) {
+    hdr.style.background = bgHeader;
+    hdr.style.color = textHeader;
+    hdr.style.borderBottomColor = borderCol;
+  }
+  const brd = $('ltp-brand');
+  if (brd) brd.textContent = brandName;
+  const pill = $('ltp-accent-pill');
+  if (pill) {
+    pill.style.color = accent;
+    pill.style.background = `${accent}18`;
+  }
+  const hdg = $('ltp-heading');
+  if (hdg) hdg.style.color = headingCol;
+  const txt = $('ltp-text');
+  if (txt) txt.style.color = textCol;
+  const btnSec = $('ltp-btn-secondary');
+  if (btnSec) {
+    btnSec.style.borderColor = accent;
+    btnSec.style.color = accent;
+    btnSec.style.borderRadius = radius;
+  }
+  const btnPri = $('ltp-btn-primary');
+  if (btnPri) {
+    btnPri.style.background = accent;
+    btnPri.style.color = btnText;
+    btnPri.style.borderRadius = radius;
+  }
+  const ftr = $('ltp-footer');
+  if (ftr) {
+    ftr.style.background = bgFooter;
+    ftr.style.color = textFooter;
+  }
+}
+
 function syncColorPickersFromTextInputs() {
   document.querySelectorAll('[data-color-sync]').forEach((picker) => {
     const targetId = picker.getAttribute('data-color-sync');
@@ -1583,6 +1658,7 @@ function syncColorPickersFromTextInputs() {
       picker.value = txt.value.trim();
     }
   });
+  updateLiveThemePreviewCard();
 }
 
 const COLOR_THEME_PRESETS = {
@@ -1594,9 +1670,9 @@ const COLOR_THEME_PRESETS = {
     surfaceBackgroundColor: '#FFFFFF',
     headerBackgroundColor: '#FFFFFF',
     headerTextColor: '#111827',
-    footerBackgroundColor: '#F9FAFB',
-    footerTextColor: '#4B5563',
-    borderColor: '#E5E7EB',
+    footerBackgroundColor: '#0F172A',
+    footerTextColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
     textColor: '#1F2937',
     headingColor: '#111827'
   },
@@ -1622,8 +1698,8 @@ const COLOR_THEME_PRESETS = {
     surfaceBackgroundColor: '#FFFFFF',
     headerBackgroundColor: '#FFFFFF',
     headerTextColor: '#0F172A',
-    footerBackgroundColor: '#E0F2FE',
-    footerTextColor: '#334155',
+    footerBackgroundColor: '#0F172A',
+    footerTextColor: '#F8FAFC',
     borderColor: '#BFDBFE',
     textColor: '#1E293B',
     headingColor: '#0F172A'
@@ -1636,8 +1712,8 @@ const COLOR_THEME_PRESETS = {
     surfaceBackgroundColor: '#FFFFFF',
     headerBackgroundColor: '#FFFFFF',
     headerTextColor: '#064E3B',
-    footerBackgroundColor: '#ECFDF5',
-    footerTextColor: '#374151',
+    footerBackgroundColor: '#064E3B',
+    footerTextColor: '#ECFDF5',
     borderColor: '#A7F3D0',
     textColor: '#1F2937',
     headingColor: '#064E3B'
@@ -1650,8 +1726,8 @@ const COLOR_THEME_PRESETS = {
     surfaceBackgroundColor: '#FFFFFF',
     headerBackgroundColor: '#FFFFFF',
     headerTextColor: '#1E1B4B',
-    footerBackgroundColor: '#F3E8FF',
-    footerTextColor: '#4B5563',
+    footerBackgroundColor: '#1E1B4B',
+    footerTextColor: '#F3E8FF',
     borderColor: '#E9D5FF',
     textColor: '#1F2937',
     headingColor: '#1E1B4B'
@@ -1664,8 +1740,8 @@ const COLOR_THEME_PRESETS = {
     surfaceBackgroundColor: '#FFFFFF',
     headerBackgroundColor: '#FFFFFF',
     headerTextColor: '#1C1917',
-    footerBackgroundColor: '#FEF3C7',
-    footerTextColor: '#44403C',
+    footerBackgroundColor: '#1C1917',
+    footerTextColor: '#FEF3C7',
     borderColor: '#FDE68A',
     textColor: '#292524',
     headingColor: '#1C1917'
@@ -1689,7 +1765,7 @@ function applyColorThemePreset(presetKey) {
   setVal('ui-heading-color', p.headingColor);
   syncColorPickersFromTextInputs();
   collectScalarFields();
-  markDirty('Applied color theme preset — click "Publish" to compile & go live');
+  markDirty('Applied color theme preset — click "Publish Changes" to compile & go live');
   showToast(`Applied "${presetKey}" color theme!`, 'success');
 }
 
@@ -1929,7 +2005,6 @@ function collectScalarFields() {
 
   let resolvedProtectedUrl =
     $('sec-primary-url')?.value.trim() ||
-    $('cta-protected-redirect-url')?.value.trim() ||
     c.securityGate.primaryDownloadUrl ||
     '';
   if (c.securityGate.enabled) {
@@ -1947,17 +2022,12 @@ function collectScalarFields() {
   }
   c.securityGate.primaryDownloadUrl = resolvedProtectedUrl;
   setVal('sec-primary-url', resolvedProtectedUrl);
-  setVal('cta-protected-redirect-url', resolvedProtectedUrl);
 
   c.securityGate.encryptedPrimaryUrl = $('sec-encrypted-url')?.value.trim() || '';
-  const resolvedSiteKey = $('sec-turnstile-site-key')?.value.trim() || $('cta-turnstile-site-key')?.value.trim() || '';
-  const resolvedSecretKey = $('sec-turnstile-secret-key')?.value.trim() || $('cta-turnstile-secret-key')?.value.trim() || '';
+  const resolvedSiteKey = $('sec-turnstile-site-key')?.value.trim() || '';
+  const resolvedSecretKey = $('sec-turnstile-secret-key')?.value.trim() || '';
   c.securityGate.turnstileSiteKey = resolvedSiteKey;
   c.securityGate.turnstileSecretKey = resolvedSecretKey;
-  setVal('sec-turnstile-site-key', resolvedSiteKey);
-  setVal('cta-turnstile-site-key', resolvedSiteKey);
-  setVal('sec-turnstile-secret-key', resolvedSecretKey);
-  setVal('cta-turnstile-secret-key', resolvedSecretKey);
   c.securityGate.isPaused = Boolean($('sec-paused')?.checked);
   c.securityGate.isComingSoon = Boolean($('sec-coming-soon')?.checked);
   c.securityGate.dailyIssueCap = Math.max(0, Number($('sec-daily-cap')?.value) || 0);
@@ -2029,6 +2099,59 @@ async function handleVerifyGitHubAccess() {
   }
 }
 
+function renderStaticBundleInspector(bundleData) {
+  const box = $('static-bundle-inspector-box');
+  const tbody = $('static-bundle-tbody');
+  const countTag = $('static-bundle-count-tag');
+  if (!box || !tbody || !bundleData || !Array.isArray(bundleData.filesList)) return;
+
+  box.style.display = 'block';
+  if (countTag) {
+    countTag.textContent = `${bundleData.totalFiles || bundleData.filesList.length} static public files`;
+  }
+
+  tbody.innerHTML = bundleData.filesList
+    .map((f) => {
+      const kb = (Number(f.sizeBytes || 0) / 1024).toFixed(1);
+      return `
+        <tr>
+          <td><code>/${escapeHtml(f.path)}</code></td>
+          <td>${kb} KB</td>
+          <td>${escapeHtml(f.description || '')}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+async function handleInspectStaticBundle() {
+  const btn = $('btn-inspect-static-bundle');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Inspecting Static Bundle...';
+  }
+  try {
+    const token = localStorage.getItem('cms_admin_bearer_token') || '';
+    const res = await fetch('/api/static-bundle', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.success) {
+      renderStaticBundleInspector(data);
+      showToast(`Inspected ${data.totalFiles} compiled public static files`, 'success');
+    } else {
+      showToast(data?.error || 'Could not inspect static bundle.', 'error');
+    }
+  } catch {
+    showToast('Error loading compiled static bundle.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Inspect Compiled Static Public Files';
+    }
+  }
+}
+
 async function handleCompileAndPushToGitHub() {
   collectScalarFields();
   currentConfig.updatedAt = Date.now();
@@ -2047,31 +2170,34 @@ async function handleCompileAndPushToGitHub() {
     // 2. Compile & Push static files to GitHub
     const res = await publishStaticSiteToGitHubRemote(currentConfig.githubConfig, currentConfig);
 
+    if (res?.compiledBundle) {
+      renderStaticBundleInspector(res.compiledBundle);
+    }
+
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
       if (res.success) {
         feedbackEl.innerHTML = `
-          <div style="color:#065f46; font-weight:700;">🚀 Successfully Compiled &amp; Pushed ${
+          <div style="color:#065f46; font-weight:700;">Successfully Compiled &amp; Pushed ${
             res.filesCount || 0
           } Static Files to GitHub!</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">
             Commit SHA: <code>${escapeHtml((res.commitSha || '').slice(0, 10))}</code> •
             <a href="${escapeHtml(
               res.commitUrl || '#'
-            )}" target="_blank" rel="noopener" style="color:var(--primary); font-weight:700;">Open Commit on GitHub ↗</a>
+            )}" target="_blank" rel="noopener" style="color:var(--accent); font-weight:700;">Open Commit on GitHub ↗</a>
           </div>
         `;
-        // Refresh config to get updated deployHistory
         const latest = await getSiteConfigRemote();
         if (latest) {
           currentConfig = mergeSiteConfig(latest, MASTER_DEFAULT_CONFIG);
           renderGitHubDeployHistory();
         }
-        markClean('Saved to Live Firebase & pushed 100% static site to GitHub!');
+        markClean('Saved to Live Admin & pushed 100% static site to GitHub!');
         showToast(`Pushed ${res.filesCount || 0} static files to GitHub!`, 'success');
       } else {
         feedbackEl.innerHTML = `
-          <div style="color:#b91c1c; font-weight:700;">⚠️ Local Static Bundle Compiled (${
+          <div style="color:#b91c1c; font-weight:700;">Local Static Bundle Compiled (${
             res.compiledLocalFiles || 0
           } files in /dist-public), but GitHub Push Needs Token:</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">${escapeHtml(
@@ -2084,7 +2210,7 @@ async function handleCompileAndPushToGitHub() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '🚀 Compile & Push Static Website to GitHub Now';
+      btn.textContent = 'Compile & Push Static Website to GitHub Now';
     }
   }
 }
@@ -2113,7 +2239,6 @@ async function handleSaveAndPublish() {
         currentConfig = mergeSiteConfig(res.config, MASTER_DEFAULT_CONFIG);
         setVal('sec-encrypted-url', currentConfig.securityGate?.encryptedPrimaryUrl || '');
         setVal('sec-primary-url', currentConfig.securityGate?.primaryDownloadUrl || '');
-        setVal('cta-protected-redirect-url', currentConfig.securityGate?.primaryDownloadUrl || '');
       }
       const ghMsg = res?.githubPush?.success
         ? ` + Pushed ${res.staticBundle?.totalFiles || ''} static files to GitHub!`
@@ -2194,9 +2319,10 @@ function initAdminEvents() {
   $('btn-close-visual-block-modal')?.addEventListener('click', closeVisualBlockModal);
   $('btn-confirm-visual-block')?.addEventListener('click', confirmInsertVisualBlockFromModal);
 
-  // GitHub Fine-Grained Token Publisher Buttons
+  // GitHub Fine-Grained Token Publisher & Static Bundle Inspector Buttons
   $('btn-verify-github')?.addEventListener('click', handleVerifyGitHubAccess);
   $('btn-publish-github')?.addEventListener('click', handleCompileAndPushToGitHub);
+  $('btn-inspect-static-bundle')?.addEventListener('click', handleInspectStaticBundle);
 
   // 1-Click AES-256-GCM URL Encryption Button
   $('btn-encrypt-vault-url')?.addEventListener('click', async () => {
@@ -2240,25 +2366,10 @@ function initAdminEvents() {
     }
   });
 
-  // Two-way sync between Workspace 3 and Workspace 8 for Protected URL and Turnstile Keys
-  $('cta-protected-redirect-url')?.addEventListener('input', (e) => {
-    setVal('sec-primary-url', e.target.value);
-  });
-  $('sec-primary-url')?.addEventListener('input', (e) => {
-    setVal('cta-protected-redirect-url', e.target.value);
-  });
-  $('cta-turnstile-site-key')?.addEventListener('input', (e) => {
-    setVal('sec-turnstile-site-key', e.target.value);
-  });
-  $('sec-turnstile-site-key')?.addEventListener('input', (e) => {
-    setVal('cta-turnstile-site-key', e.target.value);
-  });
-  $('cta-turnstile-secret-key')?.addEventListener('input', (e) => {
-    setVal('sec-turnstile-secret-key', e.target.value);
-  });
-  $('sec-turnstile-secret-key')?.addEventListener('input', (e) => {
-    setVal('cta-turnstile-secret-key', e.target.value);
-  });
+  // Admin Hamburger Menu Drawer Toggle & Close
+  $('admin-hamburger-btn')?.addEventListener('click', toggleAdminNavDrawer);
+  $('admin-drawer-close')?.addEventListener('click', closeAdminNavDrawer);
+  $('admin-nav-backdrop')?.addEventListener('click', closeAdminNavDrawer);
 
   // Auth mode tabs
   $('tab-auth-credentials')?.addEventListener('click', () => setAuthMode('credentials'));
@@ -2273,22 +2384,14 @@ function initAdminEvents() {
     showToast('Signed out of Admin Studio');
   });
 
-  // Desktop Sidebar Tab Navigation
+  // Desktop Sidebar & Hamburger Drawer Tab Navigation
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.dataset.tab) switchTab(btn.dataset.tab);
     });
   });
 
-  // 1-Tap Horizontal Quick Tab Pills (Mobile & Desktop)
-  document.querySelectorAll('[data-quick-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetTab = btn.getAttribute('data-quick-tab');
-      if (targetTab) switchTab(targetTab);
-    });
-  });
-
-  // Workspace 3 Sub-Card Filter Pills
+  // Workspace 2 (Brand & Colors) Sub-Card Filter Pills
   document.querySelectorAll('[data-brand-subtab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const subKey = btn.getAttribute('data-brand-subtab') || 'all';
@@ -2296,17 +2399,12 @@ function initAdminEvents() {
     });
   });
 
-  // Workspace 8 Sub-Card Filter Pills
+  // Workspace 8 (Security, SEO & Deploy) Sub-Card Filter Pills
   document.querySelectorAll('[data-domain-subtab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const subKey = btn.getAttribute('data-domain-subtab') || 'all';
       filterDomainSubcards(subKey);
     });
-  });
-
-  // Mobile Dropdown Selector Navigation
-  $('mobile-tab-select')?.addEventListener('change', (e) => {
-    switchTab(e.target.value);
   });
 
   // Quick Jump Buttons on Overview Panel & Topbar
@@ -2422,7 +2520,7 @@ function initAdminEvents() {
     markDirty();
   });
 
-  // Add Section
+  // Add Blank Section
   $('btn-add-section')?.addEventListener('click', () => {
     const num = (currentConfig.sections?.length || 0) + 1;
     const brandName = currentConfig.brand?.name || 'Brand';
@@ -2446,6 +2544,131 @@ function initAdminEvents() {
     refreshOverviewAndSeoAudit();
     markDirty();
     showToast('Added new content section');
+  });
+
+  // 1-Click Section Templates
+  document.querySelectorAll('[data-section-template]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tpl = btn.getAttribute('data-section-template');
+      const brandName = currentConfig.brand?.name || 'ApexMobile';
+      const ver = currentConfig.packageSpecs?.version || 'v4.8.2';
+      let newSec = null;
+
+      if (tpl === 'features') {
+        newSec = {
+          id: `sec-${Date.now()}`,
+          heading: `${brandName} Core Capabilities & Architecture`,
+          slug: `core-capabilities-${Date.now().toString(36).slice(-3)}`,
+          visible: true,
+          badgeText: 'Core Capabilities',
+          metaTitle: `${brandName} Core Capabilities & Architecture`,
+          metaDescription: `Explore the core engineering features, edge caching architecture, and verified security standards of ${brandName}.`,
+          imageUrl: '',
+          imageAlt: '',
+          imageCaption: '',
+          imagePosition: 'none',
+          ctaLabel: '',
+          ctaUrl: '',
+          htmlContent: `<p>${brandName} delivers deterministic runtime performance with zero background telemetry and strict cryptographic package verification.</p>\n<div class="cms-feature-grid"><div class="cms-feature-item"><strong>Zero-Latency Edge Delivery</strong><p>Pre-compiled static assets and multi-region mirrors ensure sub-50ms response times globally.</p></div><div class="cms-feature-item"><strong>SHA-256 Signature Verification</strong><p>Every release binary is validated against its published SHA-256 cryptographic digest before dispatch.</p></div></div>`
+        };
+      } else if (tpl === 'install') {
+        newSec = {
+          id: `sec-${Date.now()}`,
+          heading: `How to Install & Verify ${brandName} (${ver})`,
+          slug: `installation-guide-${Date.now().toString(36).slice(-3)}`,
+          visible: true,
+          badgeText: 'Installation Guide',
+          metaTitle: `How to Install & Verify ${brandName} ${ver}`,
+          metaDescription: `Step-by-step installation and SHA-256 verification instructions for ${brandName} ${ver} on Android and iOS.`,
+          imageUrl: '',
+          imageAlt: '',
+          imageCaption: '',
+          imagePosition: 'none',
+          ctaLabel: 'Proceed to Verified Download',
+          ctaUrl: '/moreinfo',
+          htmlContent: `<p>Follow these three steps to install and verify the official ${brandName} package on your device:</p>\n<ol><li><strong>Verify System Compatibility:</strong> Confirm your device meets the minimum OS requirements listed in the Technical Specifications table.</li><li><strong>Complete Security Clearance:</strong> Click the primary download button to pass automated human verification and retrieve the signed build.</li><li><strong>Confirm SHA-256 Checksum:</strong> Optional—compare the downloaded file digest with the published 64-character SHA-256 hash.</li></ol>`
+        };
+      } else if (tpl === 'changelog') {
+        newSec = {
+          id: `sec-${Date.now()}`,
+          heading: `${brandName} ${ver} Release Changelog`,
+          slug: `release-changelog-${Date.now().toString(36).slice(-3)}`,
+          visible: true,
+          badgeText: 'Release Notes',
+          metaTitle: `${brandName} ${ver} Release Changelog & Patch Notes`,
+          metaDescription: `Complete version history, security patches, and performance improvements in ${brandName} ${ver}.`,
+          imageUrl: '',
+          imageAlt: '',
+          imageCaption: '',
+          imagePosition: 'none',
+          ctaLabel: '',
+          ctaUrl: '',
+          htmlContent: `<p>Summary of engineering updates and stability improvements introduced in recent ${brandName} builds:</p>\n<table><tbody><tr><th>Build Version</th><td><strong>${ver} (Stable)</strong> — Upgraded edge CDN routing, reduced cold-start memory footprint by 18%, and updated TLS cipher suites.</td></tr><tr><th>Previous Build</th><td><strong>v4.7.9</strong> — Added hardware-backed checksum verification and improved mobile viewport rendering.</td></tr></tbody></table>`
+        };
+      }
+
+      if (newSec) {
+        currentConfig.sections.push(newSec);
+        renderSectionsList();
+        refreshOverviewAndSeoAudit();
+        markDirty();
+        showToast(`Added "${newSec.heading}" section template!`, 'success');
+      }
+    });
+  });
+
+  // 1-Click Daily News Composer Templates
+  document.querySelectorAll('[data-news-template]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tpl = btn.getAttribute('data-news-template');
+      const brandName = currentConfig.brand?.name || 'ApexMobile';
+      const ver = currentConfig.packageSpecs?.version || 'v4.8.2';
+      const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      if (tpl === 'release') {
+        const title = `${brandName} ${ver} Official Release: Faster Edge Mirrors & Stability Improvements`;
+        setVal('composer-news-title', title);
+        setVal('composer-news-slug', generateSlug(title));
+        setVal('composer-news-category', 'Release Update');
+        setVal('composer-news-date', today);
+        setVal('composer-news-author', `${brandName} Engineering`);
+        setVal('composer-news-readtime', '2 min read');
+        setVal('composer-news-summary', `The official ${brandName} ${ver} build is now live across all edge mirrors with faster package verification and reduced memory usage.`);
+        setVal('composer-news-html', `<p>We are pleased to announce the immediate availability of <strong>${brandName} ${ver}</strong>. This release focuses on edge mirror throughput, faster startup times, and verified cryptographic integrity.</p>\n<h3>Key Highlights in ${ver}</h3>\n<ul><li><strong>Multi-Region CDN Routing:</strong> Download latency reduced by 28% across global edge nodes.</li><li><strong>Memory Optimization:</strong> Cold-start memory footprint reduced on mobile devices.</li><li><strong>Verified SHA-256 Signature:</strong> Passed 72/72 independent security scan engines with zero warnings.</li></ul>`);
+        setVal('composer-news-meta-title', `${title} | ${brandName}`);
+        setVal('composer-news-meta-desc', `Download and read the official release notes for ${brandName} ${ver}, featuring faster edge mirrors and verified SHA-256 package security.`);
+      } else if (tpl === 'security') {
+        const title = `${brandName} Security Advisory: SHA-256 Package Signature & Mirror Verification`;
+        setVal('composer-news-title', title);
+        setVal('composer-news-slug', generateSlug(title));
+        setVal('composer-news-category', 'Security Advisory');
+        setVal('composer-news-date', today);
+        setVal('composer-news-author', `${brandName} Security Team`);
+        setVal('composer-news-readtime', '3 min read');
+        setVal('composer-news-summary', `How our automated 7-gate verification pipeline and SHA-256 checksums protect every ${brandName} package download.`);
+        setVal('composer-news-html', `<p>Every official <strong>${brandName}</strong> package is signed and verified prior to publication on our release mirrors.</p>\n<div class="cms-callout-box"><strong>Security Verification Notice:</strong> Always verify that the SHA-256 digest of your downloaded package matches the checksum published in our Technical Specifications table.</div>\n<h3>How We Protect Release Integrity</h3>\n<ul><li><strong>Automated Multi-Engine Scanning:</strong> Every build is audited across 72 independent security engines.</li><li><strong>Encrypted Mirror Dispatch:</strong> Direct download mirrors are protected behind hardware-backed human clearance.</li></ul>`);
+        setVal('composer-news-meta-title', `${title} | ${brandName}`);
+        setVal('composer-news-meta-desc', `Official security advisory detailing SHA-256 checksum verification and mirror protection for ${brandName}.`);
+      } else if (tpl === 'guide') {
+        const title = `Complete Guide: Optimizing ${brandName} Performance on Android & iOS`;
+        setVal('composer-news-title', title);
+        setVal('composer-news-slug', generateSlug(title));
+        setVal('composer-news-category', 'Feature Guide');
+        setVal('composer-news-date', today);
+        setVal('composer-news-author', `${brandName} Editorial`);
+        setVal('composer-news-readtime', '3 min read');
+        setVal('composer-news-summary', `Learn how to configure ${brandName} for optimal battery efficiency, low-latency connectivity, and clean storage management.`);
+        setVal('composer-news-html', `<p>Getting the best performance out of <strong>${brandName}</strong> takes less than two minutes with these recommended configuration steps.</p>\n<h3>Recommended Configuration Steps</h3>\n<ol><li><strong>Keep Your Build Updated:</strong> Ensure you are running the latest stable version (${ver}) from our official portal.</li><li><strong>Enable Hardware Acceleration:</strong> Allow native rendering in device settings for smooth 60fps responsiveness.</li><li><strong>Verify Storage Headroom:</strong> Maintain at least 150 MB of free local storage for temporary package caching.</li></ol>`);
+        setVal('composer-news-meta-title', `${title} | ${brandName}`);
+        setVal('composer-news-meta-desc', `Step-by-step configuration guide to maximize ${brandName} speed and battery efficiency on Android and iOS devices.`);
+      }
+
+      const preview = $('composer-live-preview');
+      if (preview && preview.classList.contains('visible')) {
+        preview.innerHTML = $('composer-news-html')?.value || '';
+      }
+      showToast('Loaded 1-click news template into composer!', 'success');
+    });
   });
 
   // Add FAQ
@@ -2589,15 +2812,29 @@ function initAdminEvents() {
     });
   });
 
-  // Color Picker Two-Way Binding (`data-color-sync`)
+  // Color Picker Two-Way Binding (`data-color-sync`) with 60fps requestAnimationFrame throttling
+  let colorRafId = 0;
   document.querySelectorAll('[data-color-sync]').forEach((picker) => {
     picker.addEventListener('input', (e) => {
       const targetId = picker.getAttribute('data-color-sync');
-      const txt = targetId ? $(targetId) : null;
-      if (txt) {
-        txt.value = e.target.value.toUpperCase();
+      const val = e.target.value.toUpperCase();
+      if (colorRafId) cancelAnimationFrame(colorRafId);
+      colorRafId = requestAnimationFrame(() => {
+        const txt = targetId ? $(targetId) : null;
+        if (txt) txt.value = val;
+        updateLiveThemePreviewCard();
         markDirty();
-      }
+      });
+    });
+  });
+
+  // Live Theme Preview updates when typing hex colors or changing radius/brand name
+  ['brand-name', 'brand-color', 'brand-theme-color', 'ui-bg-page', 'ui-bg-surface', 'ui-border-color', 'ui-header-bg', 'ui-header-text', 'ui-btn-text-color', 'ui-footer-bg', 'ui-footer-text', 'ui-text-color', 'ui-heading-color', 'ui-card-radius'].forEach((id) => {
+    $(id)?.addEventListener('input', () => {
+      if (colorRafId) cancelAnimationFrame(colorRafId);
+      colorRafId = requestAnimationFrame(() => {
+        syncColorPickersFromTextInputs();
+      });
     });
   });
 
@@ -2721,12 +2958,19 @@ function initAdminEvents() {
       return;
     }
 
-    // 10. Toggle Live Preview Box
+    // 10. Toggle Live Preview Box (Lazy-rendered on open for zero DOM bloat)
     const previewToggleBtn = target.closest('[data-toggle-preview]');
     if (previewToggleBtn) {
       const targetId = previewToggleBtn.getAttribute('data-toggle-preview');
       const box = targetId ? $(targetId) : null;
-      if (box) box.classList.toggle('visible');
+      if (box) {
+        const willShow = !box.classList.contains('visible');
+        if (willShow) {
+          const sourceTa = document.querySelector(`[data-preview-target="${targetId}"]`);
+          if (sourceTa) box.innerHTML = sourceTa.value || '';
+        }
+        box.classList.toggle('visible', willShow);
+      }
       return;
     }
 
@@ -2834,7 +3078,7 @@ function initAdminEvents() {
     }
 
     const previewId = target.getAttribute('data-preview-target');
-    if (previewId && $(previewId)) {
+    if (previewId && $(previewId) && $(previewId).classList.contains('visible')) {
       $(previewId).innerHTML = target.value;
     }
 

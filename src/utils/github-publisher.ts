@@ -1,31 +1,38 @@
 /**
  * ============================================================================
  * MODULE 5: GITHUB FINE-GRAINED TOKEN STATIC PUBLISHER (github-publisher.ts)
- * Pushes compiled static public website files (`index.html`, `news/...`,
- * `privacy-policy/...`, `static-routes/*.json`, `sitemap.xml`, `robots.txt`)
- * directly from the Live-Firebase Admin to a GitHub repository using a
- * GitHub Fine-Grained Personal Access Token (`github_pat_...` or `ghp_...`).
+ * Pushes the compiled static public website (`CompiledStaticFile[]`) to any
+ * GitHub repository branch (`main`, `gh-pages`, etc.) in a single atomic commit
+ * using the GitHub REST Git Data API.
+ * - Automatically bootstraps brand-new / empty repositories (0 commits) via the
+ *   Contents API before creating the Git Data Tree.
+ * - Automatically creates non-default target branches if they do not exist yet.
  * ============================================================================
  */
 
 import { GitHubDeployConfig } from './cms-types';
 import { CompiledStaticFile } from './static-compiler';
 
-export interface GitHubVerifyResult {
+export interface GitHubVerifyResponse {
   ok: boolean;
   repoFullName?: string;
   defaultBranch?: string;
   privateRepo?: boolean;
-  permissions?: Record<string, boolean>;
+  permissions?: {
+    push?: boolean;
+    admin?: boolean;
+    maintain?: boolean;
+  };
+  isEmptyRepo?: boolean;
   message: string;
 }
 
-export interface GitHubPublishResult {
+export interface GitHubPushResponse {
   ok: boolean;
-  status: 'success' | 'local-only' | 'error';
+  status: 'success' | 'error';
   commitSha?: string;
   commitUrl?: string;
-  branch?: string;
+  branch: string;
   filesPushed: number;
   message: string;
 }
@@ -35,54 +42,62 @@ function buildGitHubHeaders(token: string): Record<string, string> {
     Accept: 'application/vnd.github+json',
     Authorization: `Bearer ${token.trim()}`,
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'ApexMobile-Static-CMS-Publisher'
+    'Content-Type': 'application/json',
+    'User-Agent': 'Master-CMS-Static-Publisher/2.0'
   };
 }
 
 /**
- * Verify that the Fine-Grained Token is valid and has access to `repoOwner/repoName`.
+ * Verify Fine-Grained Personal Access Token & Repository Write Access
  */
 export async function verifyGitHubRepoAccess(
-  config: Pick<GitHubDeployConfig, 'repoOwner' | 'repoName' | 'branch' | 'fineGrainedToken'>
-): Promise<GitHubVerifyResult> {
-  const owner = (config.repoOwner || '').trim();
-  const repo = (config.repoName || '').trim();
-  const token = (config.fineGrainedToken || '').trim();
+  ghConfig: Partial<GitHubDeployConfig>
+): Promise<GitHubVerifyResponse> {
+  const owner = (ghConfig.repoOwner || '').trim();
+  const repo = (ghConfig.repoName || '').trim();
+  const token = (ghConfig.fineGrainedToken || '').trim();
 
   if (!owner || !repo || !token) {
     return {
       ok: false,
-      message: 'Please provide Repository Owner, Repository Name, and your GitHub Fine-Grained Token.'
+      message: 'Please provide Repository Owner, Repository Name, and a GitHub Fine-Grained Token.'
     };
   }
 
-  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
       method: 'GET',
       headers: buildGitHubHeaders(token)
     });
 
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
+      let errText = `HTTP ${res.status}`;
+      try {
+        const errJson: any = await res.json();
+        if (errJson?.message) errText = `${errJson.message} (HTTP ${res.status})`;
+      } catch {
+        // ignore
+      }
       return {
         ok: false,
-        message: `GitHub API returned ${res.status}: ${errJson.message || res.statusText}. Verify your Fine-Grained Token has "Contents: Read and write" permission on ${owner}/${repo}.`
+        message: `GitHub Verification Failed: ${errText}. Ensure the repository exists and the Fine-Grained Token has "Contents: Read and write" access.`
       };
     }
 
-    const data = await res.json();
-    const canPush = data.permissions?.push !== false;
+    const data: any = await res.json();
+    const canPush = data.permissions ? Boolean(data.permissions.push || data.permissions.admin) : true;
+    const isEmptyRepo = Number(data.size) === 0;
 
     return {
       ok: canPush,
       repoFullName: data.full_name || `${owner}/${repo}`,
       defaultBranch: data.default_branch || 'main',
       privateRepo: Boolean(data.private),
-      permissions: data.permissions || {},
+      permissions: data.permissions,
+      isEmptyRepo,
       message: canPush
-        ? `Connected to ${data.full_name} (default branch: ${data.default_branch}). Fine-Grained Token verified with write access.`
-        : `Connected to ${data.full_name}, but token lacks write/push permissions. Grant "Contents: Read and write" in your Fine-Grained Token settings.`
+        ? `Connected to ${data.full_name} (Default branch: ${data.default_branch || 'main'}${isEmptyRepo ? ' — Empty repo will be auto-initialized on first push' : ''}). Ready to publish static builds.`
+        : `Token has read access to ${data.full_name}, but lacks write ("Contents: Read and write") permission.`
     };
   } catch (err: any) {
     return {
@@ -93,152 +108,278 @@ export async function verifyGitHubRepoAccess(
 }
 
 /**
- * Push all compiled static public files to GitHub in a single atomic Git commit
- * using the GitHub Git Data (Trees & Commits) REST API.
+ * Bootstrap an empty GitHub repository (0 commits) by creating an initial README.md
+ * via the Contents API (`PUT /repos/:owner/:repo/contents/README.md`) so the Git Data API
+ * (`git/trees` & `git/commits`) can operate immediately afterwards.
+ */
+async function bootstrapEmptyGitHubRepoIfNeeded(
+  baseUrl: string,
+  headers: Record<string, string>,
+  branch: string,
+  repoOwner: string,
+  repoName: string
+): Promise<{ bootstrapped: boolean; commitSha?: string; error?: string }> {
+  try {
+    const readmeContent = `# ${repoName}\n\nStatic public website bundle published via Master CMS Studio.\n`;
+    const base64Content = Buffer.from(readmeContent, 'utf-8').toString('base64');
+
+    const putRes = await fetch(`${baseUrl}/contents/README.md`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message: 'chore: initialize repository for static site deployment',
+        content: base64Content,
+        branch
+      })
+    });
+
+    if (!putRes.ok) {
+      const errJson: any = await putRes.json().catch(() => ({}));
+      return {
+        bootstrapped: false,
+        error: errJson?.message || `HTTP ${putRes.status}`
+      };
+    }
+
+    const putData: any = await putRes.json();
+    return {
+      bootstrapped: true,
+      commitSha: putData?.commit?.sha
+    };
+  } catch (err: any) {
+    return {
+      bootstrapped: false,
+      error: err?.message || 'Failed bootstrapping empty repository'
+    };
+  }
+}
+
+/**
+ * Push all compiled static public files to GitHub in a single atomic commit
+ * using GitHub's Git Data API (Ref -> Commit -> Tree -> New Commit -> Update Ref)
  */
 export async function pushStaticFilesToGitHub(
-  githubConfig: GitHubDeployConfig,
+  ghConfig: GitHubDeployConfig,
   files: CompiledStaticFile[],
   customCommitMessage?: string
-): Promise<GitHubPublishResult> {
-  const owner = (githubConfig.repoOwner || '').trim();
-  const repo = (githubConfig.repoName || '').trim();
-  const branch = (githubConfig.branch || 'main').trim() || 'main';
-  const targetDir = (githubConfig.targetDirectory || '').trim().replace(/^\/+|\/+$/g, '');
-  const token = (githubConfig.fineGrainedToken || '').trim();
+): Promise<GitHubPushResponse> {
+  const owner = (ghConfig.repoOwner || '').trim();
+  const repo = (ghConfig.repoName || '').trim();
+  const branch = (ghConfig.branch || 'main').trim() || 'main';
+  const token = (ghConfig.fineGrainedToken || '').trim();
+  const targetDir = (ghConfig.targetDirectory || '').trim().replace(/^\/+|\/+$/g, '');
 
   if (!owner || !repo || !token) {
     return {
-      ok: true,
-      status: 'local-only',
-      filesPushed: files.length,
-      message: `Compiled ${files.length} static public files locally (GitHub Fine-Grained Token or repo not configured yet).`
+      ok: false,
+      status: 'error',
+      branch,
+      filesPushed: 0,
+      message: 'Missing GitHub configuration (Owner, Repository Name, or Fine-Grained Token).'
     };
   }
 
-  const headers = {
-    ...buildGitHubHeaders(token),
-    'Content-Type': 'application/json'
-  };
-  const baseApi = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const headers = buildGitHubHeaders(token);
+  const baseUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
   try {
-    // 1. Get the current branch reference (`heads/{branch}`)
-    const refRes = await fetch(`${baseApi}/git/ref/heads/${encodeURIComponent(branch)}`, {
+    // 1. Get current branch reference (`heads/{branch}`)
+    let refRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, {
       method: 'GET',
       headers
     });
 
-    if (!refRes.ok) {
-      const errBody = await refRes.json().catch(() => ({}));
-      return {
-        ok: false,
-        status: 'error',
-        filesPushed: 0,
-        message: `Could not read branch "${branch}" on ${owner}/${repo} (HTTP ${refRes.status}: ${errBody.message || refRes.statusText}). Make sure the repository is initialized with at least one commit on branch "${branch}".`
-      };
+    let latestCommitSha = '';
+    let baseTreeSha = '';
+
+    if (refRes.status === 409 || refRes.status === 404) {
+      // Check if repository is completely empty (409) or if branch doesn't exist yet (404)
+      const repoInfoRes = await fetch(baseUrl, { method: 'GET', headers });
+      if (!repoInfoRes.ok) {
+        const repoErr: any = await repoInfoRes.json().catch(() => ({}));
+        return {
+          ok: false,
+          status: 'error',
+          branch,
+          filesPushed: 0,
+          message: `Cannot access repository ${owner}/${repo}: ${repoErr?.message || `HTTP ${repoInfoRes.status}`}`
+        };
+      }
+      const repoInfo: any = await repoInfoRes.json();
+      const defaultBranch = repoInfo.default_branch || 'main';
+
+      // Try fetching default branch ref if target branch differed
+      if (refRes.status === 404 && branch !== defaultBranch) {
+        const defaultRefRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, {
+          method: 'GET',
+          headers
+        });
+        if (defaultRefRes.ok) {
+          const defaultRefData: any = await defaultRefRes.json();
+          const defaultHeadSha = defaultRefData?.object?.sha || '';
+          if (defaultHeadSha) {
+            // Create the new target branch ref pointing to defaultHeadSha
+            const createRefRes = await fetch(`${baseUrl}/git/refs`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                ref: `refs/heads/${branch}`,
+                sha: defaultHeadSha
+              })
+            });
+            if (createRefRes.ok) {
+              latestCommitSha = defaultHeadSha;
+            }
+          }
+        }
+      }
+
+      // If still no commit SHA, repository is empty — auto-bootstrap with initial README.md
+      if (!latestCommitSha) {
+        const boot = await bootstrapEmptyGitHubRepoIfNeeded(baseUrl, headers, branch, owner, repo);
+        if (!boot.bootstrapped) {
+          return {
+            ok: false,
+            status: 'error',
+            branch,
+            filesPushed: 0,
+            message: `Repository ${owner}/${repo} is empty and auto-initialization failed: ${boot.error}`
+          };
+        }
+        refRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, {
+          method: 'GET',
+          headers
+        });
+      }
     }
 
-    const refData = await refRes.json();
-    const latestCommitSha: string = refData?.object?.sha;
-
-    // 2. Get the commit object to find the base tree SHA
-    const commitRes = await fetch(`${baseApi}/git/commits/${latestCommitSha}`, {
-      method: 'GET',
-      headers
-    });
-    if (!commitRes.ok) {
-      return {
-        ok: false,
-        status: 'error',
-        filesPushed: 0,
-        message: `Failed to retrieve base commit ${latestCommitSha} from GitHub.`
-      };
+    if (!latestCommitSha && refRes.ok) {
+      const refData: any = await refRes.json();
+      latestCommitSha = refData?.object?.sha || '';
     }
-    const commitData = await commitRes.json();
-    const baseTreeSha: string = commitData?.tree?.sha;
 
-    // 3. Build the new Git Tree with all compiled static files
+    if (latestCommitSha) {
+      const commitRes = await fetch(`${baseUrl}/git/commits/${latestCommitSha}`, {
+        method: 'GET',
+        headers
+      });
+      if (commitRes.ok) {
+        const commitData: any = await commitRes.json();
+        baseTreeSha = commitData?.tree?.sha || '';
+      }
+    }
+
+    // 2. Build Tree Entries for all compiled static files
     const treeEntries = files.map((file) => {
-      const normalizedRelPath = file.path.replace(/^\/+/, '');
-      const fullRepoPath = targetDir ? `${targetDir}/${normalizedRelPath}` : normalizedRelPath;
+      const cleanPath = file.path.replace(/^\/+/, '');
+      const fullPath = targetDir ? `${targetDir}/${cleanPath}` : cleanPath;
       return {
-        path: fullRepoPath,
+        path: fullPath,
         mode: '100644',
         type: 'blob',
         content: file.content
       };
     });
 
-    const treeRes = await fetch(`${baseApi}/git/trees`, {
+    const createTreeBody: Record<string, any> = {
+      tree: treeEntries
+    };
+    if (baseTreeSha) {
+      createTreeBody.base_tree = baseTreeSha;
+    }
+
+    const treeRes = await fetch(`${baseUrl}/git/trees`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        base_tree: baseTreeSha,
-        tree: treeEntries
-      })
+      body: JSON.stringify(createTreeBody)
     });
 
     if (!treeRes.ok) {
-      const errBody = await treeRes.json().catch(() => ({}));
+      const errJson: any = await treeRes.json().catch(() => ({}));
       return {
         ok: false,
         status: 'error',
+        branch,
         filesPushed: 0,
-        message: `Failed to create Git tree on ${owner}/${repo}: ${errBody.message || treeRes.statusText}`
+        message: `Failed creating Git Tree on ${owner}/${repo}: ${errJson?.message || `HTTP ${treeRes.status}`}`
       };
     }
 
-    const treeData = await treeRes.json();
-    const newTreeSha: string = treeData.sha;
+    const treeData: any = await treeRes.json();
+    const newTreeSha = treeData.sha;
 
-    // 4. Create the atomic Git Commit
+    // 3. Create Atomic Commit
     const commitMsg =
-      (customCommitMessage || '').trim() ||
-      (githubConfig.commitMessageTemplate || '').trim() ||
-      `chore(static-publish): update ${files.length} compiled static public files from Admin Studio`;
+      (customCommitMessage || ghConfig.commitMessageTemplate || 'chore(cms): publish static public site update').trim() +
+      ` [${new Date().toISOString()}]`;
 
-    const newCommitRes = await fetch(`${baseApi}/git/commits`, {
+    const createCommitBody: Record<string, any> = {
+      message: commitMsg,
+      tree: newTreeSha
+    };
+    if (latestCommitSha) {
+      createCommitBody.parents = [latestCommitSha];
+    }
+
+    const newCommitRes = await fetch(`${baseUrl}/git/commits`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        message: commitMsg,
-        tree: newTreeSha,
-        parents: [latestCommitSha]
-      })
+      body: JSON.stringify(createCommitBody)
     });
 
     if (!newCommitRes.ok) {
-      const errBody = await newCommitRes.json().catch(() => ({}));
+      const errJson: any = await newCommitRes.json().catch(() => ({}));
       return {
         ok: false,
         status: 'error',
+        branch,
         filesPushed: 0,
-        message: `Failed to create Git commit: ${errBody.message || newCommitRes.statusText}`
+        message: `Failed creating Git Commit: ${errJson?.message || `HTTP ${newCommitRes.status}`}`
       };
     }
 
-    const newCommitData = await newCommitRes.json();
-    const newCommitSha: string = newCommitData.sha;
+    const newCommitData: any = await newCommitRes.json();
+    const newCommitSha = newCommitData.sha;
 
-    // 5. Update the branch reference to point to the new commit
-    const updateRefRes = await fetch(`${baseApi}/git/refs/heads/${encodeURIComponent(branch)}`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({
-        sha: newCommitSha,
-        force: false
-      })
-    });
-
-    if (!updateRefRes.ok) {
-      const errBody = await updateRefRes.json().catch(() => ({}));
-      return {
-        ok: false,
-        status: 'error',
-        filesPushed: 0,
-        message: `Failed to update branch ref heads/${branch}: ${errBody.message || updateRefRes.statusText}`
-      };
+    // 4. Update or Create Branch Reference to point to newCommitSha
+    if (latestCommitSha) {
+      const updateRefRes = await fetch(`${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          sha: newCommitSha,
+          force: false
+        })
+      });
+      if (!updateRefRes.ok) {
+        const errJson: any = await updateRefRes.json().catch(() => ({}));
+        return {
+          ok: false,
+          status: 'error',
+          branch,
+          filesPushed: 0,
+          message: `Failed updating branch ref heads/${branch}: ${errJson?.message || `HTTP ${updateRefRes.status}`}`
+        };
+      }
+    } else {
+      const createRefRes = await fetch(`${baseUrl}/git/refs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ref: `refs/heads/${branch}`,
+          sha: newCommitSha
+        })
+      });
+      if (!createRefRes.ok) {
+        const errJson: any = await createRefRes.json().catch(() => ({}));
+        return {
+          ok: false,
+          status: 'error',
+          branch,
+          filesPushed: 0,
+          message: `Failed creating branch ref refs/heads/${branch}: ${errJson?.message || `HTTP ${createRefRes.status}`}`
+        };
+      }
     }
 
     const commitUrl = `https://github.com/${owner}/${repo}/commit/${newCommitSha}`;
@@ -249,14 +390,15 @@ export async function pushStaticFilesToGitHub(
       commitUrl,
       branch,
       filesPushed: files.length,
-      message: `Successfully compiled & pushed ${files.length} static files to ${owner}/${repo}@${branch} (${newCommitSha.slice(0, 7)}).`
+      message: `Published ${files.length} static public files to ${owner}/${repo}@${branch} (${newCommitSha.slice(0, 7)}).`
     };
   } catch (err: any) {
     return {
       ok: false,
       status: 'error',
+      branch,
       filesPushed: 0,
-      message: `GitHub API error during static push: ${err?.message || 'Unknown error'}`
+      message: `Unexpected error pushing to GitHub: ${err?.message || 'Unknown error'}`
     };
   }
 }

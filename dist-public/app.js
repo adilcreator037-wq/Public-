@@ -1,739 +1,700 @@
 /**
  * ============================================================================
- * 100% STATIC PUBLIC WEBSITE ROUTER & HYDRATION ENGINE (app.js)
- * Architecture:
- * - ZERO Firebase SDK imports or live database connections on the public site.
- * - Initial page load uses the server/static pre-rendered DOM + embedded
- *   `window.__INITIAL_ROUTE_PAYLOAD__` (0ms latency, CLS = 0.000).
- * - Internal route navigation (`/`, `/news`, `/news/:slug`, `/:pageSlug`) loads
- *   pre-compiled static JSON route bundles from `/static-routes/*.json`.
+ * PUBLIC STATIC PORTAL RUNTIME (/app.js)
+ * 100% Standalone, Zero-Dependency Client Hydration & Static Route Navigator
+ * - Strictly isolated from Admin Studio, Firebase SDKs, and Server Compilers
+ * - Zero DOM re-writes on initial SSR/Static load (< 2ms hydration)
+ * - Loads pre-compiled `/static-routes/<route>.json` on internal SPA link clicks
  * ============================================================================
  */
 
-import {
-  optimizeCloudinaryUrl,
-  generateSlug,
-  resolveFontStackCss,
-  buildPartialRoutePayload,
-  renderHamburgerDrawerHtml,
-  extractFaqsFromRawHtml,
-  routePathToStaticJsonName
-} from './src/utils/cms-engine';
+const navbarLogoLink = document.getElementById('navbar-logo');
+const navbarLogoImg = document.getElementById('navbar-logo-img');
+const navbarLogoText = document.getElementById('navbar-logo-text');
+const headerNewsBtn = document.getElementById('header-news-btn');
+const drawerLinksList = document.getElementById('drawer-links-list');
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const mobileDrawer = document.getElementById('mobile-drawer');
+const menuIconBars = document.getElementById('menu-icon-bars');
+const menuIconClose = document.getElementById('menu-icon-close');
 
-export { optimizeCloudinaryUrl, generateSlug, extractFaqsFromRawHtml as extractFaqsFromHtml };
+const breadcrumbNav = document.getElementById('page-breadcrumb-nav');
+const breadcrumbCurrent = document.getElementById('breadcrumb-current');
+const heroSectionEl = document.getElementById('hero-section');
+const heroHeading = document.getElementById('hero-heading');
+const heroCtaGrid = document.getElementById('hero-cta-grid');
+const heroCtaSecondary = document.getElementById('hero-cta-secondary');
+const heroCtaPrimary = document.getElementById('hero-cta-primary');
+const floatingBottomCta = document.getElementById('floating-bottom-cta');
 
-if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
-  window.history.scrollRestoration = 'manual';
-}
+const dynamicContent = document.getElementById('dynamic-content');
+const footerBrandSummaryBlock = document.getElementById('footer-brand-summary-block');
+const footerBrandLogoImg = document.getElementById('footer-brand-logo-img');
+const footerBrandTitle = document.getElementById('footer-brand-title');
+const footerSummaryText = document.getElementById('footer-summary-text');
+const footerContactEmailLink = document.getElementById('footer-contact-email-link');
+const footerDisclaimerHeading = document.getElementById('footer-disclaimer-heading');
+const footerDisclaimer = document.getElementById('footer-disclaimer');
+const footerLinksHeading = document.getElementById('footer-links-heading');
+const footerLinksList = document.getElementById('footer-links-list');
+const footerCopyright = document.getElementById('footer-copyright');
+const jsonLdScript = document.getElementById('dynamic-jsonld-schema');
 
+let currentPayload = null;
+let currentNewsCategory = 'ALL';
 let isDrawerOpen = false;
-let activeRoutePayload = null;
-let selectedNewsCategory = 'ALL';
-const staticRouteMemoryCache = new Map();
+const routeCache = new Map();
 
-/**
- * Retrieve synchronous initial route payload embedded in the static HTML document
- */
-function getStaticEmbeddedRouteSync(pathname = '/') {
-  if (typeof window === 'undefined') return null;
-  const cleanPath = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
-
-  if (staticRouteMemoryCache.has(`${cleanPath}::ALL`)) {
-    return staticRouteMemoryCache.get(`${cleanPath}::ALL`);
-  }
-
-  const embedded = window.__INITIAL_ROUTE_PAYLOAD__;
-  if (embedded && (embedded.path === cleanPath || embedded.canonicalPath === cleanPath)) {
-    staticRouteMemoryCache.set(`${cleanPath}::ALL`, embedded);
-    return embedded;
-  }
-  return null;
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-/**
- * Fetch the pre-compiled static route JSON file from `/static-routes/<name>.json`
- * (with fallback to `/api/route` when filtering news categories)
- */
-async function fetchStaticRoutePayload(pathname = '/', newsCategory = 'ALL') {
-  const cleanPath = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
-  const cacheKey = `${cleanPath}::${newsCategory}`;
-
-  // 1. Try pre-compiled static JSON artifact first when category is ALL
-  if (newsCategory === 'ALL') {
-    const staticFileName = routePathToStaticJsonName(cleanPath);
-    try {
-      const staticRes = await fetch(`/static-routes/${staticFileName}`, {
-        headers: { Accept: 'application/json' }
-      });
-      if (staticRes.ok) {
-        const payload = await staticRes.json();
-        if (payload && payload.shell) {
-          staticRouteMemoryCache.set(cacheKey, payload);
-          return payload;
-        }
-      }
-    } catch {
-      // Fallback to /api/route below
-    }
-  }
-
-  // 2. Fallback to partial route endpoint (for category filtering or dynamic preview routes)
-  try {
-    const res = await fetch(
-      `/api/route?path=${encodeURIComponent(cleanPath)}&cat=${encodeURIComponent(newsCategory)}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.success && data?.payload) {
-        staticRouteMemoryCache.set(cacheKey, data.payload);
-        return data.payload;
-      }
-    }
-  } catch {
-    // Ignore network error and use cached payload
-  }
-
-  return staticRouteMemoryCache.get(cacheKey) || getStaticEmbeddedRouteSync(cleanPath);
+function generateSlug(input) {
+  return String(input || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
-/**
- * Enhance headings with auto-anchor IDs & optimize images inside a container element
- */
-export function enhanceContainerDom(container) {
-  if (!container) return;
+function routePathToStaticJsonName(pathname) {
+  const clean = (pathname || '/').split('?')[0].replace(/^\/+|\/+$/g, '');
+  if (!clean) return 'index.json';
+  return `${clean.replace(/\//g, '__')}.json`;
+}
 
-  const headings = container.querySelectorAll('h2, h3');
-  const usedSlugs = new Set();
+function resolveFontStackCss(fontFamily) {
+  if (fontFamily === 'serif') {
+    return 'Georgia, Cambria, "Times New Roman", Times, serif';
+  }
+  if (fontFamily === 'mono') {
+    return '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+  }
+  return '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+}
 
-  headings.forEach((heading) => {
-    let slug = heading.getAttribute('id');
-    if (!slug) {
-      slug = generateSlug(heading.textContent) || 'section';
-      let uniqueSlug = slug;
-      let counter = 1;
-      while (usedSlugs.has(uniqueSlug)) {
-        uniqueSlug = `${slug}-${counter++}`;
-      }
-      heading.setAttribute('id', uniqueSlug);
-      usedSlugs.add(uniqueSlug);
-    } else {
-      usedSlugs.add(slug);
-    }
-  });
+function setDrawerState(open) {
+  isDrawerOpen = Boolean(open);
+  if (!mobileDrawer) return;
+  if (isDrawerOpen) {
+    mobileDrawer.classList.add('open');
+    if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'true');
+    if (menuIconBars) menuIconBars.classList.add('hidden');
+    if (menuIconClose) menuIconClose.classList.remove('hidden');
+  } else {
+    mobileDrawer.classList.remove('open');
+    if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'false');
+    if (menuIconBars) menuIconBars.classList.remove('hidden');
+    if (menuIconClose) menuIconClose.classList.add('hidden');
+  }
+}
 
-  const images = container.querySelectorAll('img');
-  images.forEach((img) => {
-    const src = img.getAttribute('src');
-    if (src) {
-      const cleanSrc =
-        src === 'https://res.cloudinary.com/demo/image/upload/sample.jpg'
-          ? '/assets/hero-banner.svg'
-          : optimizeCloudinaryUrl(src);
-      if (img.getAttribute('src') !== cleanSrc) {
-        img.setAttribute('src', cleanSrc);
-      }
-    }
-    if (!img.getAttribute('loading')) img.setAttribute('loading', 'lazy');
-    if (!img.getAttribute('decoding')) img.setAttribute('decoding', 'async');
-    img.setAttribute('referrerpolicy', 'no-referrer');
-    img.onerror = function () {
-      this.onerror = null;
-      this.src = '/assets/hero-banner.svg';
-    };
+if (mobileMenuBtn) {
+  mobileMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setDrawerState(!isDrawerOpen);
   });
 }
 
-/**
- * Sanitize & Auto-Anchor Raw HTML string
- */
-export function processRawHtml(rawHtml) {
-  if (!rawHtml) return '';
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(`<div>${rawHtml}</div>`, 'text/html');
-  const container = doc.body.firstElementChild;
-  if (!container) return rawHtml;
-  enhanceContainerDom(container);
-  return container.innerHTML;
+document.addEventListener('click', (e) => {
+  if (
+    isDrawerOpen &&
+    mobileDrawer &&
+    !mobileDrawer.contains(e.target) &&
+    mobileMenuBtn &&
+    !mobileMenuBtn.contains(e.target)
+  ) {
+    setDrawerState(false);
+  }
+});
+
+function setOrCreateMeta(attrName, attrValue, content) {
+  let el = document.head.querySelector(`meta[${attrName}="${attrValue}"]`);
+  if (!el) {
+    el = document.createElement('meta');
+    el.setAttribute(attrName, attrValue);
+    document.head.appendChild(el);
+  }
+  el.setAttribute('content', content || '');
 }
 
-/**
- * Apply Admin-Configured UI Theme, Widths & Typography CSS Variables
- */
-function applyUiThemeVariables(brand = {}, uiConfig = {}) {
-  const root = document.documentElement;
-  root.style.setProperty('--accent-color', brand.accentColor || '#EF4444');
-  root.style.setProperty('--button-text-color', uiConfig.buttonTextColor || '#FFFFFF');
-  root.style.setProperty('--max-container-width', uiConfig.maxContainerWidth || '768px');
-  root.style.setProperty('--bg-page', uiConfig.pageBackgroundColor || '#F8FAFC');
-  root.style.setProperty('--bg-surface', uiConfig.surfaceBackgroundColor || '#FFFFFF');
-  root.style.setProperty('--bg-header', uiConfig.headerBackgroundColor || uiConfig.surfaceBackgroundColor || '#FFFFFF');
-  root.style.setProperty('--text-header', uiConfig.headerTextColor || uiConfig.headingColor || '#111827');
-  root.style.setProperty('--bg-footer', uiConfig.footerBackgroundColor || '#0F172A');
-  root.style.setProperty('--text-footer', uiConfig.footerTextColor || '#F8FAFC');
-  root.style.setProperty('--border-color', uiConfig.borderColor || '#E2E8F0');
-  root.style.setProperty('--card-radius', uiConfig.cardBorderRadius || '12px');
-  root.style.setProperty('--text-main', uiConfig.textColor || '#1F2937');
-  root.style.setProperty('--heading-color', uiConfig.headingColor || '#111827');
-  root.style.setProperty('--base-font-size', uiConfig.baseFontSize || '16px');
-  root.style.setProperty('--font-stack', resolveFontStackCss(uiConfig.fontFamily));
-}
-
-/**
- * Dynamically update <head> SEO Meta Title, Description, Canonical & JSON-LD from Route Payload
- */
-export function applyPayloadSeoToHead(payload) {
+function applySeoAndHeadMeta(payload) {
   if (!payload) return;
   const brand = payload.shell?.brand || {};
-  const title = payload.metaTitle || `${brand.name || 'Site'} Official Portal`;
-  const description = payload.metaDescription || '';
-  const fullCanonical =
-    payload.canonicalPath === '/'
-      ? window.location.origin
-      : `${window.location.origin}${payload.canonicalPath}`;
-  const ogImage = optimizeCloudinaryUrl(payload.ogImage || '/assets/hero-banner.svg');
-  const favicon = optimizeCloudinaryUrl(brand.faviconUrl || brand.logoUrl || '/assets/app-icon.svg');
+  document.title = payload.metaTitle || `${brand.name || 'Official'} Portal`;
 
-  document.title = title;
+  setOrCreateMeta('name', 'description', payload.metaDescription || '');
 
-  const setMeta = (attrName, attrVal, content) => {
-    if (!content) return;
-    let el = document.querySelector(`meta[${attrName}="${attrVal}"]`);
-    if (!el) {
-      el = document.createElement('meta');
-      el.setAttribute(attrName, attrVal);
-      document.head.appendChild(el);
-    }
-    el.setAttribute('content', content);
-  };
+  const baseOrigin = window.location.origin;
+  const fullCanonicalUrl =
+    payload.canonicalPath === '/' ? `${baseOrigin}/` : `${baseOrigin}${payload.canonicalPath}`;
 
-  setMeta('name', 'description', description);
-  setMeta('property', 'og:title', title);
-  setMeta('property', 'og:description', description);
-  setMeta('property', 'og:url', fullCanonical);
-  setMeta('property', 'og:type', payload.viewType === 'news-article' ? 'article' : 'website');
-  setMeta('property', 'og:image', ogImage);
-  setMeta('name', 'twitter:title', title);
-  setMeta('name', 'twitter:description', description);
-  setMeta('name', 'twitter:image', ogImage);
-  setMeta('name', 'theme-color', brand.themeColor || brand.accentColor || '#EF4444');
-  setMeta('name', 'application-name', brand.name || 'ApexMobile');
-
-  let canonicalEl = document.querySelector('link[rel="canonical"]');
-  if (canonicalEl) {
-    canonicalEl.setAttribute('href', fullCanonical);
+  let canonicalLink = document.head.querySelector('link[rel="canonical"]');
+  if (!canonicalLink) {
+    canonicalLink = document.createElement('link');
+    canonicalLink.setAttribute('rel', 'canonical');
+    document.head.appendChild(canonicalLink);
   }
+  canonicalLink.setAttribute('href', fullCanonicalUrl);
 
-  if (favicon) {
-    let iconEl = document.querySelector('link[rel="icon"]');
-    if (!iconEl) {
-      iconEl = document.createElement('link');
-      iconEl.setAttribute('rel', 'icon');
-      document.head.appendChild(iconEl);
-    }
-    iconEl.setAttribute('href', favicon);
+  setOrCreateMeta('property', 'og:title', payload.metaTitle || '');
+  setOrCreateMeta('property', 'og:description', payload.metaDescription || '');
+  setOrCreateMeta('property', 'og:url', fullCanonicalUrl);
+  setOrCreateMeta('property', 'og:type', payload.viewType === 'news-article' ? 'article' : 'website');
+  if (payload.ogImage) {
+    setOrCreateMeta('property', 'og:image', payload.ogImage);
+    setOrCreateMeta('name', 'twitter:image', payload.ogImage);
   }
+  setOrCreateMeta('name', 'twitter:title', payload.metaTitle || '');
+  setOrCreateMeta('name', 'twitter:description', payload.metaDescription || '');
 
-  const appleIcon = optimizeCloudinaryUrl(
-    brand.appleTouchIconUrl || brand.searchLogoUrl || brand.logoUrl || '/assets/app-icon.svg'
-  );
-  if (appleIcon) {
-    let appleEl = document.querySelector('link[rel="apple-touch-icon"]');
-    if (!appleEl) {
-      appleEl = document.createElement('link');
-      appleEl.setAttribute('rel', 'apple-touch-icon');
-      appleEl.setAttribute('sizes', '180x180');
-      document.head.appendChild(appleEl);
-    }
-    appleEl.setAttribute('href', appleIcon);
-  }
-
-  if (payload.jsonLd) {
-    let scriptEl = document.getElementById('dynamic-jsonld-schema');
-    if (!scriptEl) {
-      scriptEl = document.createElement('script');
-      scriptEl.id = 'dynamic-jsonld-schema';
-      scriptEl.type = 'application/ld+json';
-      document.head.appendChild(scriptEl);
-    }
-    scriptEl.textContent = JSON.stringify(payload.jsonLd);
+  if (jsonLdScript && payload.jsonLd) {
+    jsonLdScript.textContent = JSON.stringify(payload.jsonLd);
   }
 }
 
-/**
- * Render Static Route Payload into the DOM
- */
-export function renderPartialRoutePayload(payload, options = { preserveSsrDom: false }) {
-  if (!payload || !payload.shell) return;
-  activeRoutePayload = payload;
-
-  const { shell } = payload;
+function applyUiThemeVariables(shell) {
+  if (!shell) return;
+  const root = document.documentElement;
   const brand = shell.brand || {};
   const ui = shell.uiConfig || {};
-  const heroCtas = shell.heroCtas || {};
 
-  // 1. Apply UI Theme Variables
-  applyUiThemeVariables(brand, ui);
+  root.style.setProperty('--accent-color', brand.accentColor || '#EF4444');
+  root.style.setProperty('--button-text-color', ui.buttonTextColor || '#FFFFFF');
+  root.style.setProperty('--max-container-width', ui.maxContainerWidth || '768px');
+  root.style.setProperty('--bg-page', ui.pageBackgroundColor || '#F8FAFC');
+  root.style.setProperty('--bg-surface', ui.surfaceBackgroundColor || '#FFFFFF');
+  root.style.setProperty('--bg-header', ui.headerBackgroundColor || '#FFFFFF');
+  root.style.setProperty('--text-header', ui.headerTextColor || '#111827');
+  root.style.setProperty('--bg-footer', ui.footerBackgroundColor || '#0F172A');
+  root.style.setProperty('--text-footer', ui.footerTextColor || '#F8FAFC');
+  root.style.setProperty('--border-color', ui.borderColor || '#E2E8F0');
+  root.style.setProperty('--card-radius', ui.cardBorderRadius || '12px');
+  root.style.setProperty('--text-main', ui.textColor || '#1F2937');
+  root.style.setProperty('--heading-color', ui.headingColor || '#111827');
+  root.style.setProperty('--base-font-size', ui.baseFontSize || '16px');
+  root.style.setProperty('--font-stack', resolveFontStackCss(ui.fontFamily));
 
-  // 2. Header Brand, Logo & News Button
-  const logoImg = document.getElementById('navbar-logo-img');
-  const logoText = document.getElementById('navbar-logo-text');
-  const headerNewsBtn = document.getElementById('header-news-btn');
-  const logoSrc = optimizeCloudinaryUrl(brand.logoUrl || '/assets/app-icon.svg');
-
-  if (logoImg) {
-    if (logoImg.getAttribute('src') !== logoSrc) logoImg.src = logoSrc;
-    logoImg.alt = brand.name || 'Logo';
-    logoImg.onerror = () => {
-      logoImg.src = '/assets/app-icon.svg';
-    };
+  const headerEl = document.querySelector('.site-header');
+  if (headerEl) {
+    headerEl.style.position = ui.stickyHeader === false ? 'relative' : 'sticky';
   }
-  if (logoText) {
-    logoText.textContent = brand.name || 'ApexMobile';
+}
+
+function buildDrawerHtmlClient(shell, activeCanonicalPath = '/') {
+  const ui = shell?.uiConfig || {};
+  const items = [];
+
+  items.push(`<li class="drawer-section-header">Page &amp; Section Navigation</li>`);
+  items.push(`
+    <li>
+      <a href="/" data-spa-link class="nav-drawer-link ${activeCanonicalPath === '/' ? 'active-nav-link' : ''}">
+        <span>Home Overview</span>
+        <span class="drawer-link-badge">Main</span>
+      </a>
+    </li>
+  `);
+
+  const seenUrls = new Set(['/']);
+
+  for (const link of shell?.headerLinks || []) {
+    if (!link.label || !link.url) continue;
+    const rawUrl = link.url.trim();
+    const href = rawUrl.startsWith('#') ? `/${rawUrl}` : rawUrl;
+    seenUrls.add(rawUrl.toLowerCase());
+    seenUrls.add(href.toLowerCase());
+    const isActive = activeCanonicalPath === href;
+    items.push(`
+      <li>
+        <a href="${escapeHtml(href)}" data-spa-link class="nav-drawer-link ${isActive ? 'active-nav-link' : ''}" title="${escapeHtml(link.metaTitle || link.label)}">
+          <span>${escapeHtml(link.label)}</span>
+          <span class="drawer-link-arrow">→</span>
+        </a>
+      </li>
+    `);
   }
+
+  if (ui.autoIncludeSectionsInDrawer !== false && Array.isArray(shell?.autoSectionLinks)) {
+    for (const sec of shell.autoSectionLinks) {
+      const anchor = `#${sec.url.replace(/^#+/, '')}`;
+      const fullHref = `/${anchor}`;
+      if (seenUrls.has(anchor.toLowerCase()) || seenUrls.has(fullHref.toLowerCase())) continue;
+      seenUrls.add(anchor.toLowerCase());
+      items.push(`
+        <li>
+          <a href="${escapeHtml(fullHref)}" data-spa-link class="nav-drawer-link" title="${escapeHtml(sec.metaTitle || sec.label)}">
+            <span>${escapeHtml(sec.label)}</span>
+            <span class="drawer-link-arrow">↘</span>
+          </a>
+        </li>
+      `);
+    }
+  }
+
+  if (ui.showNewsInDrawer !== false && shell?.newsCount > 0) {
+    items.push(`<li class="drawer-section-header">Daily News &amp; Changelogs (${shell.newsCount})</li>`);
+    if (!seenUrls.has('/news')) {
+      items.push(`
+        <li>
+          <a href="/news" data-spa-link class="nav-drawer-link ${activeCanonicalPath === '/news' ? 'active-nav-link' : ''}">
+            <span>All Daily News &amp; Updates</span>
+            <span class="drawer-link-badge">${shell.newsCount} Posts</span>
+          </a>
+        </li>
+      `);
+    }
+    for (const art of (shell.recentNewsDrawerItems || []).slice(0, 2)) {
+      const artHref = `/news/${art.slug}`;
+      const isArtActive = activeCanonicalPath === artHref;
+      items.push(`
+        <li>
+          <a href="${escapeHtml(artHref)}" data-spa-link class="nav-drawer-link drawer-news-sublink ${isArtActive ? 'active-nav-link' : ''}">
+            <div>
+              <span class="drawer-news-cat">${escapeHtml(art.category)}</span>
+              <div class="drawer-news-title">${escapeHtml(art.title)}</div>
+            </div>
+          </a>
+        </li>
+      `);
+    }
+  }
+
+  const allDrawerPages = [
+    ...(shell?.headerPages || []),
+    ...(ui.showLegalLinksInDrawer !== false ? shell?.footerPages || [] : [])
+  ];
+  const uniquePages = Array.from(new Map(allDrawerPages.map((p) => [p.slug, p])).values());
+
+  if (uniquePages.length > 0) {
+    items.push(`<li class="drawer-section-header">Official Legal &amp; Support Pages</li>`);
+    items.push(`
+      <li class="drawer-legal-grid-item">
+        <div class="drawer-legal-grid">
+          ${uniquePages
+            .map((pg) => {
+              const pgHref = `/${pg.slug}`;
+              const isPgActive = activeCanonicalPath === pgHref;
+              return `<a href="${escapeHtml(pgHref)}" data-spa-link class="drawer-legal-chip ${
+                isPgActive ? 'active' : ''
+              }" title="${escapeHtml(pg.metaTitle || pg.label)}">${escapeHtml(pg.label)}</a>`;
+            })
+            .join('')}
+        </div>
+      </li>
+    `);
+  }
+
+  if (ui.showCtaInDrawer !== false && shell?.heroCtas?.primaryCta?.label) {
+    const rawPrimaryUrl = shell.heroCtas.primaryCta.url || '#technical-specifications';
+    const primaryHref = rawPrimaryUrl.startsWith('#') ? `/${rawPrimaryUrl}` : rawPrimaryUrl;
+    items.push(`
+      <li class="drawer-cta-footer">
+        <a href="${escapeHtml(primaryHref)}" data-spa-link class="drawer-cta-btn">
+          <span>${escapeHtml(shell.heroCtas.primaryCta.label)}</span>
+          ${shell.packageVersion ? `<span class="drawer-cta-ver">${escapeHtml(shell.packageVersion)}</span>` : ''}
+        </a>
+      </li>
+    `);
+  }
+
+  return items.join('\n');
+}
+
+function enhanceContainerDom(container, ui = {}) {
+  if (!container) return;
+
+  // 1. Wrap standalone tables for clean horizontal scrolling on narrow screens
+  const tables = container.querySelectorAll('table');
+  tables.forEach((tbl) => {
+    if (tbl.parentElement && tbl.parentElement.classList.contains('table-scroll-wrapper')) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-scroll-wrapper';
+    tbl.parentNode.insertBefore(wrapper, tbl);
+    wrapper.appendChild(tbl);
+  });
+
+  // 2. Enhance SHA-256 Checksum cell with a 1-click Copy Checksum button
+  const bindCopyBtn = (btn, text) => {
+    if (!btn || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = 'Copied';
+          btn.classList.add('copied');
+          setTimeout(() => {
+            btn.textContent = 'Copy';
+            btn.classList.remove('copied');
+          }, 1800);
+        });
+      }
+    });
+  };
+
+  const codeCells = container.querySelectorAll('table code');
+  codeCells.forEach((codeEl) => {
+    const text = (codeEl.textContent || '').trim();
+    if (text.length < 32) return;
+    let btn = codeEl.parentElement.querySelector('.copy-hash-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copy-hash-btn';
+      btn.textContent = 'Copy';
+      btn.setAttribute('aria-label', 'Copy SHA-256 checksum');
+      codeEl.parentElement.appendChild(btn);
+    }
+    bindCopyBtn(btn, btn.getAttribute('data-copy-text') || text);
+  });
+
+  // 3. Convert FAQ <h3> + <p> pairs into accessible collapsible <details class="faq-item">
+  if (ui.enableFaqAccordion !== false) {
+    const h3List = Array.from(container.querySelectorAll('h3'));
+    h3List.forEach((h3) => {
+      if (h3.closest('.news-item-block') || h3.closest('details')) return;
+      const text = (h3.textContent || '').trim();
+      const nextEl = h3.nextElementSibling;
+      if (nextEl && nextEl.tagName === 'P' && (/^q\d*[:.\s-]/i.test(text) || text.endsWith('?'))) {
+        const details = document.createElement('details');
+        details.className = 'faq-item';
+        const summary = document.createElement('summary');
+        summary.textContent = text;
+        const answerDiv = document.createElement('div');
+        answerDiv.className = 'faq-answer';
+        answerDiv.innerHTML = nextEl.innerHTML;
+        details.appendChild(summary);
+        details.appendChild(answerDiv);
+        h3.parentNode.replaceChild(details, h3);
+        nextEl.remove();
+      }
+    });
+  }
+
+  // 4. Bind News Hub Category Filter Buttons
+  const filterBtns = container.querySelectorAll('[data-news-cat]');
+  filterBtns.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const cat = btn.getAttribute('data-news-cat') || 'ALL';
+      currentNewsCategory = cat;
+      await navigateToUrl('/news', false, cat);
+    });
+  });
+}
+
+function renderPartialRoutePayload(payload, options = { preserveSsrDom: false }) {
+  if (!payload) return;
+  currentPayload = payload;
+  const shell = payload.shell || {};
+  const ui = shell.uiConfig || {};
+  const brand = shell.brand || {};
+
+  applyUiThemeVariables(shell);
+  applySeoAndHeadMeta(payload);
+
+  // If SSR already rendered the exact DOM for this route, only enhance interactive widgets (< 2ms!)
+  if (options.preserveSsrDom && dynamicContent) {
+    enhanceContainerDom(dynamicContent, ui);
+    return;
+  }
+
+  // Update Header Brand & News Link on SPA navigation
+  if (navbarLogoText) navbarLogoText.textContent = brand.name || 'ApexMobile';
+  if (navbarLogoImg && brand.logoUrl) {
+    navbarLogoImg.src = brand.logoUrl;
+    navbarLogoImg.alt = `${brand.name || 'Brand'} Logo`;
+  }
+  if (navbarLogoLink) {
+    navbarLogoLink.href = '/';
+    navbarLogoLink.title = `${brand.name || 'Official'} Home`;
+  }
+
   if (headerNewsBtn) {
     if (ui.showHeaderNewsButton === false) {
       headerNewsBtn.classList.add('hidden');
     } else {
       headerNewsBtn.classList.remove('hidden');
-      headerNewsBtn.classList.toggle(
-        'is-active',
-        payload.viewType === 'news-hub' || payload.viewType === 'news-article'
-      );
-      const btnLabel = ui.headerNewsButtonLabel || 'News';
       const countSuffix = ui.showNewsCountInHeader !== false ? ` (${shell.newsCount || 0})` : '';
-      headerNewsBtn.innerHTML = `<span class="header-news-dot"></span><span>${btnLabel}${countSuffix}</span>`;
+      const labelText = `${ui.headerNewsButtonLabel || 'News'}${countSuffix}`;
+      headerNewsBtn.innerHTML = `<span class="header-news-dot"></span><span>${escapeHtml(labelText)}</span>`;
     }
   }
 
-  // 3. Categorized Slide-Down Navigation Drawer (Main Sections + News + Legal Pages + CTA)
-  const drawerLinksList = document.getElementById('drawer-links-list');
   if (drawerLinksList) {
-    drawerLinksList.innerHTML = renderHamburgerDrawerHtml(shell, payload.canonicalPath || '/');
+    drawerLinksList.innerHTML = buildDrawerHtmlClient(shell, payload.canonicalPath);
   }
 
-  // 4. Breadcrumbs & Subpage Quick Switcher Pills
-  const backBar = document.getElementById('standalone-back-bar');
-  const backHomeAnchor = document.getElementById('back-home-anchor');
-  const backNewsAnchor = document.getElementById('back-news-anchor');
-  const pillsContainer = document.getElementById('subpage-switcher-pills');
-
-  if (backHomeAnchor) {
-    backHomeAnchor.textContent = ui.backToHomeLabel || '← Back to Main Page';
-  }
-  if (backNewsAnchor) {
-    backNewsAnchor.textContent = ui.allNewsBreadcrumbLabel || 'All Daily News →';
-  }
-
-  if (backBar && pillsContainer) {
-    if (payload.viewType === 'home') {
-      backBar.classList.add('hidden');
+  if (breadcrumbNav && breadcrumbCurrent) {
+    if (payload.viewType === 'home' || ui.showBreadcrumbs === false) {
+      breadcrumbNav.classList.add('hidden');
     } else {
-      backBar.classList.remove('hidden');
-      if (backNewsAnchor) {
-        backNewsAnchor.classList.toggle('hidden', payload.viewType !== 'news-article');
-      }
-      if (ui.showSubpageSwitcherPills === false) {
-        pillsContainer.classList.add('hidden');
+      breadcrumbNav.classList.remove('hidden');
+      if (payload.viewType === 'news-hub') {
+        breadcrumbCurrent.textContent = 'Daily News & Updates';
+      } else if (payload.viewType === 'news-article') {
+        breadcrumbCurrent.textContent = `News / ${payload.heroH1}`;
       } else {
-        pillsContainer.classList.remove('hidden');
-        const pills = Array.isArray(shell.allSubpagePills) ? shell.allSubpagePills : [];
-        pillsContainer.innerHTML = pills
-          .map((p) => {
-            const isActive =
-              (p.href === '/news' &&
-                (payload.viewType === 'news-hub' || payload.viewType === 'news-article')) ||
-              (payload.viewType === 'standalone-page' && payload.canonicalPath === p.href);
-            return `<a href="${p.href}" data-spa-link class="subpage-pill ${
-              isActive ? 'active' : ''
-            }">${p.label}</a>`;
-          })
-          .join('');
+        breadcrumbCurrent.textContent = payload.heroH1;
       }
     }
   }
 
-  // 5. Hero Section & CTA Grid
-  const heroSection = document.getElementById('hero-section');
-  const heroH1 = document.getElementById('hero-heading');
-  const heroCtaGrid = document.getElementById('hero-cta-grid');
-
-  if (heroSection) {
-    heroSection.classList.toggle('hidden', !payload.showHeroSection);
+  if (heroSectionEl) {
+    heroSectionEl.style.display = payload.showHeroSection === false ? 'none' : '';
   }
-  if (heroH1) {
-    heroH1.textContent = payload.heroH1 || brand.name || '';
+  if (heroHeading) {
+    heroHeading.textContent = payload.heroH1 || '';
   }
   if (heroCtaGrid) {
-    heroCtaGrid.classList.toggle('hidden', !payload.showHeroCtaGrid);
-  }
-
-  if (payload.showHeroCtaGrid) {
-    const secBtn = document.getElementById('hero-cta-secondary');
-    if (secBtn) {
-      secBtn.textContent = heroCtas.secondaryCta?.label || 'Installation Guide';
-      secBtn.href = heroCtas.secondaryCta?.url || '#install-guide';
-      secBtn.setAttribute('data-spa-link', 'true');
-      if (heroCtas.secondaryCta?.relSponsored) {
-        secBtn.setAttribute('rel', 'nofollow sponsored noopener');
-      } else {
-        secBtn.removeAttribute('rel');
-      }
-    }
-
-    const primBtn = document.getElementById('hero-cta-primary');
-    if (primBtn) {
-      primBtn.textContent = heroCtas.primaryCta?.label || 'Download Official Package';
-      primBtn.href = heroCtas.primaryCta?.url || '#technical-specifications';
-      primBtn.setAttribute('data-spa-link', 'true');
-      if (heroCtas.primaryCta?.relSponsored) {
-        primBtn.setAttribute('rel', 'nofollow sponsored noopener');
-      } else {
-        primBtn.removeAttribute('rel');
-      }
-    }
-  }
-
-  // 6. Main Content Flow (#dynamic-content)
-  const dynamicContent = document.getElementById('dynamic-content');
-  if (dynamicContent) {
-    const ssrPath = dynamicContent.getAttribute('data-ssr-path');
-    const canPreserveSsr =
-      options.preserveSsrDom &&
-      ssrPath === payload.canonicalPath &&
-      dynamicContent.innerHTML.trim().length > 0;
-
-    if (!canPreserveSsr) {
-      dynamicContent.innerHTML = payload.renderedMainHtml || '';
-      dynamicContent.setAttribute('data-ssr-path', payload.canonicalPath);
-    }
-    enhanceContainerDom(dynamicContent);
-  }
-
-  // 7. Customizable Public Footer (Brand Summary, Contact Email, Quick Links, Legal Pages & Copyright)
-  const footerSummaryBlock = document.getElementById('footer-brand-summary-block');
-  const footerBrandTitle = document.getElementById('footer-brand-title');
-  const footerSummaryText = document.getElementById('footer-summary-text');
-  const footerContactLink = document.getElementById('footer-contact-email-link');
-  const disclaimerBlock = document.getElementById('footer-disclaimer-block');
-  const disclaimerHeading = document.getElementById('footer-disclaimer-heading');
-  const disclaimerText = document.getElementById('footer-disclaimer');
-  const linksHeading = document.getElementById('footer-links-heading');
-  const footerLinksList = document.getElementById('footer-links-list');
-  const copyrightEl = document.getElementById('footer-copyright');
-
-  if (footerSummaryBlock) {
-    footerSummaryBlock.classList.toggle('hidden', shell.navigation?.showFooterBrandSummary === false);
-  }
-  if (footerBrandTitle) {
-    footerBrandTitle.textContent = brand.name || 'ApexMobile';
-  }
-  if (footerSummaryText) {
-    footerSummaryText.textContent = shell.navigation?.footerSummary || brand.tagline || '';
-  }
-  if (footerContactLink) {
-    const showContact = shell.navigation?.showFooterContactEmail !== false && Boolean(brand.contactEmail);
-    footerContactLink.classList.toggle('hidden', !showContact);
-    if (brand.contactEmail) {
-      footerContactLink.textContent = brand.contactEmail;
-      footerContactLink.href = `mailto:${brand.contactEmail}`;
-    }
-  }
-
-  if (disclaimerBlock) {
-    disclaimerBlock.classList.toggle('hidden', ui.showFooterDisclaimer === false);
-  }
-  if (disclaimerHeading) {
-    disclaimerHeading.textContent =
-      shell.navigation?.disclaimerHeading || 'Legal & Trademark Disclaimer';
-  }
-  if (disclaimerText) {
-    disclaimerText.textContent = shell.navigation?.disclaimer || '';
-  }
-  if (linksHeading) {
-    linksHeading.classList.toggle('hidden', ui.showFooterLinksHeading === false);
-    linksHeading.textContent =
-      shell.navigation?.siteLinksHeading || 'Official Legal & Support Pages';
-  }
-
-  if (footerLinksList) {
-    footerLinksList.innerHTML = '';
-    const quickLinks = Array.isArray(shell.navigation?.footerQuickLinks)
-      ? shell.navigation.footerQuickLinks
-      : [];
-    quickLinks.forEach((ql) => {
-      if (!ql.label || !ql.url) return;
-      const a = document.createElement('a');
-      a.href = ql.url;
-      if (ql.openInNewTab) {
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-      } else {
-        a.setAttribute('data-spa-link', 'true');
-      }
-      a.textContent = ql.label;
-      a.className = 'footer-link';
-      footerLinksList.appendChild(a);
-    });
-
-    const footerPages = Array.isArray(shell.footerPages) ? shell.footerPages : [];
-    footerPages.forEach((pg) => {
-      const a = document.createElement('a');
-      a.href = `/${pg.slug}`;
-      a.setAttribute('data-spa-link', 'true');
-      a.textContent = pg.label;
-      a.className = 'footer-link';
-      if (pg.metaTitle) a.title = pg.metaTitle;
-      footerLinksList.appendChild(a);
-    });
-  }
-
-  if (copyrightEl) {
-    copyrightEl.textContent =
-      shell.navigation?.copyright || `© 2026 ${brand.name || 'Brand'}. All rights reserved.`;
-  }
-
-  // 8. Floating Bottom Pill CTA
-  const floatingWrapper = document.getElementById('floating-bottom-cta');
-  const floatingBtn = document.getElementById('floating-cta-btn');
-  if (floatingWrapper && floatingBtn) {
-    if (heroCtas.floatingCta?.enabled === false) {
-      floatingWrapper.classList.add('hidden');
+    if (payload.showHeroCtaGrid) {
+      heroCtaGrid.classList.remove('hidden');
     } else {
-      floatingWrapper.classList.remove('hidden');
-      floatingBtn.textContent = heroCtas.floatingCta?.label || '⚡ Download Now';
-      const targetUrl =
-        heroCtas.floatingCta?.url || heroCtas.primaryCta?.url || '#technical-specifications';
-      floatingBtn.href =
-        payload.viewType !== 'home' && targetUrl.startsWith('#') ? `/${targetUrl}` : targetUrl;
-      floatingBtn.setAttribute('data-spa-link', 'true');
+      heroCtaGrid.classList.add('hidden');
     }
   }
 
-  // 9. Update SEO Head tags & JSON-LD
-  applyPayloadSeoToHead(payload);
-}
-
-/**
- * Full SiteConfig Render Adapter
- */
-export function renderSite(fullConfig) {
-  if (!fullConfig) return;
-  const pathname = window.location.pathname;
-  const payload = buildPartialRoutePayload(pathname, fullConfig, selectedNewsCategory);
-  renderPartialRoutePayload(payload, { preserveSsrDom: false });
-}
-
-/**
- * Load & Render Route from Static Pre-Compiled Bundle
- */
-export async function loadAndRenderRoute(pathname, options = { scrollToTop: false }) {
-  const syncPayload = getStaticEmbeddedRouteSync(pathname);
-  if (syncPayload && selectedNewsCategory === 'ALL') {
-    renderPartialRoutePayload(syncPayload, { preserveSsrDom: false });
+  if (heroCtaSecondary && shell.heroCtas?.secondaryCta) {
+    heroCtaSecondary.textContent = shell.heroCtas.secondaryCta.label || 'Installation Guide';
+    heroCtaSecondary.href = shell.heroCtas.secondaryCta.url || '#';
+  }
+  if (heroCtaPrimary && shell.heroCtas?.primaryCta) {
+    heroCtaPrimary.textContent = shell.heroCtas.primaryCta.label || 'Download Official Package';
+    heroCtaPrimary.href = shell.heroCtas.primaryCta.url || '#';
   }
 
-  const staticPayload = await fetchStaticRoutePayload(pathname, selectedNewsCategory);
-  if (staticPayload) {
-    renderPartialRoutePayload(staticPayload, { preserveSsrDom: false });
-  }
-
-  if (options.scrollToTop) {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }
-}
-
-/**
- * Instant Client-Side + History API Route Navigation
- */
-export async function navigateToRoute(rawHref) {
-  if (!rawHref) return;
-  closeDrawer();
-
-  // Case 1: Pure hash link (#install-guide)
-  if (rawHref.startsWith('#')) {
-    if (window.location.pathname !== '/') {
-      window.history.pushState({}, '', `/${rawHref}`);
-      await loadAndRenderRoute('/', { scrollToTop: false });
+  if (floatingBottomCta && shell.heroCtas?.floatingCta) {
+    const fl = shell.heroCtas.floatingCta;
+    if (fl.enabled && payload.viewType === 'home') {
+      floatingBottomCta.textContent = fl.label || 'Download Faster';
+      floatingBottomCta.href = fl.url || '#';
+      floatingBottomCta.classList.remove('hidden');
+    } else {
+      floatingBottomCta.classList.add('hidden');
     }
-    setTimeout(() => {
-      const targetEl = document.querySelector(rawHref);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 20);
-    return;
   }
 
-  // Case 2: Root + hash link (/#install-guide)
-  if (rawHref.startsWith('/#')) {
-    const hash = rawHref.slice(1);
-    window.history.pushState({}, '', rawHref);
-    await loadAndRenderRoute('/', { scrollToTop: false });
-    setTimeout(() => {
-      const targetEl = document.querySelector(hash);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 30);
-    return;
+  if (dynamicContent) {
+    dynamicContent.innerHTML = payload.renderedMainHtml || '';
+    dynamicContent.setAttribute('data-ssr-path', payload.canonicalPath);
+    enhanceContainerDom(dynamicContent, ui);
   }
 
-  // Case 2.5: Isolated Security & Download Gateway (/moreinfo or /download)
-  if (rawHref.startsWith('/moreinfo') || rawHref.startsWith('/download')) {
+  if (footerBrandSummaryBlock) {
+    if (shell.navigation?.showFooterBrandSummary === false) {
+      footerBrandSummaryBlock.classList.add('hidden');
+    } else {
+      footerBrandSummaryBlock.classList.remove('hidden');
+      if (footerBrandLogoImg && brand.logoUrl) {
+        footerBrandLogoImg.src = brand.logoUrl;
+        footerBrandLogoImg.alt = `${brand.name || 'Brand'} Logo`;
+      }
+      if (footerBrandTitle) footerBrandTitle.textContent = brand.name || '';
+      if (footerSummaryText) {
+        footerSummaryText.textContent = shell.navigation?.footerSummary || brand.tagline || '';
+      }
+      if (footerContactEmailLink) {
+        if (shell.navigation?.showFooterContactEmail !== false && brand.contactEmail) {
+          footerContactEmailLink.href = `mailto:${brand.contactEmail}`;
+          footerContactEmailLink.textContent = brand.contactEmail;
+          footerContactEmailLink.classList.remove('hidden');
+        } else {
+          footerContactEmailLink.classList.add('hidden');
+        }
+      }
+    }
+  }
+
+  if (footerDisclaimerHeading) {
+    footerDisclaimerHeading.textContent = shell.navigation?.disclaimerHeading || 'Legal Disclaimer';
+  }
+  if (footerDisclaimer) {
+    footerDisclaimer.textContent = shell.navigation?.disclaimer || '';
+  }
+  if (footerLinksHeading) {
+    footerLinksHeading.textContent = shell.navigation?.siteLinksHeading || 'Official Pages & Legal Links';
+  }
+  if (footerCopyright) {
+    footerCopyright.textContent = shell.navigation?.copyright || '';
+  }
+}
+
+async function fetchStaticRoutePayload(pathname, newsCat = 'ALL') {
+  const cleanPath = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+  const cacheKey = `${cleanPath}::${newsCat}`;
+
+  if (routeCache.has(cacheKey)) {
+    return routeCache.get(cacheKey);
+  }
+
+  if (newsCat === 'ALL') {
+    const jsonFileName = routePathToStaticJsonName(cleanPath);
     try {
-      sessionStorage.setItem('rd_nav_default', '1');
-      sessionStorage.setItem('rd_nav_apexmobile', '1');
-      const brandSlug = generateSlug(activeRoutePayload?.shell?.brand?.shortName || activeRoutePayload?.shell?.brand?.name || 'apexmobile');
-      if (brandSlug) sessionStorage.setItem(`rd_nav_${brandSlug}`, '1');
+      const staticRes = await fetch(`/static-routes/${jsonFileName}`);
+      if (staticRes.ok) {
+        const staticPayload = await staticRes.json();
+        if (staticPayload && staticPayload.canonicalPath) {
+          routeCache.set(cacheKey, staticPayload);
+          return staticPayload;
+        }
+      }
     } catch {
-      // Ignore storage errors
+      // Fall back to /api/route if running in dynamic preview mode
     }
-    window.location.href = rawHref;
+  }
+
+  const res = await fetch(
+    `/api/route?path=${encodeURIComponent(cleanPath)}&cat=${encodeURIComponent(newsCat)}`
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (data?.success && data?.payload) {
+    routeCache.set(cacheKey, data.payload);
+    return data.payload;
+  }
+  throw new Error('Invalid route payload');
+}
+
+async function navigateToUrl(targetHref, pushState = true, newsCat = 'ALL') {
+  setDrawerState(false);
+
+  const urlObj = new URL(targetHref, window.location.origin);
+  const targetPath = urlObj.pathname || '/';
+  const targetHash = urlObj.hash || '';
+
+  if (
+    targetPath === '/moreinfo' ||
+    targetPath.startsWith('/moreinfo/') ||
+    targetPath === '/download' ||
+    targetPath.startsWith('/download/')
+  ) {
+    window.location.href = targetPath + urlObj.search + targetHash;
     return;
   }
 
-  // Case 3: Internal route ('/', '/news', '/news/:slug', '/privacy-policy', etc.)
   if (
-    rawHref.startsWith('/') &&
-    !rawHref.startsWith('/admin') &&
-    !rawHref.startsWith('/moreinfo') &&
-    !rawHref.startsWith('/download') &&
-    !rawHref.endsWith('.xml') &&
-    !rawHref.endsWith('.txt')
+    currentPayload &&
+    targetPath === window.location.pathname &&
+    targetHash &&
+    newsCat === currentNewsCategory
   ) {
-    window.history.pushState({}, '', rawHref);
-    await loadAndRenderRoute(rawHref, { scrollToTop: true });
+    if (pushState) window.history.pushState({}, '', `${targetPath}${targetHash}`);
+    const anchorEl = document.getElementById(targetHash.slice(1));
+    if (anchorEl) anchorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  try {
+    const payload = await fetchStaticRoutePayload(targetPath, newsCat);
+    if (pushState) {
+      window.history.pushState({}, '', `${targetPath}${targetHash}`);
+    }
+    renderPartialRoutePayload(payload, { preserveSsrDom: false });
+
+    if (targetHash) {
+      setTimeout(() => {
+        const el = document.getElementById(targetHash.slice(1));
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 30);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } catch {
+    window.location.href = targetHref;
   }
 }
 
-function toggleDrawer() {
-  const btn = document.getElementById('hamburger-toggle');
-  const drawer = document.getElementById('nav-drawer');
-  if (!btn || !drawer) return;
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a');
+  if (!link) return;
 
-  isDrawerOpen = !isDrawerOpen;
-  drawer.classList.toggle('hidden', !isDrawerOpen);
-  btn.classList.toggle('is-active', isDrawerOpen);
-  btn.setAttribute('aria-expanded', String(isDrawerOpen));
-}
+  const href = link.getAttribute('href');
+  if (!href) return;
 
-function closeDrawer() {
-  const btn = document.getElementById('hamburger-toggle');
-  const drawer = document.getElementById('nav-drawer');
-  isDrawerOpen = false;
-  if (drawer) drawer.classList.add('hidden');
-  if (btn) {
-    btn.classList.remove('is-active');
-    btn.setAttribute('aria-expanded', 'false');
-  }
-}
-
-export async function initApp() {
-  const hamburgerBtn = document.getElementById('hamburger-toggle');
-  if (hamburgerBtn) {
-    hamburgerBtn.addEventListener('click', toggleDrawer);
+  if (
+    href.startsWith('http://') ||
+    href.startsWith('https://') ||
+    href.startsWith('mailto:') ||
+    href.startsWith('tel:') ||
+    link.getAttribute('target') === '_blank'
+  ) {
+    return;
   }
 
-  // Global delegated click listener for internal links & news category filter buttons
-  document.addEventListener('click', async (e) => {
-    const target = e.target instanceof HTMLElement ? e.target : null;
-    if (!target) return;
+  if (
+    href === '/moreinfo' ||
+    href.startsWith('/moreinfo/') ||
+    href === '/download' ||
+    href.startsWith('/download/') ||
+    href === '/admin' ||
+    href.startsWith('/admin')
+  ) {
+    return;
+  }
 
-    // News category filter button on /news
-    const catBtn = target.closest('[data-news-cat]');
-    if (catBtn) {
-      selectedNewsCategory = catBtn.getAttribute('data-news-cat') || 'ALL';
-      await loadAndRenderRoute(window.location.pathname, { scrollToTop: false });
+  if (href.startsWith('#')) {
+    e.preventDefault();
+    setDrawerState(false);
+    const id = href.slice(1);
+    if (!id) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-
-    // Internal SPA link handler (Footer links, News links, Header links, Breadcrumbs)
-    const linkEl = target.closest('a');
-    if (linkEl) {
-      const href = linkEl.getAttribute('href') || '';
-      const isModifiedClick = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
-
-      // Record navigation breadcrumb for v12 Security Gateway (/moreinfo or /download)
-      if (!isModifiedClick && (href.startsWith('/moreinfo') || href.startsWith('/download'))) {
-        try {
-          sessionStorage.setItem('rd_nav_default', '1');
-          sessionStorage.setItem('rd_nav_apexmobile', '1');
-          const brandSlug = generateSlug(activeRoutePayload?.shell?.brand?.shortName || activeRoutePayload?.shell?.brand?.name || 'apexmobile');
-          if (brandSlug) sessionStorage.setItem(`rd_nav_${brandSlug}`, '1');
-        } catch {
-          // Ignore storage errors
-        }
-        return; // Let browser perform clean full-page navigation to /moreinfo
-      }
-
-      const isInternalRoute =
-        (href.startsWith('/') || href.startsWith('#')) &&
-        !href.startsWith('/admin') &&
-        !href.startsWith('/moreinfo') &&
-        !href.startsWith('/download') &&
-        !href.endsWith('.xml') &&
-        !href.endsWith('.txt') &&
-        linkEl.getAttribute('target') !== '_blank';
-
-      if (!isModifiedClick && isInternalRoute) {
-        e.preventDefault();
-        await navigateToRoute(href);
-        return;
-      }
+    if (currentPayload && currentPayload.viewType !== 'home') {
+      navigateToUrl(`/#${id}`, true);
+      return;
     }
-
-    // Close hamburger drawer when clicking outside
-    const drawer = document.getElementById('nav-drawer');
-    if (
-      isDrawerOpen &&
-      drawer &&
-      !drawer.contains(target) &&
-      hamburgerBtn &&
-      !hamburgerBtn.contains(target)
-    ) {
-      closeDrawer();
+    const targetEl = document.getElementById(id);
+    if (targetEl) {
+      window.history.pushState({}, '', `/#${id}`);
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  });
-
-  // Browser Back / Forward button support
-  window.addEventListener('popstate', () => {
-    loadAndRenderRoute(window.location.pathname, { scrollToTop: false });
-  });
-
-  // 1. INITIAL STATIC HYDRATION (0ms Latency, Preserves Pre-Rendered Static DOM)
-  const initialPathname = window.location.pathname;
-  const embeddedPayload = getStaticEmbeddedRouteSync(initialPathname);
-  if (embeddedPayload) {
-    renderPartialRoutePayload(embeddedPayload, { preserveSsrDom: true });
-  } else {
-    await loadAndRenderRoute(initialPathname, { scrollToTop: false });
+    return;
   }
 
-  // 2. Listen for local Admin static re-compilation notifications (same-browser preview convenience, zero Firebase)
-  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-    try {
-      const channel = new BroadcastChannel('apex_cms_sync_channel');
-      channel.onmessage = async (event) => {
-        if (event.data?.type === 'SITE_CONFIG_UPDATED') {
-          staticRouteMemoryCache.clear();
-          if (event.data.config) {
-            renderSite(event.data.config);
-          } else {
-            await loadAndRenderRoute(window.location.pathname, { scrollToTop: false });
-          }
-        }
-      };
-    } catch {
-      // BroadcastChannel optional
+  if (href.startsWith('/') || link.hasAttribute('data-spa-link')) {
+    e.preventDefault();
+    navigateToUrl(href, true);
+  }
+});
+
+window.addEventListener('popstate', () => {
+  navigateToUrl(window.location.pathname + window.location.hash, false);
+});
+
+async function bootstrapPublicPortal() {
+  const currentPathname = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+
+  if (window.__INITIAL_ROUTE_PAYLOAD__) {
+    const initialPayload = window.__INITIAL_ROUTE_PAYLOAD__;
+    routeCache.set(`${initialPayload.canonicalPath}::ALL`, initialPayload);
+    const ssrPath = dynamicContent ? dynamicContent.getAttribute('data-ssr-path') : null;
+    const isExactMatch =
+      ssrPath === currentPathname ||
+      (initialPayload.canonicalPath === currentPathname &&
+        dynamicContent &&
+        dynamicContent.innerHTML.trim().length > 0);
+
+    renderPartialRoutePayload(initialPayload, { preserveSsrDom: isExactMatch });
+
+    if (window.location.hash) {
+      const id = window.location.hash.slice(1);
+      const targetEl = document.getElementById(id);
+      if (targetEl) {
+        setTimeout(() => targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
+      }
     }
+    return;
+  }
+
+  try {
+    const payload = await fetchStaticRoutePayload(currentPathname, 'ALL');
+    renderPartialRoutePayload(payload, { preserveSsrDom: false });
+  } catch (err) {
+    console.warn('Static route initialization fallback:', err);
   }
 }
 
-if (typeof document !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp);
-  } else {
-    initApp();
-  }
-}
+bootstrapPublicPortal();
