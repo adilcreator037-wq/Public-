@@ -5,15 +5,19 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import {
-  MASTER_DEFAULT_CONFIG,
+  EMPTY_ADMIN_CONFIG,
+  isCmsModuleKey,
+  applyModulePatch,
+  applyMultiModulePatch,
+  preserveSecretsOnSave,
+  sanitizeConfigForClient,
+  appendSyncLogEntry,
+  resolveAdminSecurityPolicy,
+  validateAdminSessionClaims,
   mergeSiteConfig,
-  generateSmartLegalHtml,
   generateSlug,
   buildPartialRoutePayload,
   renderCompleteStaticPageHtml,
-  compileStaticSiteBundle,
-  verifyGitHubRepoAccess,
-  pushStaticFilesToGitHub,
   generateSitemapXml,
   generateRobotsTxt,
   generateRssFeedXml,
@@ -28,10 +32,15 @@ import {
   normalizeFirebaseClientConfig,
   isValidFirebaseClientConfig,
   sanitizeTurnstileKey,
+  sanitizeFirebaseConfigForClient,
   GateRequestContext,
   SiteConfig,
-  GitHubDeployLogItem
+  SyncLogEntry,
+  CmsModuleKey
 } from './src/utils/cms-engine';
+import { compileStaticSiteBundle } from './src/utils/static-compiler';
+import { verifyGitHubRepoAccess, pushStaticFilesToGitHub } from './src/utils/github-publisher';
+import { getAdminWorkspaceShellHtml } from './src/utils/admin-workspace-html';
 
 dotenv.config();
 
@@ -55,19 +64,19 @@ function cleanEnvVal(val: unknown): string {
     .trim();
 }
 
-function getAdminAuthEnv() {
+function getAdminAuthEnv(reqHost = '') {
+  const policy = resolveAdminSecurityPolicy(process.env, reqHost);
+
   const email =
     cleanEnvVal(process.env.ADMIN_EMAIL) ||
     cleanEnvVal(process.env.ADMIN_USER) ||
     cleanEnvVal(process.env.ADMIN_USERNAME) ||
-    cleanEnvVal(process.env.CMS_ADMIN_EMAIL) ||
-    'admin@domain.com';
+    cleanEnvVal(process.env.CMS_ADMIN_EMAIL);
 
   const password =
     cleanEnvVal(process.env.ADMIN_PASSWORD) ||
     cleanEnvVal(process.env.ADMIN_PASS) ||
-    cleanEnvVal(process.env.CMS_ADMIN_PASSWORD) ||
-    'admin123';
+    cleanEnvVal(process.env.CMS_ADMIN_PASSWORD);
 
   const apiKey =
     cleanEnvVal(process.env.ADMIN_API_KEY) ||
@@ -77,37 +86,35 @@ function getAdminAuthEnv() {
   const secret =
     cleanEnvVal(process.env.ADMIN_SESSION_SECRET) ||
     cleanEnvVal(process.env.ADMIN_SECRET) ||
-    cleanEnvVal(process.env.SESSION_SECRET) ||
-    'master-cms-hmac-secret-2026';
-
-  const isCustomEmail = Boolean(
-    process.env.ADMIN_EMAIL ||
-    process.env.ADMIN_USER ||
-    process.env.ADMIN_USERNAME ||
-    process.env.CMS_ADMIN_EMAIL
-  );
-
-  const isCustomPassword = Boolean(
-    process.env.ADMIN_PASSWORD ||
-    process.env.ADMIN_PASS ||
-    process.env.CMS_ADMIN_PASSWORD
-  );
+    cleanEnvVal(process.env.SESSION_SECRET);
 
   return {
-    email,
-    password,
-    apiKey,
-    secret,
-    isCustomEmail,
-    isCustomPassword,
-    requiresApiKey: Boolean(apiKey)
+    email: policy.hasCustomEmail ? email : '',
+    password: policy.hasCustomPassword ? password : '',
+    apiKey: policy.hasApiKey ? apiKey : '',
+    secret: policy.hasCustomSecret ? secret : '',
+    isCustomEmail: policy.hasCustomEmail,
+    isCustomPassword: policy.hasCustomPassword,
+    isCustomSecret: policy.hasCustomSecret,
+    requiresApiKey: policy.hasApiKey,
+    policy
   };
 }
+
+let runtimeFirebaseOverride: ReturnType<typeof normalizeFirebaseClientConfig> | null = null;
 
 /**
  * Optional Bootstrap Firebase Environment Variable Reader (Used ONLY by Authenticated Admin Studio)
  */
 function getFirebaseEnvConfig() {
+  if (runtimeFirebaseOverride && isValidFirebaseClientConfig(runtimeFirebaseOverride)) {
+    return {
+      isConfigured: true,
+      source: 'runtime' as const,
+      config: runtimeFirebaseOverride
+    };
+  }
+
   const rawJsonEnv = cleanEnvVal(
     process.env.FIREBASE_CONFIG_JSON || process.env.VITE_FIREBASE_CONFIG_JSON
   );
@@ -155,7 +162,24 @@ function getFirebaseEnvConfig() {
 
   return {
     isConfigured,
+    source: isConfigured ? ('env' as const) : ('none' as const),
     config: isConfigured ? candidate : null
+  };
+}
+
+function getEnvSecretFlags() {
+  const githubTokenEnv = cleanEnvVal(
+    process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+  );
+  const turnstileSecretEnv = sanitizeTurnstileKey(
+    process.env.TURNSTILE_SECRET_KEY ||
+      process.env.VITE_TURNSTILE_SECRET_KEY ||
+      process.env.CF_TURNSTILE_SECRET_KEY ||
+      ''
+  );
+  return {
+    hasEnvGithubToken: Boolean(githubTokenEnv),
+    hasEnvTurnstileSecret: Boolean(turnstileSecretEnv)
   };
 }
 
@@ -165,63 +189,65 @@ function buildSafeEnvDiagnostics(
   includeFirebaseConfig = false,
   siteConfig?: SiteConfig
 ) {
-  const sessionSecretSet = Boolean(
-    cleanEnvVal(process.env.ADMIN_SESSION_SECRET) ||
-    cleanEnvVal(process.env.ADMIN_SECRET) ||
-    cleanEnvVal(process.env.SESSION_SECRET)
-  );
   const vaultSecretSet = Boolean(
     cleanEnvVal(process.env.VAULT_ENCRYPTION_SECRET) ||
-    cleanEnvVal(process.env.LINK_VAULT_MASTER_SECRET) ||
-    cleanEnvVal(process.env.AES_KEY) ||
-    cleanEnvVal(process.env.AES_SECRET) ||
-    cleanEnvVal(process.env.VAULT_SECRET_KEY) ||
-    cleanEnvVal(process.env.HMAC_SECRET)
+      cleanEnvVal(process.env.LINK_VAULT_MASTER_SECRET) ||
+      cleanEnvVal(process.env.AES_KEY) ||
+      cleanEnvVal(process.env.AES_SECRET) ||
+      cleanEnvVal(process.env.VAULT_SECRET_KEY) ||
+      cleanEnvVal(process.env.HMAC_SECRET)
   );
   const turnstileSiteKeyEnv = sanitizeTurnstileKey(
     process.env.VITE_TURNSTILE_SITE_KEY ||
-    process.env.TURNSTILE_SITE_KEY ||
-    process.env.CF_TURNSTILE_SITE_KEY ||
-    siteConfig?.securityGate?.turnstileSiteKey ||
-    ''
+      process.env.TURNSTILE_SITE_KEY ||
+      process.env.CF_TURNSTILE_SITE_KEY ||
+      siteConfig?.securityGate?.turnstileSiteKey ||
+      ''
   );
-  const turnstileSecretEnv = sanitizeTurnstileKey(
-    process.env.TURNSTILE_SECRET_KEY ||
-    process.env.VITE_TURNSTILE_SECRET_KEY ||
-    process.env.CF_TURNSTILE_SECRET_KEY ||
-    siteConfig?.securityGate?.turnstileSecretKey ||
-    ''
-  );
-  const githubTokenEnv = cleanEnvVal(
-    process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
-  );
+  const { hasEnvGithubToken, hasEnvTurnstileSecret } = getEnvSecretFlags();
 
   return {
+    isProduction: adminEnv.policy.isProduction,
     adminEmailConfigured: adminEnv.isCustomEmail,
     adminPasswordConfigured: adminEnv.isCustomPassword,
     adminApiKeyRequired: adminEnv.requiresApiKey,
-    adminSessionSecretCustom: sessionSecretSet,
+    adminSessionSecretCustom: adminEnv.isCustomSecret,
     vaultSecretCustom: vaultSecretSet,
     turnstileSiteKeyConfigured: Boolean(turnstileSiteKeyEnv),
-    turnstileSecretKeyConfigured: Boolean(turnstileSecretEnv),
-    githubTokenConfigured: Boolean(githubTokenEnv),
+    turnstileSecretKeyConfigured: Boolean(
+      hasEnvTurnstileSecret ||
+        siteConfig?.securityGate?.turnstileSecretKey ||
+        siteConfig?.securityGate?.hasTurnstileSecretKey
+    ),
+    githubTokenConfigured: Boolean(
+      hasEnvGithubToken ||
+        siteConfig?.githubConfig?.fineGrainedToken ||
+        siteConfig?.githubConfig?.hasFineGrainedToken
+    ),
     firebaseEnvConfigured: fbEnv.isConfigured,
     firebaseProjectId: fbEnv.config?.projectId || null,
-    ...(includeFirebaseConfig ? { firebaseConfig: fbEnv.config } : {}),
+    ...(includeFirebaseConfig
+      ? { firebaseConfig: sanitizeFirebaseConfigForClient(fbEnv.config) }
+      : {}),
     runtime: 'Node.js Express'
   };
 }
 
-function getEnvSeededDefaultConfig(): SiteConfig {
-  const base = JSON.parse(JSON.stringify(MASTER_DEFAULT_CONFIG)) as SiteConfig;
+/**
+ * Clean Empty Admin Configuration seeded ONLY with optional Infrastructure Env Vars
+ * (Zero static/demo articles, sections, or FAQs!)
+ */
+function getEnvSeededEmptyConfig(): SiteConfig {
+  const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG)) as SiteConfig;
   const envBrand = (process.env.SITE_BRAND_NAME || '').trim();
   const envCanonical = (process.env.SITE_CANONICAL_URL || '').trim();
   const envEmail = (process.env.SITE_CONTACT_EMAIL || '').trim();
 
   if (envBrand) {
     base.brand.name = envBrand;
+    base.brand.shortName = envBrand;
     base.seo.softwareDetails.name = envBrand;
-    base.navigation.copyright = `© 2026 ${envBrand}. All rights reserved.`;
+    base.navigation.copyright = `© ${new Date().getFullYear()} ${envBrand}. All rights reserved.`;
   }
   if (envCanonical) {
     base.seo.canonicalUrl = envCanonical;
@@ -231,7 +257,6 @@ function getEnvSeededDefaultConfig(): SiteConfig {
     base.brand.contactEmail = envEmail;
   }
 
-  // Seed GitHub static publisher settings from environment variables if provided
   const envGhOwner = cleanEnvVal(process.env.GITHUB_REPO_OWNER || process.env.GITHUB_OWNER);
   const envGhRepo = cleanEnvVal(process.env.GITHUB_REPO_NAME || process.env.GITHUB_REPO);
   const envGhBranch = cleanEnvVal(process.env.GITHUB_BRANCH);
@@ -241,29 +266,171 @@ function getEnvSeededDefaultConfig(): SiteConfig {
   if (envGhOwner) base.githubConfig.repoOwner = envGhOwner;
   if (envGhRepo) base.githubConfig.repoName = envGhRepo;
   if (envGhBranch) base.githubConfig.branch = envGhBranch;
-  if (envGhToken) base.githubConfig.fineGrainedToken = envGhToken;
+  if (envGhToken) {
+    base.githubConfig.fineGrainedToken = envGhToken;
+    base.githubConfig.hasFineGrainedToken = true;
+  }
 
-  if (envBrand || envCanonical || envEmail) {
-    const b = base.brand.name;
-    const c = base.seo.canonicalUrl;
-    const e = base.brand.contactEmail;
-    base.pages = base.pages.map((pg) => {
-      if (pg.slug === 'privacy-policy') {
-        return { ...pg, metaTitle: `Privacy Policy | ${b}`, htmlContent: generateSmartLegalHtml('privacy', b, c, e) };
+  return base;
+}
+
+function decodeFsVal(val: any): any {
+  if (!val || typeof val !== 'object') return null;
+  if ('stringValue' in val) return val.stringValue;
+  if ('booleanValue' in val) return val.booleanValue;
+  if ('integerValue' in val) return Number(val.integerValue);
+  if ('doubleValue' in val) return Number(val.doubleValue);
+  if ('nullValue' in val) return null;
+  if ('arrayValue' in val) {
+    return (val.arrayValue?.values || []).map((item: any) => decodeFsVal(item));
+  }
+  if ('mapValue' in val) {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val.mapValue?.fields || {})) {
+      out[k] = decodeFsVal(v);
+    }
+    return out;
+  }
+  return null;
+}
+
+function encodeFsVal(val: any): Record<string, any> {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === 'string') return { stringValue: val };
+  if (typeof val === 'boolean') return { booleanValue: val };
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return { integerValue: '0' };
+    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  }
+  if (Array.isArray(val)) {
+    return { arrayValue: { values: val.map((item) => encodeFsVal(item)) } };
+  }
+  if (typeof val === 'object') {
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) fields[k] = encodeFsVal(v);
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+async function readSiteConfigWithStatusNode(
+  fbCfg: any
+): Promise<{ status: 'ok' | 'empty' | 'error'; config: SiteConfig | null; error?: string }> {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) {
+    return { status: 'error', config: null, error: 'Missing Firebase config' };
+  }
+  const dbId = encodeURIComponent(fbCfg.databaseId || '(default)');
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    fbCfg.projectId
+  )}/databases/${dbId}/documents`;
+
+  const [modulesRes, mainRes] = await Promise.all([
+    fetch(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
+      headers: { Accept: 'application/json' }
+    }).catch(() => null),
+    fetch(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
+      headers: { Accept: 'application/json' }
+    }).catch(() => null)
+  ]);
+
+  if (!modulesRes && !mainRes) {
+    return { status: 'error', config: null, error: 'Network error reaching Firestore' };
+  }
+
+  let mainObj: Record<string, any> | null = null;
+  if (mainRes && mainRes.ok) {
+    const docData: any = await mainRes.json().catch(() => null);
+    if (docData?.fields) {
+      mainObj = {};
+      for (const [k, v] of Object.entries(docData.fields)) {
+        mainObj[k] = decodeFsVal(v);
       }
-      if (pg.slug === 'terms-and-conditions') {
-        return { ...pg, metaTitle: `Terms and Conditions | ${b}`, htmlContent: generateSmartLegalHtml('terms', b, c, e) };
+    }
+  } else if (mainRes && mainRes.status !== 404 && (!modulesRes || !modulesRes.ok)) {
+    return { status: 'error', config: null, error: `Firestore HTTP ${mainRes.status}` };
+  }
+
+  let modulesCount = 0;
+  const assembled: Record<string, any> = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+  if (mainObj) {
+    for (const key of Object.keys(mainObj)) {
+      if (key !== 'modularSync') assembled[key] = mainObj[key];
+    }
+  }
+  if (modulesRes && modulesRes.ok) {
+    const listData: any = await modulesRes.json().catch(() => null);
+    const docs = Array.isArray(listData?.documents) ? listData.documents : [];
+    for (const docItem of docs) {
+      const docName = String(docItem.name || '').split('/').pop() || '';
+      if (isCmsModuleKey(docName) && docItem.fields) {
+        const decodedFields: Record<string, any> = {};
+        for (const [k, v] of Object.entries(docItem.fields)) {
+          decodedFields[k] = decodeFsVal(v);
+        }
+        if (decodedFields.data !== undefined) {
+          assembled[docName] = decodedFields.data;
+          modulesCount += 1;
+        }
       }
-      if (pg.slug === 'dmca-disclaimer') {
-        return { ...pg, metaTitle: `DMCA Disclaimer | ${b}`, htmlContent: generateSmartLegalHtml('dmca', b, c, e) };
+    }
+  }
+  if (modulesCount === 0 && !mainObj) {
+    return { status: 'empty', config: null };
+  }
+  return { status: 'ok', config: mergeSiteConfig(assembled, EMPTY_ADMIN_CONFIG) };
+}
+
+async function writeBatchToFirestoreRestNode(
+  fbCfg: any,
+  modulesMap: Record<string, any>,
+  meta: { updatedAt?: number; dirtyModulesSinceSync?: string[] } = {}
+): Promise<boolean> {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) return false;
+  const dbIdRaw = fbCfg.databaseId || '(default)';
+  const docRoot = `projects/${fbCfg.projectId}/databases/${dbIdRaw}/documents`;
+  const commitUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    fbCfg.projectId
+  )}/databases/${encodeURIComponent(dbIdRaw)}/documents:commit?key=${encodeURIComponent(fbCfg.apiKey)}`;
+  const now = meta.updatedAt || Date.now();
+  const writes: Array<Record<string, any>> = [];
+
+  for (const [moduleKey, moduleData] of Object.entries(modulesMap || {})) {
+    if (!isCmsModuleKey(moduleKey) || moduleData === undefined) continue;
+    writes.push({
+      update: {
+        name: `${docRoot}/cmsModules/${moduleKey}`,
+        fields: {
+          data: encodeFsVal(moduleData),
+          updatedAt: encodeFsVal(now)
+        }
       }
-      if (pg.slug === 'contact-support') {
-        return { ...pg, metaTitle: `Contact Support | ${b}`, htmlContent: generateSmartLegalHtml('contact', b, c, e) };
-      }
-      return pg;
     });
   }
-  return base;
+
+  writes.push({
+    update: {
+      name: `${docRoot}/siteConfig/main`,
+      fields: {
+        updatedAt: encodeFsVal(now),
+        dirtyModulesSinceSync: encodeFsVal(meta.dirtyModulesSinceSync || []),
+        modularSync: encodeFsVal(true)
+      }
+    },
+    updateMask: { fieldPaths: ['updatedAt', 'dirtyModulesSinceSync', 'modularSync'] }
+  });
+
+  try {
+    const res = await fetch(commitUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 let cachedServerConfig: SiteConfig | null = null;
@@ -308,22 +475,35 @@ function loadPersistedSiteConfig(): SiteConfig {
     if (fs.existsSync(CONFIG_FILE_PATH)) {
       const raw = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
-      cachedServerConfig = mergeSiteConfig(parsed, getEnvSeededDefaultConfig());
+      cachedServerConfig = mergeSiteConfig(parsed, EMPTY_ADMIN_CONFIG);
       buildStaticPublicFilesOnDisk(cachedServerConfig);
       return cachedServerConfig;
     }
   } catch (err) {
-    console.warn('Warning reading site-config.json, initializing fresh default:', err);
+    console.warn('Warning reading site-config.json, initializing clean state:', err);
   }
 
-  const seeded = getEnvSeededDefaultConfig();
+  const seeded = getEnvSeededEmptyConfig();
   savePersistedSiteConfig(seeded);
   return seeded;
 }
 
 function savePersistedSiteConfig(newConfig: Partial<SiteConfig>): SiteConfig {
-  const normalized = mergeSiteConfig(newConfig, getEnvSeededDefaultConfig());
+  const existing = cachedServerConfig || EMPTY_ADMIN_CONFIG;
+  const withSecrets = preserveSecretsOnSave(newConfig, existing);
+  const normalized = mergeSiteConfig(withSecrets, EMPTY_ADMIN_CONFIG);
   normalized.updatedAt = Date.now();
+  normalized.syncLogs = Array.isArray(withSecrets.syncLogs)
+    ? withSecrets.syncLogs.slice(0, 30)
+    : Array.isArray(existing.syncLogs)
+    ? existing.syncLogs.slice(0, 30)
+    : [];
+  normalized.dirtyModulesSinceSync = Array.isArray(withSecrets.dirtyModulesSinceSync)
+    ? withSecrets.dirtyModulesSinceSync
+    : Array.isArray(existing.dirtyModulesSinceSync)
+    ? existing.dirtyModulesSinceSync
+    : [];
+
   cachedServerConfig = normalized;
 
   try {
@@ -341,21 +521,49 @@ function savePersistedSiteConfig(newConfig: Partial<SiteConfig>): SiteConfig {
 }
 
 function safeTimingCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(String(a || ''), 'utf-8');
-  const bufB = Buffer.from(String(b || ''), 'utf-8');
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  // Hash both values with SHA-256 so buffer lengths are always identical (32 bytes),
+  // eliminating secret-length timing side-channels.
+  const digestA = crypto.createHash('sha256').update(a, 'utf-8').digest();
+  const digestB = crypto.createHash('sha256').update(b, 'utf-8').digest();
+  return crypto.timingSafeEqual(digestA, digestB);
 }
 
 const loginAttemptTracker = new Map<string, { count: number; resetAt: number }>();
+const revokedJtis = new Map<string, number>();
+
+function cleanupRevokedJtis() {
+  const now = Date.now();
+  for (const [jti, exp] of revokedJtis.entries()) {
+    if (now > exp) {
+      revokedJtis.delete(jti);
+    }
+  }
+  while (revokedJtis.size > 5000) {
+    const oldestKey = revokedJtis.keys().next().value;
+    if (!oldestKey) break;
+    revokedJtis.delete(oldestKey);
+  }
+}
+
+function getTrustedLoginRateLimitIp(req: express.Request): string {
+  const cfIp = cleanEnvVal(req.headers['cf-connecting-ip']);
+  if (cfIp) return cfIp;
+  if (cleanEnvVal(process.env.TRUST_PROXY).toLowerCase() === 'true') {
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (xff) return xff;
+  }
+  return String(req.socket.remoteAddress || 'local').trim();
+}
 
 function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfterSec?: number } {
   const now = Date.now();
   const entry = loginAttemptTracker.get(ip);
   if (!entry || now > entry.resetAt) {
+    if (entry) loginAttemptTracker.delete(ip);
     return { allowed: true };
   }
-  if (entry.count >= 15) {
+  if (entry.count >= 12) {
     return { allowed: false, retryAfterSec: Math.ceil((entry.resetAt - now) / 1000) };
   }
   return { allowed: true };
@@ -363,6 +571,14 @@ function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfterSec?: nu
 
 function recordFailedLoginAttempt(ip: string) {
   const now = Date.now();
+  for (const [k, v] of loginAttemptTracker.entries()) {
+    if (now > v.resetAt) loginAttemptTracker.delete(k);
+  }
+  while (loginAttemptTracker.size > 5000) {
+    const oldest = loginAttemptTracker.keys().next().value;
+    if (!oldest) break;
+    loginAttemptTracker.delete(oldest);
+  }
   const entry = loginAttemptTracker.get(ip);
   if (!entry || now > entry.resetAt) {
     loginAttemptTracker.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 });
@@ -375,12 +591,65 @@ function clearLoginAttempts(ip: string) {
   loginAttemptTracker.delete(ip);
 }
 
-function createAdminToken(email: string): string {
-  const { secret } = getAdminAuthEnv();
+function parseCookies(cookieHeader = ''): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!cookieHeader) return out;
+  for (const part of String(cookieHeader).split(';')) {
+    const idx = part.indexOf('=');
+    if (idx <= 0) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (!k) continue;
+    try {
+      out[k] = decodeURIComponent(v);
+    } catch {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function isHttpsRequest(req: express.Request): boolean {
+  const xfProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+  return Boolean(req.secure || xfProto.includes('https'));
+}
+
+function getSessionCookieName(isHttps: boolean): string {
+  return isHttps ? '__Host-cms_admin_session' : 'cms_admin_session';
+}
+
+function setAdminSessionCookie(res: express.Response, token: string, isHttps: boolean) {
+  const name = getSessionCookieName(isHttps);
+  const parts = [
+    `${name}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${60 * 60 * 24 * 7}`
+  ];
+  if (isHttps) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearAdminSessionCookie(res: express.Response, isHttps: boolean) {
+  const cookies = [
+    'cms_admin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    `__Host-cms_admin_session=; Path=/; HttpOnly; SameSite=Lax; ${isHttps ? 'Secure; ' : ''}Max-Age=0`
+  ];
+  res.setHeader('Set-Cookie', cookies);
+}
+
+function createAdminToken(email: string, secret: string): string {
+  const jti = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
+  const now = Date.now();
   const payload = JSON.stringify({
+    iss: 'master-cms-admin',
+    typ: 'admin-session',
     email,
-    iat: Date.now(),
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 7
+    role: 'Master Administrator',
+    jti,
+    iat: now,
+    exp: now + 1000 * 60 * 60 * 24 * 7
   });
   const base64Payload = Buffer.from(payload).toString('base64url');
   const signature = crypto
@@ -390,20 +659,49 @@ function createAdminToken(email: string): string {
   return `${base64Payload}.${signature}`;
 }
 
-function verifyAdminToken(token: string | undefined): { valid: boolean; email?: string } {
-  if (!token) return { valid: false };
-  const { secret, apiKey } = getAdminAuthEnv();
+function extractAdminTokenFromReq(req: express.Request): {
+  token: string;
+  viaApiKeyHeader: boolean;
+} {
+  const authHeader = req.headers.authorization || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const headerApiKey = ((req.headers['x-admin-api-key'] as string) || '').trim();
+  const cookies = parseCookies(req.headers.cookie || '');
+  const cookieToken =
+    cookies['__Host-cms_admin_session'] || cookies['cms_admin_session'] || '';
 
-  if (apiKey && safeTimingCompare(token, apiKey)) {
-    return { valid: true, email: 'api-key-admin' };
+  if (headerApiKey) {
+    return { token: headerApiKey, viaApiKeyHeader: true };
   }
+  if (cookieToken) {
+    return { token: cookieToken, viaApiKeyHeader: false };
+  }
+  return { token: bearerToken, viaApiKeyHeader: false };
+}
+
+function verifyAdminToken(
+  token: string | undefined,
+  reqHost = '',
+  ignoreExpiryForLogout = false
+): { valid: boolean; email?: string; role?: string; jti?: string; exp?: number; policyError?: string } {
+  const adminEnv = getAdminAuthEnv(reqHost);
+  if (!adminEnv.policy.credentialsReady) {
+    return { valid: false, policyError: adminEnv.policy.setupError || 'Admin auth not configured' };
+  }
+  if (!token || typeof token !== 'string') return { valid: false };
+
+  if (adminEnv.apiKey && safeTimingCompare(token, adminEnv.apiKey)) {
+    return { valid: true, email: 'api-key-admin', role: 'Master Administrator' };
+  }
+
+  if (!adminEnv.secret) return { valid: false };
 
   const parts = token.split('.');
   if (parts.length !== 2) return { valid: false };
   const [base64Payload, signature] = parts;
 
   const expectedSig = crypto
-    .createHmac('sha256', secret)
+    .createHmac('sha256', adminEnv.secret)
     .update(base64Payload)
     .digest('base64url');
 
@@ -411,21 +709,87 @@ function verifyAdminToken(token: string | undefined): { valid: boolean; email?: 
 
   try {
     const decoded = JSON.parse(Buffer.from(base64Payload, 'base64url').toString('utf-8'));
-    if (decoded.exp && Date.now() > decoded.exp) {
+    const claimCheck = validateAdminSessionClaims(decoded, Date.now());
+    if (!claimCheck.valid || !claimCheck.claims) {
+      if (ignoreExpiryForLogout && claimCheck.reason === 'expired' && typeof decoded?.jti === 'string') {
+        return { valid: false, jti: decoded.jti, exp: typeof decoded.exp === 'number' ? decoded.exp : undefined };
+      }
       return { valid: false };
     }
-    return { valid: true, email: decoded.email };
+    if (revokedJtis.has(claimCheck.claims.jti)) {
+      return { valid: false };
+    }
+    return {
+      valid: true,
+      email: claimCheck.claims.email,
+      role: claimCheck.claims.role,
+      jti: claimCheck.claims.jti,
+      exp: claimCheck.claims.exp
+    };
   } catch {
     return { valid: false };
   }
 }
 
-function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const authHeader = req.headers.authorization || '';
-  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const headerApiKey = ((req.headers['x-admin-api-key'] as string) || '').trim();
+function verifyAdminCsrf(req: express.Request): { ok: boolean; error?: string } {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return { ok: true };
+  }
 
-  const verification = verifyAdminToken(bearerToken || headerApiKey);
+  const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase().trim();
+  if (secFetchSite === 'cross-site') {
+    return { ok: false, error: 'Cross-site request blocked.' };
+  }
+
+  const reqHost = String(req.headers.host || '').toLowerCase();
+  const origin = String(req.headers.origin || '').trim();
+  const referer = String(req.headers.referer || '').trim();
+
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host.toLowerCase();
+      if (reqHost && originHost !== reqHost) {
+        return { ok: false, error: 'Cross-origin mutating request blocked.' };
+      }
+    } catch {
+      return { ok: false, error: 'Invalid Origin header.' };
+    }
+  } else if (referer) {
+    try {
+      const refHost = new URL(referer).host.toLowerCase();
+      if (reqHost && refHost !== reqHost) {
+        return { ok: false, error: 'Cross-origin Referer blocked.' };
+      }
+    } catch {
+      return { ok: false, error: 'Invalid Referer header.' };
+    }
+  }
+
+  const adminEnv = getAdminAuthEnv(req.headers.host || '');
+  const headerApiKey = ((req.headers['x-admin-api-key'] as string) || '').trim();
+  if (headerApiKey && adminEnv.apiKey && safeTimingCompare(headerApiKey, adminEnv.apiKey)) {
+    return { ok: true };
+  }
+
+  const csrfHeader = String(req.headers['x-admin-csrf'] || req.headers['x-requested-with'] || '').trim();
+  if (csrfHeader !== '1' && csrfHeader !== 'XMLHttpRequest') {
+    return { ok: false, error: 'Missing required CSRF verification header (X-Admin-CSRF).' };
+  }
+
+  return { ok: true };
+}
+
+function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const { token } = extractAdminTokenFromReq(req);
+  const verification = verifyAdminToken(token, req.headers.host || '');
+  if (verification.policyError) {
+    res.status(503).json({
+      success: false,
+      code: 'admin-not-configured',
+      error: verification.policyError
+    });
+    return;
+  }
   if (!verification.valid) {
     res.status(401).json({
       success: false,
@@ -433,23 +797,55 @@ function requireAdminAuth(req: express.Request, res: express.Response, next: exp
     });
     return;
   }
+
+  const csrf = verifyAdminCsrf(req);
+  if (!csrf.ok) {
+    res.status(403).json({
+      success: false,
+      error: csrf.error || 'CSRF verification failed.'
+    });
+    return;
+  }
+
   (req as any).adminEmail = verification.email;
+  (req as any).adminJti = verification.jti;
+  (req as any).adminExp = verification.exp;
   next();
 }
 
 async function startServer() {
   const app = express();
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    const urlPath = req.path || '';
+    if (
+      urlPath.startsWith('/admin') ||
+      urlPath.startsWith('/api/admin') ||
+      urlPath.startsWith('/api/config') ||
+      urlPath.startsWith('/api/github') ||
+      urlPath.startsWith('/api/firebase') ||
+      urlPath === '/api/static-bundle' ||
+      urlPath === '/api/upload-image' ||
+      urlPath === '/api/news'
+    ) {
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+    }
     next();
   });
   app.use(express.json({ limit: '15mb' }));
   app.use('/uploads', express.static(UPLOADS_DIR));
   app.use('/static-routes', express.static(PUBLIC_STATIC_ROUTES_DIR));
 
-  // Ensure initial static bundle is compiled on startup
-  loadPersistedSiteConfig();
+  setImmediate(() => {
+    try {
+      loadPersistedSiteConfig();
+    } catch (err) {
+      console.warn('Initial config warmup warning:', err);
+    }
+  });
 
   // 1. Static / Partial Route Payload Endpoint (Used when filtering news categories or fallback)
   app.get('/api/route', (req, res) => {
@@ -465,13 +861,66 @@ async function startServer() {
     });
   });
 
-  // 2. Environment Firebase Config Endpoint (Protected: Authenticated Admin Studio ONLY)
+  // 2. Environment Firebase Config Endpoint (Protected: Authenticated Admin Studio ONLY — Never leaks raw apiKey)
   app.get('/api/firebase-config', requireAdminAuth, (_req, res) => {
     const fbEnv = getFirebaseEnvConfig();
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       success: true,
-      ...fbEnv
+      isConfigured: fbEnv.isConfigured,
+      source: fbEnv.source,
+      config: sanitizeFirebaseConfigForClient(fbEnv.config)
+    });
+  });
+
+  // 2a. Save or Revert Runtime Firebase Connection Server-Side (`POST /api/firebase/connect`)
+  app.post('/api/firebase/connect', requireAdminAuth, async (req, res) => {
+    if (req.body?.clear) {
+      runtimeFirebaseOverride = null;
+      const fbEnv = getFirebaseEnvConfig();
+      res.json({
+        success: true,
+        cleared: true,
+        isConfigured: fbEnv.isConfigured,
+        config: sanitizeFirebaseConfigForClient(fbEnv.config)
+      });
+      return;
+    }
+
+    const rawCandidate = req.body?.firebaseConfig || req.body || {};
+    const envCfg = getFirebaseEnvConfig().config;
+    const mergedCandidate = normalizeFirebaseClientConfig({
+      ...rawCandidate,
+      apiKey:
+        rawCandidate.apiKey && rawCandidate.apiKey !== '__SECRET_CONFIGURED__'
+          ? rawCandidate.apiKey
+          : envCfg?.apiKey || ''
+    });
+
+    if (!isValidFirebaseClientConfig(mergedCandidate)) {
+      res.status(400).json({
+        success: false,
+        error: 'Valid Firebase API Key and Project ID are required.'
+      });
+      return;
+    }
+
+    runtimeFirebaseOverride = mergedCandidate;
+    const cloudRead = await readSiteConfigWithStatusNode(mergedCandidate);
+    let currentConfig = loadPersistedSiteConfig();
+    if (cloudRead.status === 'ok' && cloudRead.config) {
+      currentConfig = savePersistedSiteConfig(preserveSecretsOnSave(cloudRead.config, currentConfig));
+    } else if (cloudRead.status === 'empty') {
+      currentConfig = savePersistedSiteConfig(getEnvSeededEmptyConfig());
+    }
+
+    const fbEnv = getFirebaseEnvConfig();
+    res.json({
+      success: true,
+      isConfigured: fbEnv.isConfigured,
+      firestoreStatus: cloudRead.status,
+      config: sanitizeFirebaseConfigForClient(fbEnv.config),
+      siteConfig: sanitizeConfigForClient(currentConfig, getEnvSecretFlags())
     });
   });
 
@@ -479,9 +928,14 @@ async function startServer() {
   app.post('/api/firebase/test', requireAdminAuth, async (req, res) => {
     const fbEnv = getFirebaseEnvConfig();
     const rawCandidate = req.body?.firebaseConfig || {};
-    const cfg = normalizeFirebaseClientConfig(
-      rawCandidate.apiKey && rawCandidate.projectId ? rawCandidate : fbEnv.config || {}
-    );
+    const cfg = normalizeFirebaseClientConfig({
+      ...(fbEnv.config || {}),
+      ...rawCandidate,
+      apiKey:
+        rawCandidate.apiKey && rawCandidate.apiKey !== '__SECRET_CONFIGURED__'
+          ? rawCandidate.apiKey
+          : fbEnv.config?.apiKey || ''
+    });
 
     if (!isValidFirebaseClientConfig(cfg)) {
       res.status(400).json({
@@ -510,7 +964,7 @@ async function startServer() {
           documentExists: true,
           projectId: cfg.projectId,
           databaseId: cfg.databaseId,
-          message: `Connected to Firestore (${cfg.projectId}) — live siteConfig/main document found.`
+          message: `Connected to Firestore (${cfg.projectId}) — live modular workspace verified.`
         });
         return;
       }
@@ -526,7 +980,7 @@ async function startServer() {
           documentExists: false,
           projectId: cfg.projectId,
           databaseId: cfg.databaseId,
-          message: `Connected to Firestore (${cfg.projectId}). Document siteConfig/main will be created on your next Publish.`
+          message: `Connected to Firestore (${cfg.projectId}). Database is empty and ready for your live edits.`
         });
         return;
       }
@@ -554,18 +1008,39 @@ async function startServer() {
     }
   });
 
-  // 3. Live Admin Configuration Endpoint (Protected: Authenticated Admin Studio ONLY — Never cached)
-  app.get('/api/config', requireAdminAuth, (_req, res) => {
-    const config = loadPersistedSiteConfig();
-    const adminEnv = getAdminAuthEnv();
+  // 3. Live Admin Configuration Endpoint (Protected: Authenticated Admin Studio ONLY — Never cached, Secrets Masked)
+  app.get('/api/config', requireAdminAuth, async (req, res) => {
+    const adminEnv = getAdminAuthEnv(req.headers.host || '');
     const fbEnv = getFirebaseEnvConfig();
+    let config = loadPersistedSiteConfig();
+    let serverReadFirestore = false;
+
+    if (fbEnv.isConfigured && fbEnv.config) {
+      const cloudRead = await readSiteConfigWithStatusNode(fbEnv.config);
+      if (cloudRead.status === 'ok' && cloudRead.config) {
+        serverReadFirestore = true;
+        config = savePersistedSiteConfig(preserveSecretsOnSave(cloudRead.config, config));
+      } else if (cloudRead.status === 'empty') {
+        serverReadFirestore = true;
+        config = savePersistedSiteConfig(getEnvSeededEmptyConfig());
+      }
+    }
+
     const seoAudit = auditSiteSeoHealth(config);
+    const sanitizedConfig = sanitizeConfigForClient(config, getEnvSecretFlags());
+    const safeFbEnv = {
+      isConfigured: fbEnv.isConfigured,
+      source: fbEnv.source,
+      config: sanitizeFirebaseConfigForClient(fbEnv.config)
+    };
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       success: true,
-      config,
-      firebaseEnv: fbEnv,
+      config: sanitizedConfig,
+      firebaseEnv: safeFbEnv,
+      serverReadFirestore,
+      firebaseProjectId: fbEnv.config?.projectId || null,
       envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, true, config),
       seoAudit
     });
@@ -652,94 +1127,371 @@ async function startServer() {
       .send(generateWebManifestJson(config));
   });
 
-  // 9. Server-Side Admin Login (Hardened with Rate-Limiting & Timing-Safe Verification)
+  // 9. Hardened Server-Side Admin Login (HttpOnly Cookie + Fail-Closed Policy + Rate-Limiting + Zero Env Var Disclosure)
   app.post('/api/admin/login', (req, res) => {
-    const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local').split(',')[0].trim();
-    const rateCheck = checkLoginRateLimit(clientIp);
-    if (!rateCheck.allowed) {
-      res.status(429).json({
+    res.setHeader('Cache-Control', 'no-store');
+    const adminEnv = getAdminAuthEnv(req.headers.host || '');
+    if (!adminEnv.policy.credentialsReady) {
+      res.status(503).json({
         success: false,
-        error: `Too many failed login attempts. Please wait ${rateCheck.retryAfterSec || 60} seconds before trying again.`
+        code: 'admin-not-configured',
+        error: 'Administrator sign-in is currently unavailable on this server.'
       });
       return;
     }
 
-    const { email = '', password = '', apiKey = '' } = req.body || {};
-    const adminEnv = getAdminAuthEnv();
+    const csrf = verifyAdminCsrf(req);
+    if (!csrf.ok) {
+      res.status(403).json({ success: false, error: csrf.error });
+      return;
+    }
 
-    const cleanEmail = String(email || '').trim();
-    const cleanPass = String(password || '').trim();
-    const cleanKey = String(apiKey || '').trim();
+    const clientIp = getTrustedLoginRateLimitIp(req);
+    const rateCheck = checkLoginRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      if (rateCheck.retryAfterSec) {
+        res.setHeader('Retry-After', String(rateCheck.retryAfterSec));
+      }
+      res.status(429).json({
+        success: false,
+        error: `Too many failed sign-in attempts. Please wait ${rateCheck.retryAfterSec || 60} seconds.`
+      });
+      return;
+    }
+
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      res.status(400).json({ success: false, error: 'Invalid sign-in request.' });
+      return;
+    }
+
+    const { email = '', password = '', apiKey = '' } = body;
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      typeof apiKey !== 'string' ||
+      email.length > 320 ||
+      password.length > 512 ||
+      apiKey.length > 512
+    ) {
+      res.status(400).json({ success: false, error: 'Invalid credential format.' });
+      return;
+    }
+
+    const cleanEmail = email.trim();
+    const cleanPass = password.trim();
+    const cleanKey = apiKey.trim();
+
+    if (!cleanKey && (!cleanEmail || !cleanPass)) {
+      res.status(400).json({
+        success: false,
+        error: 'Please enter your administrator credentials to sign in.'
+      });
+      return;
+    }
 
     const apiKeyAuthenticated = Boolean(
       adminEnv.requiresApiKey && cleanKey && safeTimingCompare(cleanKey, adminEnv.apiKey)
     );
     const credentialsAuthenticated = Boolean(
-      cleanEmail &&
-      safeTimingCompare(cleanEmail.toLowerCase(), adminEnv.email.toLowerCase()) &&
-      safeTimingCompare(cleanPass, adminEnv.password)
+      adminEnv.email &&
+        adminEnv.password &&
+        cleanEmail &&
+        cleanPass &&
+        safeTimingCompare(cleanEmail.toLowerCase(), adminEnv.email.toLowerCase()) &&
+        safeTimingCompare(cleanPass, adminEnv.password)
     );
 
     if (!apiKeyAuthenticated && !credentialsAuthenticated) {
       recordFailedLoginAttempt(clientIp);
       res.status(401).json({
         success: false,
-        error: cleanKey
-          ? 'Invalid Admin API Key. Check ADMIN_API_KEY in your environment variables.'
-          : 'Invalid Admin Email or Password. Check ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.'
+        error: 'Invalid administrator credentials.'
       });
       return;
     }
 
     clearLoginAttempts(clientIp);
-    const token = createAdminToken(adminEnv.email);
+    const loginSubject = credentialsAuthenticated ? adminEnv.email : 'api-key-admin';
+    const token = createAdminToken(loginSubject, adminEnv.secret);
+    setAdminSessionCookie(res, token, isHttpsRequest(req));
+
     const fbEnv = getFirebaseEnvConfig();
     const config = loadPersistedSiteConfig();
 
-    res.setHeader('Cache-Control', 'no-store');
     res.json({
       success: true,
-      token,
       user: {
-        email: adminEnv.email,
+        email: loginSubject,
         role: 'Master Administrator'
       },
       envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, true, config)
     });
   });
 
-  // 10. Admin Session & Environment Diagnostics Verification
-  app.get('/api/admin/verify', (req, res) => {
-    const authHeader = req.headers.authorization || '';
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const headerApiKey = ((req.headers['x-admin-api-key'] as string) || '').trim();
-    const verification = verifyAdminToken(bearerToken || headerApiKey);
-    const adminEnv = getAdminAuthEnv();
-    const fbEnv = getFirebaseEnvConfig();
-    const config = verification.valid ? loadPersistedSiteConfig() : undefined;
-
+  // 9b. Server-Side Admin Logout (Revokes token jti + Clears HttpOnly Cookies)
+  app.post('/api/admin/logout', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    const csrf = verifyAdminCsrf(req);
+    if (!csrf.ok) {
+      res.status(403).json({ success: false, error: csrf.error });
+      return;
+    }
+    const { token } = extractAdminTokenFromReq(req);
+    const verification = verifyAdminToken(token, req.headers.host || '', true);
+    if (verification.jti) {
+      cleanupRevokedJtis();
+      revokedJtis.set(verification.jti, verification.exp || Date.now() + 1000 * 60 * 60 * 24 * 7);
+    }
+    clearAdminSessionCookie(res, isHttpsRequest(req));
+    res.json({ success: true });
+  });
+
+  // 10. Zero-Leak Admin Session Verification (Never discloses env var names or setup hints when unauthenticated)
+  app.get('/api/admin/verify', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const { token } = extractAdminTokenFromReq(req);
+    const verification = verifyAdminToken(token, req.headers.host || '');
+
+    if (!verification.valid) {
+      res.json({
+        authenticated: false,
+        user: null
+      });
+      return;
+    }
+
+    const adminEnv = getAdminAuthEnv(req.headers.host || '');
+    const fbEnv = getFirebaseEnvConfig();
+    const config = loadPersistedSiteConfig();
+
     res.json({
-      authenticated: verification.valid,
-      user: verification.valid ? { email: verification.email } : null,
+      authenticated: true,
+      user: { email: verification.email, role: verification.role || 'Master Administrator' },
       loginHints: {
-        requiresApiKey: adminEnv.requiresApiKey,
-        usingDefaultDevCredentials: !adminEnv.isCustomEmail && !adminEnv.isCustomPassword,
-        defaultEmailHint: !adminEnv.isCustomEmail && !adminEnv.isCustomPassword ? adminEnv.email : undefined
+        requiresApiKey: adminEnv.requiresApiKey
       },
-      envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, verification.valid, config)
+      envDiagnostics: buildSafeEnvDiagnostics(adminEnv, fbEnv, true, config)
     });
   });
 
-  // 11. Save Live Admin Configuration + Compile Static Public Website (+ Optional Auto-Push to GitHub)
-  app.put('/api/config', requireAdminAuth, async (req, res) => {
+  // 10b. Authenticated Admin Studio Workspace HTML Loader (`GET /api/admin/workspace`)
+  // Ensures zero internal CMS controls or field IDs exist in unauthenticated /admin HTML.
+  app.get('/api/admin/workspace', requireAdminAuth, (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+    res.json({
+      success: true,
+      html: getAdminWorkspaceShellHtml()
+    });
+  });
+
+  // 10c. Clear Sync & Activity Logs (`POST /api/admin/clear-logs`)
+  app.post('/api/admin/clear-logs', requireAdminAuth, async (_req, res) => {
+    const existing = loadPersistedSiteConfig();
+    existing.syncLogs = [];
+    if (existing.githubConfig) {
+      existing.githubConfig.deployHistory = [];
+    }
+    const saved = savePersistedSiteConfig(existing);
+    const sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+    if (fbEnv.isConfigured && fbEnv.config) {
+      firestoreSaved = await writeBatchToFirestoreRestNode(
+        fbEnv.config,
+        {
+          syncLogs: [],
+          githubConfig: sanitized.githubConfig
+        },
+        { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
+      );
+    }
+    res.json({
+      success: true,
+      firestoreSaved,
+      config: sanitized
+    });
+  });
+
+  // 11a. Granular Single-Module Patch Endpoint (`PATCH /api/config/module`)
+  app.patch('/api/config/module', requireAdminAuth, async (req, res) => {
+    const moduleKey = req.body?.moduleKey || req.body?.module;
+    const data = req.body?.data;
+    if (!isCmsModuleKey(moduleKey)) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid or missing CMS moduleKey.'
+      });
+      return;
+    }
+
+    const existing = loadPersistedSiteConfig();
+    const patched = applyModulePatch(existing, moduleKey as CmsModuleKey, data, EMPTY_ADMIN_CONFIG);
+
+    if (moduleKey === 'securityGate' && patched.config.securityGate?.primaryDownloadUrl) {
+      try {
+        patched.config.securityGate.encryptedPrimaryUrl = await encryptVaultValue(
+          patched.config.securityGate.primaryDownloadUrl,
+          undefined,
+          getVaultMasterSecret()
+        );
+      } catch {
+        // Fallback handled at clearance
+      }
+    }
+
+    let saved = savePersistedSiteConfig(patched.config);
+    const bytesSent = Buffer.byteLength(JSON.stringify(data ?? {}), 'utf-8');
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+    let sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    if (fbEnv.isConfigured && fbEnv.config) {
+      firestoreSaved = await writeBatchToFirestoreRestNode(
+        fbEnv.config,
+        { [moduleKey]: sanitizedConfig[moduleKey as CmsModuleKey] },
+        { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
+      );
+    }
+
+    const saveMsg = firestoreSaved
+      ? `Saved module "${moduleKey}" to Firebase Firestore (${(bytesSent / 1024).toFixed(1)} KB).`
+      : `Saved module "${moduleKey}" & updated static bundle (${(bytesSent / 1024).toFixed(1)} KB).`;
+
+    if (moduleKey !== 'syncLogs') {
+      saved = appendSyncLogEntry(
+        saved,
+        {
+          trigger: 'firebase-save',
+          status: firestoreSaved ? 'success' : 'local-only',
+          modulesChanged: [moduleKey],
+          filesCount: 1,
+          changedPaths: [`cmsModules/${moduleKey}`],
+          steps: [
+            `Updated module "${moduleKey}" (${(bytesSent / 1024).toFixed(1)} KB payload)`,
+            firestoreSaved
+              ? `Committed to Cloud Firestore (${fbEnv.config?.projectId})`
+              : 'Saved to local workspace & re-compiled static bundle (/dist-public)'
+          ],
+          message: saveMsg
+        },
+        false
+      );
+      saved = savePersistedSiteConfig(saved);
+      sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    }
+
+    res.json({
+      success: true,
+      savedModule: patched.savedModule,
+      bytesSent,
+      dirtyModulesSinceSync: saved.dirtyModulesSinceSync || [],
+      firestoreSaved,
+      message: saveMsg,
+      config: sanitizedConfig,
+      seoAudit: auditSiteSeoHealth(saved),
+      savedAt: saved.updatedAt
+    });
+  });
+
+  // 11a-batch. Atomic Batch Multi-Module Patch (`PATCH /api/config/modules`)
+  app.patch('/api/config/modules', requireAdminAuth, async (req, res) => {
+    const startTime = Date.now();
+    const modulesMap = req.body?.modules && typeof req.body.modules === 'object' ? req.body.modules : req.body;
+    const validKeys = Object.keys(modulesMap || {}).filter(
+      (k) => isCmsModuleKey(k) && modulesMap[k] !== undefined
+    ) as CmsModuleKey[];
+
+    if (validKeys.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Provide at least one valid CMS module in `modules`.'
+      });
+      return;
+    }
+
+    const existing = loadPersistedSiteConfig();
+    const patched = applyMultiModulePatch(existing, modulesMap, EMPTY_ADMIN_CONFIG);
+
+    if (validKeys.includes('securityGate') && patched.config.securityGate?.primaryDownloadUrl) {
+      try {
+        patched.config.securityGate.encryptedPrimaryUrl = await encryptVaultValue(
+          patched.config.securityGate.primaryDownloadUrl,
+          undefined,
+          getVaultMasterSecret()
+        );
+      } catch {
+        // Fallback handled at clearance
+      }
+    }
+
+    let saved = savePersistedSiteConfig(patched.config);
+    const bytesSent = Buffer.byteLength(JSON.stringify(modulesMap ?? {}), 'utf-8');
+    let sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+
+    if (fbEnv.isConfigured && fbEnv.config) {
+      const batchData: Record<string, any> = {};
+      for (const k of validKeys) {
+        batchData[k] = sanitizedConfig[k];
+      }
+      firestoreSaved = await writeBatchToFirestoreRestNode(fbEnv.config, batchData, {
+        updatedAt: saved.updatedAt,
+        dirtyModulesSinceSync: saved.dirtyModulesSinceSync
+      });
+    }
+
+    const nonLogKeys = validKeys.filter((k) => k !== 'syncLogs');
+    if (nonLogKeys.length > 0) {
+      saved = appendSyncLogEntry(
+        saved,
+        {
+          trigger: 'firebase-save',
+          status: firestoreSaved ? 'success' : 'local-only',
+          modulesChanged: nonLogKeys,
+          filesCount: nonLogKeys.length,
+          changedPaths: nonLogKeys.map((k) => `cmsModules/${k}`),
+          durationMs: Date.now() - startTime,
+          steps: [
+            `Patched ${nonLogKeys.length} module(s): ${nonLogKeys.join(', ')} (${(bytesSent / 1024).toFixed(1)} KB)`,
+            firestoreSaved
+              ? `Committed atomic batch to Cloud Firestore (${fbEnv.config?.projectId})`
+              : 'Saved to local workspace & re-compiled static public bundle (/dist-public)'
+          ],
+          message: firestoreSaved
+            ? `Saved ${nonLogKeys.join(', ')} to Firebase Firestore (${(bytesSent / 1024).toFixed(1)} KB).`
+            : `Saved ${nonLogKeys.join(', ')} & re-compiled static bundle (${(bytesSent / 1024).toFixed(1)} KB).`
+        },
+        false
+      );
+      saved = savePersistedSiteConfig(saved);
+      sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    }
+
+    res.json({
+      success: true,
+      savedModules: patched.savedModules,
+      bytesSent,
+      dirtyModulesSinceSync: saved.dirtyModulesSinceSync || [],
+      firestoreSaved,
+      config: sanitizedConfig,
+      seoAudit: auditSiteSeoHealth(saved),
+      savedAt: saved.updatedAt
+    });
+  });
+
+  // 11b. Save Complete Admin Configuration + Compile Static Public Website (+ Optional Auto-Push to GitHub)
+  const handleSaveFullConfig = async (req: express.Request, res: express.Response) => {
     const incomingConfig = req.body?.config || req.body;
     if (!incomingConfig || typeof incomingConfig !== 'object') {
       res.status(400).json({ success: false, error: 'Invalid configuration payload.' });
       return;
     }
 
-    const mergedIncoming = mergeSiteConfig(incomingConfig, getEnvSeededDefaultConfig());
+    const existing = loadPersistedSiteConfig();
+    const withSecrets = preserveSecretsOnSave(incomingConfig, existing);
+    const mergedIncoming = mergeSiteConfig(withSecrets, EMPTY_ADMIN_CONFIG);
+
     if (mergedIncoming.securityGate?.primaryDownloadUrl) {
       try {
         mergedIncoming.securityGate.encryptedPrimaryUrl = await encryptVaultValue(
@@ -752,46 +1504,72 @@ async function startServer() {
       }
     }
 
+    const dirtyList = Array.isArray(req.body?.dirtyModules)
+      ? req.body.dirtyModules.filter((k: unknown) => typeof k === 'string')
+      : [];
+    mergedIncoming.dirtyModulesSinceSync = Array.from(
+      new Set([...(existing.dirtyModulesSinceSync || []), ...dirtyList])
+    );
+
     let saved = savePersistedSiteConfig(mergedIncoming);
     let githubPush = null;
 
     if (
       saved.githubConfig?.autoPushOnPublish &&
-      saved.githubConfig?.fineGrainedToken &&
+      (saved.githubConfig?.fineGrainedToken || getEnvSecretFlags().hasEnvGithubToken) &&
       saved.githubConfig?.repoOwner &&
       saved.githubConfig?.repoName
     ) {
+      const startTime = Date.now();
+      const envToken = cleanEnvVal(
+        process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+      );
+      const effectiveGhCfg = {
+        ...saved.githubConfig,
+        fineGrainedToken: saved.githubConfig.fineGrainedToken || envToken
+      };
       const bundle = buildStaticPublicFilesOnDisk(saved);
       if (bundle) {
-        githubPush = await pushStaticFilesToGitHub(saved.githubConfig, bundle.files);
-        const logEntry: GitHubDeployLogItem = {
-          id: `deploy-${Date.now()}`,
-          timestamp: Date.now(),
-          status: githubPush.status,
-          commitSha: githubPush.commitSha,
-          commitUrl: githubPush.commitUrl,
-          filesCount: bundle.totalFiles,
-          message: githubPush.message
-        };
-        saved.githubConfig.lastPublishedAt = Date.now();
-        if (githubPush.commitSha) saved.githubConfig.lastCommitSha = githubPush.commitSha;
-        if (githubPush.commitUrl) saved.githubConfig.lastCommitUrl = githubPush.commitUrl;
-        saved.githubConfig.deployHistory = [
-          logEntry,
-          ...(saved.githubConfig.deployHistory || []).slice(0, 14)
-        ];
+        githubPush = await pushStaticFilesToGitHub(effectiveGhCfg, bundle.files);
+        saved = appendSyncLogEntry(
+          saved,
+          {
+            trigger: 'auto-push',
+            status: githubPush.status,
+            modulesChanged: saved.dirtyModulesSinceSync || [],
+            filesCount: bundle.totalFiles,
+            changedPaths: bundle.files.map((f) => f.path).slice(0, 20),
+            branch: effectiveGhCfg.branch || 'main',
+            repo: `${effectiveGhCfg.repoOwner}/${effectiveGhCfg.repoName}`,
+            commitSha: githubPush.commitSha,
+            commitUrl: githubPush.commitUrl,
+            durationMs: Date.now() - startTime,
+            steps: [
+              `Compiled ${bundle.totalFiles} static files`,
+              githubPush.ok
+                ? `Auto-pushed atomic commit to ${effectiveGhCfg.repoOwner}/${effectiveGhCfg.repoName}`
+                : `GitHub auto-push notice: ${githubPush.message}`
+            ],
+            message: githubPush.message
+          },
+          githubPush.ok
+        );
         saved = savePersistedSiteConfig(saved);
       }
     }
 
+    const sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+
     res.json({
       success: true,
-      config: saved,
+      config: sanitizedConfig,
       githubPush,
       seoAudit: auditSiteSeoHealth(saved),
       savedAt: saved.updatedAt
     });
-  });
+  };
+  app.put('/api/config', requireAdminAuth, handleSaveFullConfig);
+  app.post('/api/config', requireAdminAuth, handleSaveFullConfig);
 
   // 12. Verify GitHub Fine-Grained Token & Repository Write Access (`POST /api/github/verify`)
   app.post('/api/github/verify', requireAdminAuth, async (req, res) => {
@@ -800,11 +1578,20 @@ async function startServer() {
     const envToken = cleanEnvVal(
       process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
     );
+    const incomingToken = String(ghCfg.fineGrainedToken || '').trim();
+    const effectiveToken =
+      incomingToken && incomingToken !== '__SECRET_CONFIGURED__'
+        ? incomingToken
+        : persisted.githubConfig?.fineGrainedToken || envToken;
+
     const result = await verifyGitHubRepoAccess({
-      repoOwner: ghCfg.repoOwner || persisted.githubConfig?.repoOwner || cleanEnvVal(process.env.GITHUB_REPO_OWNER),
-      repoName: ghCfg.repoName || persisted.githubConfig?.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME),
-      branch: ghCfg.branch || persisted.githubConfig?.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main',
-      fineGrainedToken: ghCfg.fineGrainedToken || persisted.githubConfig?.fineGrainedToken || envToken
+      repoOwner:
+        ghCfg.repoOwner || persisted.githubConfig?.repoOwner || cleanEnvVal(process.env.GITHUB_REPO_OWNER),
+      repoName:
+        ghCfg.repoName || persisted.githubConfig?.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME),
+      branch:
+        ghCfg.branch || persisted.githubConfig?.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main',
+      fineGrainedToken: effectiveToken
     });
     res.json(result);
   });
@@ -817,14 +1604,41 @@ async function startServer() {
       res.status(500).json({ success: false, error: 'Failed compiling static public website bundle.' });
       return;
     }
+    const fbEnv = getFirebaseEnvConfig();
+    const hasFirebase = fbEnv.isConfigured;
+    const distinctIcons = new Set(
+      [
+        config.brand?.logoUrl,
+        config.brand?.faviconUrl,
+        config.brand?.searchLogoUrl,
+        config.brand?.appleTouchIconUrl
+      ]
+        .map((u) => String(u || '').trim())
+        .filter(Boolean)
+    );
     res.json({
       success: true,
       compiledAt: bundle.compiledAt,
       totalFiles: bundle.totalFiles,
       routesCompiled: bundle.routesCompiled,
+      dirtyModulesSinceSync: config.dirtyModulesSinceSync || [],
+      contentSource: hasFirebase ? 'Live Cloud Firestore' : 'Local Admin Workspace',
+      brandSummary: {
+        name: config.brand?.name || '',
+        logoUrl: config.brand?.logoUrl || '',
+        faviconUrl: config.brand?.faviconUrl || '',
+        primaryDomain: config.domainConfig?.primaryDomain || config.seo?.canonicalUrl || ''
+      },
+      seoManifestSummary: {
+        manifestEnabled: config.domainConfig?.enableWebManifest !== false,
+        sitemapEnabled: config.domainConfig?.enableSitemapXml !== false,
+        robotsEnabled: true,
+        rssEnabled: Boolean(config.domainConfig?.enableRssFeed),
+        manifestIconsCount: distinctIcons.size
+      },
       filesList: bundle.files.map((f) => ({
         path: f.path,
-        sizeBytes: Buffer.byteLength(f.content, 'utf-8'),
+        sizeBytes: Buffer.byteLength(f.content, f.encoding === 'base64' ? 'base64' : 'utf-8'),
         description: f.description
       }))
     });
@@ -832,23 +1646,37 @@ async function startServer() {
 
   // 13. Compile Static Public Website & Push Atomic Commit to GitHub (`POST /api/github/publish`)
   app.post('/api/github/publish', requireAdminAuth, async (req, res) => {
-    const incomingConfig = req.body?.config || loadPersistedSiteConfig();
+    const startTime = Date.now();
+    const persisted = loadPersistedSiteConfig();
+    const incomingConfig = req.body?.config
+      ? mergeSiteConfig(preserveSecretsOnSave(req.body.config, persisted), EMPTY_ADMIN_CONFIG)
+      : persisted;
     const customCommitMessage = String(req.body?.commitMessage || '').trim();
+    const modulesChanged: string[] = Array.isArray(req.body?.modulesChanged)
+      ? req.body.modulesChanged
+      : persisted.dirtyModulesSinceSync || [];
 
     let saved = savePersistedSiteConfig(incomingConfig);
     const envToken = cleanEnvVal(
       process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
     );
-    if (!saved.githubConfig.fineGrainedToken && envToken) {
-      saved.githubConfig.fineGrainedToken = envToken;
-    }
-    if (!saved.githubConfig.repoOwner && process.env.GITHUB_REPO_OWNER) {
-      saved.githubConfig.repoOwner = cleanEnvVal(process.env.GITHUB_REPO_OWNER);
-    }
-    if (!saved.githubConfig.repoName && process.env.GITHUB_REPO_NAME) {
-      saved.githubConfig.repoName = cleanEnvVal(process.env.GITHUB_REPO_NAME);
-    }
+    const effectiveToken = saved.githubConfig.fineGrainedToken || envToken;
+    const effectiveOwner =
+      saved.githubConfig.repoOwner || cleanEnvVal(process.env.GITHUB_REPO_OWNER);
+    const effectiveRepo =
+      saved.githubConfig.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME);
+    const effectiveBranch =
+      saved.githubConfig.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main';
 
+    const effectiveGhCfg = {
+      ...saved.githubConfig,
+      repoOwner: effectiveOwner,
+      repoName: effectiveRepo,
+      branch: effectiveBranch,
+      fineGrainedToken: effectiveToken
+    };
+
+    const steps: string[] = [];
     const bundle = buildStaticPublicFilesOnDisk(saved);
 
     if (!bundle) {
@@ -859,51 +1687,122 @@ async function startServer() {
       return;
     }
 
+    steps.push(
+      `Compiled ${bundle.totalFiles} static files (${bundle.routesCompiled.length} routes, zero Firebase SDK)`
+    );
+
     const pushResult = await pushStaticFilesToGitHub(
-      saved.githubConfig,
+      effectiveGhCfg,
       bundle.files,
       customCommitMessage
     );
 
-    const logEntry: GitHubDeployLogItem = {
-      id: `deploy-${Date.now()}`,
-      timestamp: Date.now(),
+    if (pushResult.skipped) {
+      steps.push(
+        `Remote repository matches compiled bundle (${pushResult.unchangedCount || 0} unchanged files — skipped empty commit)`
+      );
+    } else if (pushResult.ok) {
+      steps.push(
+        `Committed to ${effectiveOwner}/${effectiveRepo}@${effectiveBranch}: +${pushResult.addedCount || 0} added, ~${pushResult.updatedCount || 0} updated, -${pushResult.deletedCount || 0} pruned`
+      );
+    } else {
+      steps.push(`GitHub sync returned ${pushResult.status}: ${pushResult.message}`);
+    }
+
+    const changedPathsList =
+      Array.isArray(pushResult.changedPaths) && pushResult.changedPaths.length > 0
+        ? pushResult.changedPaths
+        : pushResult.skipped
+        ? []
+        : bundle.files.map((f) => f.path).slice(0, 24);
+
+    const syncLogEntry: Omit<SyncLogEntry, 'id' | 'timestamp'> = {
+      trigger: 'manual-push',
       status: pushResult.status,
+      modulesChanged,
+      filesCount: pushResult.filesPushed ?? bundle.totalFiles,
+      addedCount: pushResult.addedCount,
+      updatedCount: pushResult.updatedCount,
+      deletedCount: pushResult.deletedCount,
+      unchangedCount: pushResult.unchangedCount,
+      skipped: pushResult.skipped,
+      changedPaths: changedPathsList,
+      branch: effectiveBranch,
+      repo: effectiveOwner && effectiveRepo ? `${effectiveOwner}/${effectiveRepo}` : '',
       commitSha: pushResult.commitSha,
       commitUrl: pushResult.commitUrl,
-      filesCount: bundle.totalFiles,
-      message: pushResult.message
+      durationMs: Date.now() - startTime,
+      steps,
+      message: pushResult.message,
+      errorDetail: pushResult.ok ? undefined : pushResult.message
     };
 
-    saved.githubConfig.lastPublishedAt = Date.now();
-    if (pushResult.commitSha) saved.githubConfig.lastCommitSha = pushResult.commitSha;
-    if (pushResult.commitUrl) saved.githubConfig.lastCommitUrl = pushResult.commitUrl;
-    saved.githubConfig.deployHistory = [
-      logEntry,
-      ...(saved.githubConfig.deployHistory || []).slice(0, 14)
-    ];
-
+    saved = appendSyncLogEntry(saved, syncLogEntry, pushResult.ok);
     saved = savePersistedSiteConfig(saved);
+
+    const sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+    if (fbEnv.isConfigured && fbEnv.config) {
+      firestoreSaved = await writeBatchToFirestoreRestNode(
+        fbEnv.config,
+        {
+          syncLogs: sanitizedConfig.syncLogs,
+          githubConfig: sanitizedConfig.githubConfig
+        },
+        {
+          updatedAt: saved.updatedAt,
+          dirtyModulesSinceSync: saved.dirtyModulesSinceSync
+        }
+      );
+    }
+
+    const distinctIcons = new Set(
+      [
+        saved.brand?.logoUrl,
+        saved.brand?.faviconUrl,
+        saved.brand?.searchLogoUrl,
+        saved.brand?.appleTouchIconUrl
+      ]
+        .map((u) => String(u || '').trim())
+        .filter(Boolean)
+    );
 
     res.json({
       success: pushResult.ok,
+      firestoreSaved,
       publishResult: pushResult,
+      syncLog: saved.syncLogs?.[0] || null,
       compiledBundle: {
         compiledAt: bundle.compiledAt,
         totalFiles: bundle.totalFiles,
         routesCompiled: bundle.routesCompiled,
+        contentSource: fbEnv.isConfigured ? 'Live Cloud Firestore' : 'Local Admin Workspace',
+        brandSummary: {
+          name: saved.brand?.name || '',
+          logoUrl: saved.brand?.logoUrl || '',
+          faviconUrl: saved.brand?.faviconUrl || '',
+          primaryDomain: saved.domainConfig?.primaryDomain || saved.seo?.canonicalUrl || ''
+        },
+        seoManifestSummary: {
+          manifestEnabled: saved.domainConfig?.enableWebManifest !== false,
+          sitemapEnabled: saved.domainConfig?.enableSitemapXml !== false,
+          robotsEnabled: true,
+          rssEnabled: Boolean(saved.domainConfig?.enableRssFeed),
+          manifestIconsCount: distinctIcons.size
+        },
         filesList: bundle.files.map((f) => ({
           path: f.path,
-          sizeBytes: Buffer.byteLength(f.content, 'utf-8'),
+          sizeBytes: Buffer.byteLength(f.content, f.encoding === 'base64' ? 'base64' : 'utf-8'),
           description: f.description
         }))
       },
-      config: saved
+      config: sanitizedConfig
     });
   });
 
   // 14. Fast Single-Click Daily News Publish Endpoint
-  app.post('/api/news', requireAdminAuth, (req, res) => {
+  app.post('/api/news', requireAdminAuth, async (req, res) => {
     const current = loadPersistedSiteConfig();
     const article = req.body?.article || req.body;
     if (!article || !article.title) {
@@ -911,7 +1810,7 @@ async function startServer() {
       return;
     }
 
-    const brandName = current.brand?.name || 'ApexMobile';
+    const brandName = current.brand?.name || 'Editorial';
     const slug = generateSlug(article.slug || article.title || `news-${Date.now()}`);
     const newArticle = {
       id: article.id || `news-${Date.now()}`,
@@ -935,30 +1834,77 @@ async function startServer() {
       htmlContent: article.htmlContent || `<p>${article.summary || ''}</p>`
     };
 
-    const existingIdx = current.newsSection.articles.findIndex(
-      (a) => a.id === newArticle.id || a.slug === newArticle.slug
+    const nextNewsSection = JSON.parse(JSON.stringify(current.newsSection || EMPTY_ADMIN_CONFIG.newsSection));
+    const existingIdx = nextNewsSection.articles.findIndex(
+      (a: any) => a.id === newArticle.id || a.slug === newArticle.slug
     );
     if (existingIdx >= 0) {
-      current.newsSection.articles[existingIdx] = newArticle;
+      nextNewsSection.articles[existingIdx] = newArticle;
     } else {
-      current.newsSection.articles.unshift(newArticle);
+      nextNewsSection.articles.unshift(newArticle);
     }
 
-    const saved = savePersistedSiteConfig(current);
+    const patched = applyModulePatch(current, 'newsSection', nextNewsSection, EMPTY_ADMIN_CONFIG);
+    let saved = savePersistedSiteConfig(patched.config);
+    let sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+    if (fbEnv.isConfigured && fbEnv.config) {
+      firestoreSaved = await writeBatchToFirestoreRestNode(
+        fbEnv.config,
+        { newsSection: sanitized.newsSection },
+        { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
+      );
+    }
+    saved = appendSyncLogEntry(
+      saved,
+      {
+        trigger: 'firebase-save',
+        status: firestoreSaved ? 'success' : 'local-only',
+        modulesChanged: ['newsSection'],
+        filesCount: 1,
+        changedPaths: [`/news/${newArticle.slug}`],
+        steps: [
+          `Published news article "${newArticle.title}" (/news/${newArticle.slug})`,
+          firestoreSaved
+            ? `Saved newsSection to Cloud Firestore (${fbEnv.config?.projectId})`
+            : 'Saved to local workspace & re-compiled static news route'
+        ],
+        message: `Published news article "${newArticle.title}" (/news/${newArticle.slug}).`
+      },
+      false
+    );
+    saved = savePersistedSiteConfig(saved);
+    sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
     res.json({
       success: true,
+      firestoreSaved,
       article: newArticle,
-      config: saved,
+      config: sanitized,
       seoAudit: auditSiteSeoHealth(saved)
     });
   });
 
-  // 15. Reset to Master Default Configuration
-  app.post('/api/config/reset', requireAdminAuth, (_req, res) => {
-    const fresh = savePersistedSiteConfig(getEnvSeededDefaultConfig());
+  // 15. Clear Admin Data (Reset cleanly to Empty Live Firebase State — ZERO static demo content)
+  app.post('/api/config/reset', requireAdminAuth, async (_req, res) => {
+    const fresh = savePersistedSiteConfig(getEnvSeededEmptyConfig());
+    const sanitized = sanitizeConfigForClient(fresh, getEnvSecretFlags());
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+    if (fbEnv.isConfigured && fbEnv.config) {
+      const clearMap: Record<string, any> = {};
+      for (const k of ['brand', 'hero', 'packageSpecs', 'sections', 'newsSection', 'faqsSection', 'content', 'navigation', 'pages', 'domainConfig', 'seo', 'securityGate', 'githubConfig', 'syncLogs']) {
+        clearMap[k] = (sanitized as any)[k];
+      }
+      firestoreSaved = await writeBatchToFirestoreRestNode(fbEnv.config, clearMap, {
+        updatedAt: fresh.updatedAt,
+        dirtyModulesSinceSync: []
+      });
+    }
     res.json({
       success: true,
-      config: fresh,
+      firestoreSaved,
+      config: sanitized,
       seoAudit: auditSiteSeoHealth(fresh)
     });
   });
@@ -1051,7 +1997,7 @@ async function startServer() {
   // 16b. Gate G1–G2 Session Init (`POST /api/v1/app/session-init`)
   app.post('/api/v1/app/session-init', async (req, res) => {
     const config = loadPersistedSiteConfig();
-    const sec = config.securityGate || MASTER_DEFAULT_CONFIG.securityGate;
+    const sec = config.securityGate || EMPTY_ADMIN_CONFIG.securityGate;
     const ctx = buildGateRequestContext(req, config);
     const initResult = await handleSessionInit(ctx);
 
@@ -1078,11 +2024,11 @@ async function startServer() {
         sec.turnstileSiteKey ||
         '1x00000000000000000000AA',
       appMeta: {
-        brandName: config.brand?.name || 'ApexMobile',
-        logoUrl: config.brand?.logoUrl || '/assets/app-icon.svg',
+        brandName: config.brand?.name || '',
+        logoUrl: config.brand?.logoUrl || '',
         accentColor: config.brand?.accentColor || '#EF4444',
-        appSlug: sec.appSlug || 'apexmobile',
-        appSerialId: sec.appSerialId || 'APM-482',
+        appSlug: sec.appSlug || 'gateway',
+        appSerialId: sec.appSerialId || 'PKG-001',
         devicePolicyMode: sec.devicePolicyMode || 'universal_human',
         proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
         unavailableMessage: sec.unavailableMessage || '',
@@ -1091,11 +2037,11 @@ async function startServer() {
         customHeading: sec.customHeading || '',
         customNoteHtml: sec.customNoteHtml || '',
         showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
-        appName: sec.customHeading || config.packageSpecs?.appName || config.brand?.name || 'ApexMobile',
-        version: config.packageSpecs?.version || 'v4.8.2',
-        fileSize: config.packageSpecs?.fileSize || '64.2 MB',
-        operatingSystem: config.packageSpecs?.operatingSystem || 'Android 9.0+ / iOS 15.0+',
-        securityStatus: config.packageSpecs?.securityStatus || 'Verified Clean',
+        appName: sec.customHeading || config.packageSpecs?.appName || config.brand?.name || '',
+        version: config.packageSpecs?.version || '',
+        fileSize: config.packageSpecs?.fileSize || '',
+        operatingSystem: config.packageSpecs?.operatingSystem || '',
+        securityStatus: config.packageSpecs?.securityStatus || '',
         sha256: config.packageSpecs?.sha256 || ''
       }
     });
@@ -1104,9 +2050,8 @@ async function startServer() {
   // 16c. Gate G1–G7 Session Clearance & Ephemeral AES-256-GCM Decrypt (`POST /api/v1/app/session-clearance`)
   app.post('/api/v1/app/session-clearance', async (req, res) => {
     const config = loadPersistedSiteConfig();
-    const sec = config.securityGate || MASTER_DEFAULT_CONFIG.securityGate;
+    const sec = config.securityGate || EMPTY_ADMIN_CONFIG.securityGate;
 
-    // Ensure encryptedPrimaryUrl is populated if Admin configured plaintext primaryDownloadUrl
     if (!sec.encryptedPrimaryUrl && sec.primaryDownloadUrl) {
       try {
         sec.encryptedPrimaryUrl = await encryptVaultValue(
@@ -1126,7 +2071,6 @@ async function startServer() {
       res.setHeader(hk, hv);
     }
 
-    // Attach helpline details if status is unavailable
     if (clearance.status === 200) {
       try {
         const parsed = JSON.parse(clearance.body);
@@ -1151,26 +2095,27 @@ async function startServer() {
   // --------------------------------------------------------------------------
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false, watch: null },
       appType: 'custom'
     });
 
-    // Serve Admin HTML with strict noindex & no-store security headers
-    // Note: Firebase runtime config is fetched ONLY after Admin authentication via /api/admin/verify & /api/config
+    const stripViteHmrClient = (html: string) =>
+      html.replace(/<script\s+type="module"\s+src="\/@vite\/client"><\/script>\s*/gi, '');
+
     app.get(['/admin', '/admin/', '/admin.html'], async (_req, res, next) => {
       try {
+        res.setHeader('X-Frame-Options', 'DENY');
         res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
         res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
         const adminHtmlPath = path.resolve(process.cwd(), 'admin.html');
         let template = fs.readFileSync(adminHtmlPath, 'utf-8');
-        template = await vite.transformIndexHtml('/admin.html', template);
+        template = stripViteHmrClient(await vite.transformIndexHtml('/admin.html', template));
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e) {
         next(e);
       }
     });
 
-    // Serve Isolated Protected Security & Download Gateway ('/moreinfo', '/moreinfo/:slug', '/download')
     app.get(['/moreinfo', '/moreinfo/', '/moreinfo/:slug', '/download', '/download/'], async (req, res, next) => {
       try {
         res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
@@ -1182,22 +2127,20 @@ async function startServer() {
 
         const moreinfoHtmlPath = path.resolve(process.cwd(), 'moreinfo.html');
         let template = fs.readFileSync(moreinfoHtmlPath, 'utf-8');
-        template = await vite.transformIndexHtml('/moreinfo.html', template);
+        template = stripViteHmrClient(await vite.transformIndexHtml('/moreinfo.html', template));
         const gatewayHtml = renderGatewayPageHtml(template, config);
 
-        // If a known crawler/headless bot hits /moreinfo directly, return HTTP 404
         res.status(g1.pass ? 200 : 404).set({ 'Content-Type': 'text/html' }).end(gatewayHtml);
       } catch (e) {
         next(e);
       }
     });
 
-    // Serve 100% Static Pre-Compiled HTML for '/' and '/index.html' (Zero Firebase!)
     app.get(['/', '/index.html'], async (req, res, next) => {
       try {
         const indexHtmlPath = path.resolve(process.cwd(), 'index.html');
         let template = fs.readFileSync(indexHtmlPath, 'utf-8');
-        template = await vite.transformIndexHtml('/', template);
+        template = stripViteHmrClient(await vite.transformIndexHtml('/', template));
         const config = loadPersistedSiteConfig();
         const staticHtml = renderCompleteStaticPageHtml(template, config, req.path);
         res.status(200).set({ 'Content-Type': 'text/html' }).end(staticHtml);
@@ -1218,7 +2161,7 @@ async function startServer() {
       try {
         const indexHtmlPath = path.resolve(process.cwd(), 'index.html');
         let template = fs.readFileSync(indexHtmlPath, 'utf-8');
-        template = await vite.transformIndexHtml(url, template);
+        template = stripViteHmrClient(await vite.transformIndexHtml(url, template));
         const config = loadPersistedSiteConfig();
         const staticHtml = renderCompleteStaticPageHtml(template, config, url);
         res.status(200).set({ 'Content-Type': 'text/html' }).end(staticHtml);
@@ -1231,6 +2174,7 @@ async function startServer() {
     app.use(express.static(distPath, { index: false }));
 
     app.get(['/admin', '/admin/', '/admin.html'], (_req, res) => {
+      res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
       res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
       const adminHtmlPath = path.join(distPath, 'admin.html');
@@ -1264,7 +2208,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`⚡ Master Live-Firebase Admin + Static Public Compiler running on http://0.0.0.0:${PORT}`);
+    console.log(`⚡ Hardened Live-Firebase Admin + Static Public Compiler running on http://0.0.0.0:${PORT}`);
   });
 }
 

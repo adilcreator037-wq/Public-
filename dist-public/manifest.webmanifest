@@ -1,7 +1,7 @@
 {
-  "name": "ApexMobile — Verified Mobile Release Portal",
-  "short_name": "ApexMobile",
-  "description": "Download the verified ApexMobile v4.8.2 release. Includes SHA-256 cryptographic checksums, zero-latency edge mirrors, daily news updates, and full installation guide.",
+  "name": "Official Portal — Official Portal",
+  "short_name": "Official Portal",
+  "description": "",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

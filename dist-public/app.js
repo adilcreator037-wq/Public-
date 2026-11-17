@@ -71,15 +71,15 @@ function routePathToStaticJsonName(pathname) {
 function resolveFontStackCss(fontFamily) {
   switch (fontFamily) {
     case 'inter':
-      return '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      return '"Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     case 'jakarta':
-      return '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      return '"Plus Jakarta Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     case 'serif':
       return 'Georgia, Cambria, "Times New Roman", Times, serif';
     case 'mono':
       return '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     default:
-      return '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+      return 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif';
   }
 }
 
@@ -417,6 +417,67 @@ function enhanceContainerDom(container, ui = {}) {
       await navigateToUrl('/news', false, cat);
     });
   });
+
+  // 5. Graceful fallback if an editorial/remote image fails to load
+  const imgs = container.querySelectorAll('img');
+  imgs.forEach((imgEl) => {
+    if (imgEl.dataset.errBound === '1') return;
+    imgEl.dataset.errBound = '1';
+    imgEl.addEventListener('error', () => {
+      const figure = imgEl.closest('figure');
+      if (figure) {
+        figure.classList.add('hidden');
+      } else {
+        imgEl.classList.add('hidden');
+      }
+    });
+  });
+}
+
+let floatingScrollInitialized = false;
+let heroCtaOutOfView = false;
+
+function refreshFloatingCtaVisibility() {
+  if (!floatingBottomCta) return;
+  if (floatingBottomCta.classList.contains('hidden')) {
+    floatingBottomCta.classList.remove('is-visible');
+    return;
+  }
+  const hasVisibleHeroCta =
+    heroCtaGrid &&
+    !heroCtaGrid.classList.contains('hidden') &&
+    heroSectionEl &&
+    !heroSectionEl.classList.contains('hidden');
+
+  if (!hasVisibleHeroCta) {
+    floatingBottomCta.classList.toggle('is-visible', window.scrollY > 180);
+  } else {
+    floatingBottomCta.classList.toggle('is-visible', heroCtaOutOfView);
+  }
+}
+
+function setupFloatingCtaVisibility() {
+  if (floatingScrollInitialized) {
+    refreshFloatingCtaVisibility();
+    return;
+  }
+  floatingScrollInitialized = true;
+
+  if ('IntersectionObserver' in window && heroCtaGrid) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          heroCtaOutOfView = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+        }
+        refreshFloatingCtaVisibility();
+      },
+      { threshold: 0 }
+    );
+    observer.observe(heroCtaGrid);
+  }
+
+  window.addEventListener('scroll', refreshFloatingCtaVisibility, { passive: true });
+  refreshFloatingCtaVisibility();
 }
 
 function renderPartialRoutePayload(payload, options = { preserveSsrDom: false }) {
@@ -432,6 +493,7 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   // If SSR already rendered the exact DOM for this route, only enhance interactive widgets (< 2ms!)
   if (options.preserveSsrDom && dynamicContent) {
     enhanceContainerDom(dynamicContent, ui);
+    setupFloatingCtaVisibility();
     return;
   }
 
@@ -455,7 +517,7 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
       headerNewsBtn.classList.remove('hidden');
       const countSuffix = ui.showNewsCountInHeader !== false ? ` (${shell.newsCount || 0})` : '';
       const labelText = `${ui.headerNewsButtonLabel || 'News'}${countSuffix}`;
-      headerNewsBtn.innerHTML = `<span class="header-news-dot"></span><span>${escapeHtml(labelText)}</span>`;
+      headerNewsBtn.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
     }
   }
 
@@ -605,6 +667,8 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   if (footerCopyright) {
     footerCopyright.textContent = shell.navigation?.copyright || '';
   }
+
+  setupFloatingCtaVisibility();
 }
 
 async function fetchStaticRoutePayload(pathname, newsCat = 'ALL') {

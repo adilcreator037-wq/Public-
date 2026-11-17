@@ -8,7 +8,7 @@
   "heroH1": "Contact & Technical Support",
   "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "\n    <p style=\"font-size:13.5px; color:#6B7280; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);\">\n      Direct Engineering, Editorial &amp; Verification Support Desk · Last Updated: <strong>November 2026</strong>\n    </p>\n    \n    <h2 id=\"1-official-contact-amp-technical-support-desk\">1. Official Contact &amp; Technical Support Desk</h2>\n<p>Need assistance with an <a href=\"/#install-guide\" data-spa-link class=\"internal-seo-link\" title=\"Step-by-Step Installation Guide\">installation guide</a>, SHA-256 checksum verification, or press inquiry on <strong>ApexMobile</strong>? Our technical and editorial team is ready to help.</p>\n\n<h3 id=\"direct-communication-channels\">Direct Communication Channels</h3>\n<ul>\n  <li><strong>Technical &amp; Editorial Support:</strong> <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a></li>\n  <li><strong>Official Portal Domain:</strong> <a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a></li>\n  <li><strong>DMCA &amp; Legal Compliance:</strong> <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a></li>\n  <li><strong>Standard Response Window:</strong> Within 24 hours (Monday – Sunday)</li>\n</ul>\n\n<h3 id=\"reporting-a-broken-mirror-or-bug\">Reporting a Broken Mirror or Bug</h3>\n<p>When reporting a technical issue, please include your device model, operating system version, and the release version number (e.g., <code>v4.8.2</code>) so our engineering team can reproduce and resolve the issue rapidly.</p>\n  ",
+  "renderedMainHtml": "\n    <p class=\"news-meta-line\" style=\"margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid var(--border-color);\">\n      Direct Engineering, Editorial &amp; Verification Support Desk · Last Updated: <strong>November 2026</strong>\n    </p>\n    \n    <h2 id=\"1-official-contact-amp-technical-support-desk\">1. Official Contact &amp; Technical Support Desk</h2>\n<p>Need assistance with an <a href=\"/#install-guide\" data-spa-link class=\"internal-seo-link\" title=\"Step-by-Step Installation Guide\">installation guide</a>, SHA-256 checksum verification, or press inquiry on <strong>ApexMobile</strong>? Our technical and editorial team is ready to help.</p>\n\n<h3 id=\"direct-communication-channels\">Direct Communication Channels</h3>\n<ul>\n  <li><strong>Technical &amp; Editorial Support:</strong> <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a></li>\n  <li><strong>Official Portal Domain:</strong> <a href=\"https://apexmobile.example.com\">https://apexmobile.example.com</a></li>\n  <li><strong>DMCA &amp; Legal Compliance:</strong> <a href=\"mailto:support@apexmobile.example.com\">support@apexmobile.example.com</a></li>\n  <li><strong>Standard Response Window:</strong> Within 24 hours (Monday – Sunday)</li>\n</ul>\n\n<h3 id=\"reporting-a-broken-mirror-or-bug\">Reporting a Broken Mirror or Bug</h3>\n<p>When reporting a technical issue, please include your device model, operating system version, and the release version number (e.g., <code>v4.8.2</code>) so our engineering team can reproduce and resolve the issue rapidly.</p>\n  ",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
@@ -147,7 +147,7 @@
       },
       "floatingCta": {
         "enabled": true,
-        "label": "⚡ Download v4.8.2",
+        "label": "Download v4.8.2",
         "url": "/moreinfo"
       }
     },
@@ -246,7 +246,7 @@
     ],
     "allSubpagePills": [
       {
-        "label": "📰 News",
+        "label": "News",
         "href": "/news"
       },
       {
@@ -297,5 +297,5 @@
       "copyright": "© 2026 ApexMobile. All rights reserved."
     }
   },
-  "updatedAt": 1794799501367
+  "updatedAt": 1794825913803
 }

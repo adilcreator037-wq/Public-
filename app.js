@@ -71,15 +71,15 @@ function routePathToStaticJsonName(pathname) {
 function resolveFontStackCss(fontFamily) {
   switch (fontFamily) {
     case 'inter':
-      return '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      return '"Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     case 'jakarta':
-      return '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      return '"Plus Jakarta Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     case 'serif':
       return 'Georgia, Cambria, "Times New Roman", Times, serif';
     case 'mono':
       return '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     default:
-      return '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+      return 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif';
   }
 }
 
@@ -133,9 +133,10 @@ function setOrCreateMeta(attrName, attrValue, content) {
 function applySeoAndHeadMeta(payload) {
   if (!payload) return;
   const brand = payload.shell?.brand || {};
-  document.title = payload.metaTitle || `${brand.name || 'Official'} Portal`;
+  document.title = payload.metaTitle || brand.name || '';
 
   setOrCreateMeta('name', 'description', payload.metaDescription || '');
+  setOrCreateMeta('name', 'robots', payload.isConfigured === false ? 'noindex, nofollow' : 'index, follow');
 
   const baseOrigin = window.location.origin;
   const fullCanonicalUrl =
@@ -149,14 +150,18 @@ function applySeoAndHeadMeta(payload) {
   }
   canonicalLink.setAttribute('href', fullCanonicalUrl);
 
+  const favLink = document.head.querySelector('link[rel="icon"]');
+  if (favLink) {
+    const favHref = brand.faviconUrl || brand.logoUrl || '';
+    favLink.setAttribute('href', favHref);
+  }
+
   setOrCreateMeta('property', 'og:title', payload.metaTitle || '');
   setOrCreateMeta('property', 'og:description', payload.metaDescription || '');
   setOrCreateMeta('property', 'og:url', fullCanonicalUrl);
   setOrCreateMeta('property', 'og:type', payload.viewType === 'news-article' ? 'article' : 'website');
-  if (payload.ogImage) {
-    setOrCreateMeta('property', 'og:image', payload.ogImage);
-    setOrCreateMeta('name', 'twitter:image', payload.ogImage);
-  }
+  setOrCreateMeta('property', 'og:image', payload.ogImage || '');
+  setOrCreateMeta('name', 'twitter:image', payload.ogImage || '');
   setOrCreateMeta('name', 'twitter:title', payload.metaTitle || '');
   setOrCreateMeta('name', 'twitter:description', payload.metaDescription || '');
 
@@ -417,6 +422,67 @@ function enhanceContainerDom(container, ui = {}) {
       await navigateToUrl('/news', false, cat);
     });
   });
+
+  // 5. Graceful fallback if an editorial/remote image fails to load
+  const imgs = container.querySelectorAll('img');
+  imgs.forEach((imgEl) => {
+    if (imgEl.dataset.errBound === '1') return;
+    imgEl.dataset.errBound = '1';
+    imgEl.addEventListener('error', () => {
+      const figure = imgEl.closest('figure');
+      if (figure) {
+        figure.classList.add('hidden');
+      } else {
+        imgEl.classList.add('hidden');
+      }
+    });
+  });
+}
+
+let floatingScrollInitialized = false;
+let heroCtaOutOfView = false;
+
+function refreshFloatingCtaVisibility() {
+  if (!floatingBottomCta) return;
+  if (floatingBottomCta.classList.contains('hidden')) {
+    floatingBottomCta.classList.remove('is-visible');
+    return;
+  }
+  const hasVisibleHeroCta =
+    heroCtaGrid &&
+    !heroCtaGrid.classList.contains('hidden') &&
+    heroSectionEl &&
+    !heroSectionEl.classList.contains('hidden');
+
+  if (!hasVisibleHeroCta) {
+    floatingBottomCta.classList.toggle('is-visible', window.scrollY > 180);
+  } else {
+    floatingBottomCta.classList.toggle('is-visible', heroCtaOutOfView);
+  }
+}
+
+function setupFloatingCtaVisibility() {
+  if (floatingScrollInitialized) {
+    refreshFloatingCtaVisibility();
+    return;
+  }
+  floatingScrollInitialized = true;
+
+  if ('IntersectionObserver' in window && heroCtaGrid) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          heroCtaOutOfView = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+        }
+        refreshFloatingCtaVisibility();
+      },
+      { threshold: 0 }
+    );
+    observer.observe(heroCtaGrid);
+  }
+
+  window.addEventListener('scroll', refreshFloatingCtaVisibility, { passive: true });
+  refreshFloatingCtaVisibility();
 }
 
 function renderPartialRoutePayload(payload, options = { preserveSsrDom: false }) {
@@ -432,30 +498,45 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   // If SSR already rendered the exact DOM for this route, only enhance interactive widgets (< 2ms!)
   if (options.preserveSsrDom && dynamicContent) {
     enhanceContainerDom(dynamicContent, ui);
+    setupFloatingCtaVisibility();
     return;
   }
 
   // Update Header Brand & News Link on SPA navigation
-  if (navbarLogoText) navbarLogoText.textContent = brand.name || 'ApexMobile';
-  if (navbarLogoImg && brand.logoUrl) {
-    navbarLogoImg.src = brand.logoUrl;
-    navbarLogoImg.alt = `${brand.name || 'Brand'} Logo`;
+  if (navbarLogoText) navbarLogoText.textContent = brand.name || '';
+  if (navbarLogoImg) {
+    if (brand.logoUrl) {
+      navbarLogoImg.src = brand.logoUrl;
+      navbarLogoImg.alt = brand.name ? `${brand.name} Logo` : 'Logo';
+      navbarLogoImg.classList.remove('hidden');
+    } else {
+      navbarLogoImg.src = '';
+      navbarLogoImg.alt = '';
+      navbarLogoImg.classList.add('hidden');
+    }
   }
   if (navbarLogoLink) {
     navbarLogoLink.href = '/';
-    navbarLogoLink.title = `${brand.name || 'Official'} Home`;
+    navbarLogoLink.title = brand.name ? `${brand.name} Home` : 'Home';
+  }
+
+  const stickyHeaderEl = document.getElementById('site-sticky-header') || document.querySelector('.sticky-header');
+  if (stickyHeaderEl) {
+    const hideHeader = payload.isConfigured === false && (shell.headerLinks || []).length === 0;
+    stickyHeaderEl.classList.toggle('hidden', hideHeader);
   }
 
   if (headerNewsBtn) {
     const isNewsActive = payload.viewType === 'news-hub' || payload.viewType === 'news-article';
+    const hasNewsOrConfigured = (shell.newsCount || 0) > 0 || payload.isConfigured !== false;
     headerNewsBtn.classList.toggle('is-active', isNewsActive);
-    if (ui.showHeaderNewsButton === false) {
+    if (ui.showHeaderNewsButton === false || !hasNewsOrConfigured) {
       headerNewsBtn.classList.add('hidden');
     } else {
       headerNewsBtn.classList.remove('hidden');
       const countSuffix = ui.showNewsCountInHeader !== false ? ` (${shell.newsCount || 0})` : '';
       const labelText = `${ui.headerNewsButtonLabel || 'News'}${countSuffix}`;
-      headerNewsBtn.innerHTML = `<span class="header-news-dot"></span><span>${escapeHtml(labelText)}</span>`;
+      headerNewsBtn.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
     }
   }
 
@@ -468,12 +549,12 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
     standaloneBackBar.classList.toggle('hidden', !showBack);
     if (showBack) {
       if (backHomeAnchor) {
-        backHomeAnchor.textContent = ui.backToHomeLabel || '← Back to Main Page';
+        backHomeAnchor.textContent = ui.backToHomeLabel || '← Back to Home';
       }
       if (backNewsAnchor) {
         const showNewsBack = payload.viewType === 'news-article';
         backNewsAnchor.classList.toggle('hidden', !showNewsBack);
-        backNewsAnchor.textContent = ui.allNewsBreadcrumbLabel || 'All Daily News →';
+        backNewsAnchor.textContent = ui.allNewsBreadcrumbLabel || 'All News →';
       }
       if (subpageSwitcherPills) {
         if (ui.showSubpageSwitcherPills === false) {
@@ -508,7 +589,9 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
 
   if (heroCtaSecondary && shell.heroCtas?.secondaryCta) {
     const sec = shell.heroCtas.secondaryCta;
-    heroCtaSecondary.textContent = sec.label || 'Installation Guide';
+    const hasSec = Boolean(sec.label && sec.url);
+    heroCtaSecondary.classList.toggle('hidden', !hasSec);
+    heroCtaSecondary.textContent = sec.label || '';
     heroCtaSecondary.href = sec.url || '#';
     if (sec.relSponsored) {
       heroCtaSecondary.setAttribute('rel', 'sponsored noopener');
@@ -518,9 +601,11 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   }
   if (heroCtaPrimary && shell.heroCtas?.primaryCta) {
     const pri = shell.heroCtas.primaryCta;
-    const priHref = pri.url || '#';
-    heroCtaPrimary.textContent = pri.label || 'Download Official Package';
-    heroCtaPrimary.href = priHref;
+    const priHref = pri.url || '';
+    const hasPri = Boolean(pri.label && priHref);
+    heroCtaPrimary.classList.toggle('hidden', !hasPri);
+    heroCtaPrimary.textContent = pri.label || '';
+    heroCtaPrimary.href = priHref || '#';
     if (priHref === '/moreinfo' || priHref === '/download') {
       heroCtaPrimary.setAttribute('rel', 'nofollow noopener');
     } else if (pri.relSponsored) {
@@ -532,9 +617,9 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
 
   if (floatingBottomCta && floatingCtaBtn && shell.heroCtas?.floatingCta) {
     const fl = shell.heroCtas.floatingCta;
-    if (fl.enabled && payload.viewType === 'home') {
-      const flHref = fl.url || '/moreinfo';
-      floatingCtaBtn.textContent = fl.label || 'Download Faster';
+    if (fl.enabled && fl.label && fl.url && payload.viewType === 'home') {
+      const flHref = fl.url;
+      floatingCtaBtn.textContent = fl.label;
       floatingCtaBtn.href = flHref;
       if (flHref === '/moreinfo' || flHref === '/download') {
         floatingCtaBtn.setAttribute('rel', 'nofollow noopener');
@@ -553,14 +638,16 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
     enhanceContainerDom(dynamicContent, ui);
   }
 
+  const summaryTextVal = shell.navigation?.footerSummary || brand.tagline || '';
+  const hasBrandSummaryContent = Boolean(brand.name || summaryTextVal || brand.contactEmail);
   if (footerBrandSummaryBlock) {
-    if (shell.navigation?.showFooterBrandSummary === false) {
+    if (shell.navigation?.showFooterBrandSummary === false || !hasBrandSummaryContent) {
       footerBrandSummaryBlock.classList.add('hidden');
     } else {
       footerBrandSummaryBlock.classList.remove('hidden');
       if (footerBrandTitle) footerBrandTitle.textContent = brand.name || '';
       if (footerSummaryText) {
-        footerSummaryText.textContent = shell.navigation?.footerSummary || brand.tagline || '';
+        footerSummaryText.textContent = summaryTextVal;
       }
       if (footerContactEmailLink) {
         if (shell.navigation?.showFooterContactEmail !== false && brand.contactEmail) {
@@ -574,19 +661,21 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
     }
   }
 
+  const disclaimerTextVal = shell.navigation?.disclaimer || '';
   if (footerDisclaimerBlock) {
-    footerDisclaimerBlock.classList.toggle('hidden', ui.showFooterDisclaimer === false);
+    footerDisclaimerBlock.classList.toggle(
+      'hidden',
+      ui.showFooterDisclaimer === false || !disclaimerTextVal
+    );
   }
   if (footerDisclaimerHeading) {
     footerDisclaimerHeading.textContent = shell.navigation?.disclaimerHeading || 'Legal Disclaimer';
   }
   if (footerDisclaimer) {
-    footerDisclaimer.textContent = shell.navigation?.disclaimer || '';
+    footerDisclaimer.textContent = disclaimerTextVal;
   }
-  if (footerLinksHeading) {
-    footerLinksHeading.classList.toggle('hidden', ui.showFooterLinksHeading === false);
-    footerLinksHeading.textContent = shell.navigation?.siteLinksHeading || 'Official Pages & Legal Links';
-  }
+
+  let footerLinksHtmlStr = '';
   if (footerLinksList) {
     const quickLinksHtml = (shell.navigation?.footerQuickLinks || [])
       .map((ql) => {
@@ -600,11 +689,33 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
           `<a href="/${escapeHtml(pg.slug)}" data-spa-link class="footer-link" title="${escapeHtml(pg.metaTitle)}">${escapeHtml(pg.label)}</a>`
       )
       .join('');
-    footerLinksList.innerHTML = [quickLinksHtml, legalLinksHtml].filter(Boolean).join('');
+    footerLinksHtmlStr = [quickLinksHtml, legalLinksHtml].filter(Boolean).join('');
+    footerLinksList.innerHTML = footerLinksHtmlStr;
+  }
+  if (footerLinksHeading) {
+    footerLinksHeading.classList.toggle(
+      'hidden',
+      ui.showFooterLinksHeading === false || !footerLinksHtmlStr
+    );
+    footerLinksHeading.textContent = shell.navigation?.siteLinksHeading || '';
+  }
+  const footerDivider = document.getElementById('footer-divider');
+  const copyrightVal = shell.navigation?.copyright || '';
+  const showFooterSummaryVisible = shell.navigation?.showFooterBrandSummary !== false && hasBrandSummaryContent;
+  const showDisclaimerVisible = ui.showFooterDisclaimer !== false && Boolean(disclaimerTextVal);
+  const hasAnyFooterContent = Boolean(copyrightVal || showFooterSummaryVisible || showDisclaimerVisible || footerLinksHtmlStr);
+  const siteFooterEl = document.getElementById('site-footer') || document.querySelector('.site-footer');
+  if (siteFooterEl) {
+    siteFooterEl.classList.toggle('hidden', !hasAnyFooterContent);
+  }
+  if (footerDivider) {
+    footerDivider.classList.toggle('hidden', !hasAnyFooterContent);
   }
   if (footerCopyright) {
-    footerCopyright.textContent = shell.navigation?.copyright || '';
+    footerCopyright.textContent = copyrightVal;
   }
+
+  setupFloatingCtaVisibility();
 }
 
 async function fetchStaticRoutePayload(pathname, newsCat = 'ALL') {

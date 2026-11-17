@@ -1,7 +1,7 @@
 /**
  * Cloudflare Pages Function: GET /api/admin/verify
- * Verifies the admin bearer token or API key against Cloudflare environment secrets
- * and returns safe (non-secret) environment diagnostics.
+ * Zero-leak session check: unauthenticated callers receive only
+ * `{ authenticated: false, user: null, loginHints: { requiresApiKey } }`.
  */
 
 import {
@@ -14,42 +14,38 @@ import {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-
   const { verification, adminCreds } = await verifyAdminRequest(request, env);
+
+  if (!verification.valid) {
+    return jsonResponse(
+      {
+        authenticated: false,
+        user: null
+      },
+      200,
+      {},
+      request,
+      true
+    );
+  }
+
   const fbEnv = getFirebaseEnvFromEnv(env);
-  const siteConfig =
-    verification.valid && fbEnv.isConfigured
-      ? await readSiteConfigFromFirestoreRest(fbEnv.config)
-      : null;
+  const siteConfig = fbEnv.isConfigured
+    ? await readSiteConfigFromFirestoreRest(fbEnv.config)
+    : null;
 
-  return jsonResponse({
-    authenticated: verification.valid,
-    user: verification.valid
-      ? { email: verification.email || adminCreds.email, role: 'Master Administrator' }
-      : null,
-    loginHints: {
-      requiresApiKey: adminCreds.requiresApiKey,
-      usingDefaultDevCredentials: !adminCreds.isCustomEmail && !adminCreds.isCustomPassword,
-      defaultEmailHint:
-        !adminCreds.isCustomEmail && !adminCreds.isCustomPassword ? adminCreds.email : undefined
+  return jsonResponse(
+    {
+      authenticated: true,
+      user: { email: verification.email || adminCreds.email, role: 'Master Administrator' },
+      loginHints: {
+        requiresApiKey: adminCreds.requiresApiKey
+      },
+      envDiagnostics: buildEdgeEnvDiagnostics(adminCreds, fbEnv, env, true, siteConfig)
     },
-    envDiagnostics: buildEdgeEnvDiagnostics(
-      adminCreds,
-      fbEnv,
-      env,
-      verification.valid,
-      siteConfig
-    )
-  });
-}
-
-export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-admin-api-key'
-    }
-  });
+    200,
+    {},
+    request,
+    true
+  );
 }

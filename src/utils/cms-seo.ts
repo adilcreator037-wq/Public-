@@ -26,7 +26,7 @@ import {
  */
 export function toAbsoluteAssetUrl(urlOrPath: string | undefined, baseCanonical: string): string {
   const raw = (urlOrPath || '').trim();
-  if (!raw) return `${baseCanonical}/assets/app-icon.svg`;
+  if (!raw) return '';
   const optimized = optimizeCloudinaryUrl(raw);
   if (/^https?:\/\//i.test(optimized) || optimized.startsWith('data:')) {
     return optimized;
@@ -79,17 +79,21 @@ export interface ResolvedRouteView {
 
 export function resolveRouteView(pathname: string, config: SiteConfig): ResolvedRouteView {
   const cleanPath = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+  const brandName = (config.brand?.name || '').trim();
+  const brandSuffix = brandName ? ` | ${brandName}` : '';
 
   // 1. Check /news Hub Page
   if (cleanPath === '/news') {
     return {
       viewType: 'news-hub',
-      metaTitle: config.newsSection?.metaTitle || `Daily News & Release Updates | ${config.brand.name}`,
+      metaTitle: config.newsSection?.metaTitle || `Daily News & Updates${brandSuffix}`,
       metaDescription:
         config.newsSection?.metaDescription ||
-        `Browse all daily news updates, release changelogs, and security advisories for ${config.brand.name}.`,
+        (brandName
+          ? `Browse all daily news updates, release changelogs, and announcements for ${brandName}.`
+          : 'Browse published news updates and announcements.'),
       canonicalPath: '/news',
-      ogImage: config.seo?.ogImageUrl || config.hero?.bannerImageUrl
+      ogImage: config.seo?.ogImageUrl || config.hero?.bannerImageUrl || ''
     };
   }
 
@@ -102,10 +106,10 @@ export function resolveRouteView(pathname: string, config: SiteConfig): Resolved
     if (article) {
       return {
         viewType: 'news-article',
-        metaTitle: article.metaTitle || `${article.title} | ${config.brand.name}`,
+        metaTitle: article.metaTitle || `${article.title}${brandSuffix}`,
         metaDescription: article.metaDescription || article.summary || config.seo.metaDescription,
         canonicalPath: `/news/${generateSlug(article.slug || article.title)}`,
-        ogImage: article.coverImageUrl || config.seo?.ogImageUrl || config.hero?.bannerImageUrl,
+        ogImage: article.coverImageUrl || config.seo?.ogImageUrl || config.hero?.bannerImageUrl || '',
         article
       };
     }
@@ -124,10 +128,10 @@ export function resolveRouteView(pathname: string, config: SiteConfig): Resolved
       const cleanSlug = generateSlug(matchedPage.slug || matchedPage.label);
       return {
         viewType: 'standalone-page',
-        metaTitle: matchedPage.metaTitle || `${matchedPage.h1} | ${config.brand.name}`,
+        metaTitle: matchedPage.metaTitle || `${matchedPage.h1}${brandSuffix}`,
         metaDescription: matchedPage.metaDescription || config.seo.metaDescription,
         canonicalPath: `/${cleanSlug}`,
-        ogImage: matchedPage.bannerImageUrl || config.seo?.ogImageUrl || config.hero?.bannerImageUrl,
+        ogImage: matchedPage.bannerImageUrl || config.seo?.ogImageUrl || config.hero?.bannerImageUrl || '',
         page: matchedPage
       };
     }
@@ -136,10 +140,10 @@ export function resolveRouteView(pathname: string, config: SiteConfig): Resolved
   // 4. Default to Home Page
   return {
     viewType: 'home',
-    metaTitle: config.seo?.metaTitle || config.hero?.metaTitle || `${config.brand.name} Official Site`,
+    metaTitle: config.seo?.metaTitle || config.hero?.metaTitle || config.hero?.h1 || brandName || 'Coming Soon',
     metaDescription: config.seo?.metaDescription || config.hero?.metaDescription || '',
     canonicalPath: '/',
-    ogImage: config.seo?.ogImageUrl || config.hero?.bannerImageUrl
+    ogImage: config.seo?.ogImageUrl || config.hero?.bannerImageUrl || ''
   };
 }
 
@@ -154,10 +158,28 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
   );
   const route = resolveRouteView(pathname, config);
   const fullUrl = route.canonicalPath === '/' ? baseCanonical : `${baseCanonical}${route.canonicalPath}`;
-  const searchLogoUrl = toAbsoluteAssetUrl(
-    config.brand?.searchLogoUrl || config.brand?.logoUrl || config.brand?.faviconUrl || '/assets/app-icon.svg',
-    baseCanonical
-  );
+  const rawLogo = config.brand?.searchLogoUrl || config.brand?.logoUrl || config.brand?.faviconUrl || '';
+  const searchLogoUrl = rawLogo ? toAbsoluteAssetUrl(rawLogo, baseCanonical) : '';
+
+  const orgNode: Record<string, any> = {
+    "@type": "Organization",
+    "@id": `${baseCanonical}/#organization`,
+    "name": config.brand?.name || 'Organization',
+    "url": baseCanonical,
+    "email": config.brand?.contactEmail || undefined
+  };
+  if (searchLogoUrl) {
+    orgNode.logo = {
+      "@type": "ImageObject",
+      "@id": `${baseCanonical}/#logo`,
+      "url": searchLogoUrl,
+      "contentUrl": searchLogoUrl,
+      "width": 512,
+      "height": 512,
+      "caption": config.brand?.name || 'Organization Logo'
+    };
+    orgNode.image = { "@id": `${baseCanonical}/#logo` };
+  }
 
   const graph: Array<Record<string, any>> = [
     {
@@ -170,23 +192,7 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
       "publisher": { "@id": `${baseCanonical}/#organization` },
       "inLanguage": "en-US"
     },
-    {
-      "@type": "Organization",
-      "@id": `${baseCanonical}/#organization`,
-      "name": config.brand?.name || 'Organization',
-      "url": baseCanonical,
-      "email": config.brand?.contactEmail || undefined,
-      "logo": {
-        "@type": "ImageObject",
-        "@id": `${baseCanonical}/#logo`,
-        "url": searchLogoUrl,
-        "contentUrl": searchLogoUrl,
-        "width": 512,
-        "height": 512,
-        "caption": config.brand?.name || 'Organization Logo'
-      },
-      "image": { "@id": `${baseCanonical}/#logo` }
-    }
+    orgNode
   ];
 
   if (route.viewType === 'news-hub') {
@@ -310,8 +316,8 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
       "name": sw.name || config.brand?.name || 'Application',
       "operatingSystem": sw.operatingSystem || config.packageSpecs?.operatingSystem || 'Android, iOS',
       "applicationCategory": sw.applicationCategory || 'UtilitiesApplication',
-      "softwareVersion": config.packageSpecs?.version || "4.8.2",
-      "fileSize": config.packageSpecs?.fileSize || "64 MB",
+      "softwareVersion": config.packageSpecs?.version || "1.0.0",
+      ...(config.packageSpecs?.fileSize ? { "fileSize": config.packageSpecs.fileSize } : {}),
       "offers": {
         "@type": "Offer",
         "price": sw.price || "0.00",
@@ -427,19 +433,43 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
  * Powers Google Search Result Site Icon discovery, mobile home-screen installability, and theme color.
  */
 export function generateWebManifestJson(config: SiteConfig): string {
-  const brandName = config.brand?.name || 'ApexMobile';
-  const shortName = config.brand?.shortName || brandName;
+  const brandName = (config.brand?.name || '').trim();
+  const shortName = (config.brand?.shortName || brandName || '').trim();
   const iconUrl = optimizeCloudinaryUrl(
-    config.brand?.searchLogoUrl || config.brand?.faviconUrl || config.brand?.logoUrl || '/assets/app-icon.svg'
+    config.brand?.searchLogoUrl || config.brand?.faviconUrl || config.brand?.logoUrl || ''
   );
   const appleIconUrl = optimizeCloudinaryUrl(
-    config.brand?.appleTouchIconUrl || iconUrl
+    config.brand?.appleTouchIconUrl || iconUrl || ''
   );
-  const isSvg = iconUrl.toLowerCase().endsWith('.svg');
-  const mimeType = isSvg ? 'image/svg+xml' : 'image/png';
+
+  const icons: Array<{ src: string; sizes: string; type: string; purpose: string }> = [];
+  if (iconUrl) {
+    const isSvg = iconUrl.toLowerCase().endsWith('.svg');
+    const mimeType = isSvg ? 'image/svg+xml' : 'image/png';
+    icons.push({
+      src: iconUrl,
+      sizes: isSvg ? 'any' : '48x48 96x96 192x192 512x512',
+      type: mimeType,
+      purpose: 'any maskable'
+    });
+  }
+  if (appleIconUrl) {
+    const isSvg = appleIconUrl.toLowerCase().endsWith('.svg');
+    const mimeType = isSvg ? 'image/svg+xml' : 'image/png';
+    icons.push({
+      src: appleIconUrl,
+      sizes: isSvg ? 'any' : '180x180',
+      type: mimeType,
+      purpose: 'any'
+    });
+  }
+
+  const manifestName = config.brand?.tagline
+    ? (brandName ? `${brandName} — ${config.brand.tagline}` : config.brand.tagline)
+    : brandName;
 
   const manifest = {
-    name: `${brandName} — ${config.brand?.tagline || 'Official Portal'}`,
+    name: manifestName,
     short_name: shortName,
     description: config.seo?.metaDescription || config.hero?.metaDescription || '',
     start_url: '/',
@@ -448,20 +478,7 @@ export function generateWebManifestJson(config: SiteConfig): string {
     orientation: 'portrait',
     background_color: config.uiConfig?.surfaceBackgroundColor || '#FFFFFF',
     theme_color: config.brand?.themeColor || config.brand?.accentColor || '#EF4444',
-    icons: [
-      {
-        src: iconUrl,
-        sizes: '48x48 96x96 192x192 512x512',
-        type: mimeType,
-        purpose: 'any maskable'
-      },
-      {
-        src: appleIconUrl,
-        sizes: '180x180',
-        type: mimeType,
-        purpose: 'any'
-      }
-    ]
+    icons
   };
 
   return JSON.stringify(manifest, null, 2);

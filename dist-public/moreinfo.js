@@ -10,8 +10,8 @@ import {
 const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
 let gatewayConfig = {
-  appSlug: 'apexmobile',
-  appSerialId: 'APM-482',
+  appSlug: 'official-package',
+  appSerialId: 'PKG-001',
   devicePolicyMode: 'universal_human',
   proceedButtonLabel: 'PROCEED',
   turnstileSiteKey: '1x00000000000000000000AA'
@@ -151,7 +151,7 @@ function applyGatewayMetadata(meta) {
   const specSha = document.getElementById('gw-spec-sha256');
   const footerCopy = document.getElementById('gw-footer-copyright');
 
-  const displayTitle = meta.customHeading || meta.appName || meta.brandName || 'ApexMobile';
+  const displayTitle = meta.customHeading || meta.appName || meta.brandName || 'Official Portal';
   if (brandNameEl && meta.brandName) brandNameEl.textContent = meta.brandName;
   if (brandLogoEl && meta.logoUrl) brandLogoEl.src = meta.logoUrl;
   if (appIconEl && meta.logoUrl) appIconEl.src = meta.logoUrl;
@@ -175,7 +175,7 @@ function applyGatewayMetadata(meta) {
   }
   if (specName) specName.textContent = displayTitle;
   if (specVerSize) {
-    specVerSize.textContent = `${meta.version || 'v4.8.2'} · ${meta.fileSize || '64.2 MB'}`;
+    specVerSize.textContent = [meta.version, meta.fileSize].filter(Boolean).join(' · ') || '—';
   }
   if (specOs && meta.operatingSystem) specOs.textContent = meta.operatingSystem;
   if (specSha && meta.sha256) specSha.textContent = meta.sha256;
@@ -343,8 +343,7 @@ function resolveNavigationProof(appSlug) {
   try {
     if (
       sessionStorage.getItem(`rd_nav_${appSlug}`) === '1' ||
-      sessionStorage.getItem('rd_nav_default') === '1' ||
-      sessionStorage.getItem('rd_nav_apexmobile') === '1'
+      sessionStorage.getItem('rd_nav_default') === '1'
     ) {
       hasNav = true;
     }
@@ -391,7 +390,7 @@ async function handleClearanceSubmit(e) {
   try {
     const policyMode = gatewayConfig.devicePolicyMode || 'universal_human';
     const env = envCache || (await collectEnv(policyMode));
-    const appId = gatewayConfig.appSlug || 'apexmobile';
+    const appId = gatewayConfig.appSlug || 'official-package';
     const nv = resolveNavigationProof(appId);
 
     let evStr = touchData.ev.join(',');
@@ -517,7 +516,7 @@ async function initGatewaySession() {
       return;
     }
 
-    const appId = gatewayConfig.appSlug || 'apexmobile';
+    const appId = gatewayConfig.appSlug || 'official-package';
     const res = await fetch('/api/v1/app/session-init', {
       method: 'POST',
       credentials: 'include',

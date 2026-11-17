@@ -136,6 +136,14 @@ export interface GitHubDeployLogItem {
   commitSha?: string;
   commitUrl?: string;
   filesCount: number;
+  addedCount?: number;
+  updatedCount?: number;
+  deletedCount?: number;
+  unchangedCount?: number;
+  skipped?: boolean;
+  durationMs?: number;
+  steps?: string[];
+  errorDetail?: string;
   message: string;
 }
 
@@ -145,6 +153,7 @@ export interface GitHubDeployConfig {
   branch: string;
   targetDirectory: string;
   fineGrainedToken: string;
+  hasFineGrainedToken?: boolean;
   commitMessageTemplate: string;
   autoPushOnPublish: boolean;
   lastPublishedAt?: number;
@@ -174,6 +183,8 @@ export interface SecurityGateConfig {
   turnstileSiteKey: string;
   /** Private Cloudflare Turnstile Secret Key (`0x4...`; server-only, never exposed to public client) */
   turnstileSecretKey: string;
+  /** Indicates whether a Turnstile secret key is stored server-side or via env */
+  hasTurnstileSecretKey?: boolean;
   /** Label shown on the ClearanceButton once Turnstile & 3-second hold complete */
   proceedButtonLabel: string;
   /** Custom notice shown when link issuance is paused or unavailable */
@@ -328,6 +339,29 @@ export interface SiteConfig {
     };
     rawJsonLd: string;
   };
+  syncLogs?: Array<{
+    id: string;
+    timestamp: number;
+    trigger: 'manual-push' | 'auto-push' | 'module-compile' | 'full-compile' | 'verify' | 'firebase-save';
+    status: 'success' | 'local-only' | 'error';
+    modulesChanged: string[];
+    filesCount: number;
+    addedCount?: number;
+    updatedCount?: number;
+    deletedCount?: number;
+    unchangedCount?: number;
+    skipped?: boolean;
+    changedPaths: string[];
+    branch?: string;
+    repo?: string;
+    commitSha?: string;
+    commitUrl?: string;
+    durationMs?: number;
+    steps?: string[];
+    message: string;
+    errorDetail?: string;
+  }>;
+  dirtyModulesSinceSync?: string[];
   updatedAt: number;
 }
 
@@ -378,7 +412,7 @@ export function escapeHtml(str: string | undefined | null): string {
  * Normalize a domain or canonical URL
  */
 export function normalizeDomainUrl(rawDomain: string | undefined | null, forceHttps = true): string {
-  if (!rawDomain || !rawDomain.trim()) return 'https://apexmobile.example.com';
+  if (!rawDomain || !rawDomain.trim()) return 'https://example.com';
   let cleaned = rawDomain.trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(cleaned)) {
     cleaned = `${forceHttps ? 'https' : 'http'}://${cleaned}`;
@@ -394,13 +428,13 @@ export function normalizeDomainUrl(rawDomain: string | undefined | null, forceHt
 export function resolveFontStackCss(fontFamily?: string): string {
   switch (fontFamily) {
     case 'inter':
-      return '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      return '"Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     case 'jakarta':
-      return '"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      return '"Plus Jakarta Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     case 'serif':
       return 'Georgia, Cambria, "Times New Roman", Times, serif';
     default:
-      return '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+      return 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif';
   }
 }
 
@@ -414,9 +448,9 @@ export function generateSmartLegalHtml(
   contactEmail: string,
   effectiveDate = 'November 2026'
 ): string {
-  const brand = brandName || 'ApexMobile';
+  const brand = brandName || 'Website';
   const domain = normalizeDomainUrl(canonicalUrl);
-  const email = contactEmail || 'support@apexmobile.example.com';
+  const email = contactEmail || 'support@example.com';
 
   if (docType === 'privacy') {
     return `
@@ -630,7 +664,7 @@ export const MASTER_DEFAULT_CONFIG: SiteConfig = {
     },
     floatingCta: {
       enabled: true,
-      label: "⚡ Download v4.8.2",
+      label: "Download v4.8.2",
       url: "/moreinfo"
     }
   },
@@ -1080,8 +1114,8 @@ export function mergeSiteConfig(
     ...rawSec,
     enabled: rawSec.enabled !== false,
     gatewayPath: String(rawSec.gatewayPath || base.securityGate.gatewayPath || '/moreinfo').trim(),
-    appSlug: generateSlug(rawSec.appSlug || mergedBrand.shortName || mergedBrand.name || 'apexmobile') || 'apexmobile',
-    appSerialId: String(rawSec.appSerialId || base.securityGate.appSerialId || 'APM-482').trim(),
+    appSlug: generateSlug(rawSec.appSlug || mergedBrand.shortName || mergedBrand.name || base.securityGate.appSlug || '') || '',
+    appSerialId: String(rawSec.appSerialId !== undefined ? rawSec.appSerialId : (base.securityGate.appSerialId || '')).trim(),
     devicePolicyMode:
       rawSec.devicePolicyMode === 'strict_mobile_only' ? 'strict_mobile_only' : 'universal_human',
     primaryDownloadUrl: String(
@@ -1092,6 +1126,7 @@ export function mergeSiteConfig(
     encryptedPrimaryUrl: String(rawSec.encryptedPrimaryUrl || '').trim(),
     turnstileSiteKey: String(rawSec.turnstileSiteKey || '').trim(),
     turnstileSecretKey: String(rawSec.turnstileSecretKey || '').trim(),
+    hasTurnstileSecretKey: Boolean(rawSec.hasTurnstileSecretKey || rawSec.turnstileSecretKey),
     proceedButtonLabel: String(rawSec.proceedButtonLabel || 'PROCEED').trim() || 'PROCEED',
     unavailableMessage: String(
       rawSec.unavailableMessage || base.securityGate.unavailableMessage
@@ -1274,7 +1309,7 @@ export function mergeSiteConfig(
   };
 
   let mergedPages: StandalonePageItem[] = [];
-  if (Array.isArray(p.pages) && p.pages.length > 0) {
+  if (Array.isArray(p.pages)) {
     mergedPages = p.pages.map((pg: any, idx: number) => {
       const slug = generateSlug(pg.slug || pg.label || `page-${idx + 1}`);
       return {
@@ -1298,13 +1333,14 @@ export function mergeSiteConfig(
     mergedPages = JSON.parse(JSON.stringify(base.pages));
   }
 
+  const rawCanonical = p.domainConfig?.primaryDomain || p.seo?.canonicalUrl || base.seo.canonicalUrl || '';
+  const mergedCanonicalUrl = rawCanonical
+    ? normalizeDomainUrl(rawCanonical, mergedDomainConfig.forceHttps)
+    : '';
   const mergedSeo = {
     ...base.seo,
     ...(p.seo || {}),
-    canonicalUrl: normalizeDomainUrl(
-      p.domainConfig?.primaryDomain || p.seo?.canonicalUrl || base.seo.canonicalUrl,
-      mergedDomainConfig.forceHttps
-    ),
+    canonicalUrl: mergedCanonicalUrl,
     softwareDetails: {
       ...base.seo.softwareDetails,
       ...(p.seo?.softwareDetails || {})
@@ -1329,6 +1365,10 @@ export function mergeSiteConfig(
     navigation: mergedNav,
     pages: mergedPages,
     seo: mergedSeo,
+    syncLogs: Array.isArray(p.syncLogs) ? p.syncLogs.slice(0, 30) : JSON.parse(JSON.stringify(base.syncLogs || [])),
+    dirtyModulesSinceSync: Array.isArray(p.dirtyModulesSinceSync)
+      ? Array.from(new Set(p.dirtyModulesSinceSync.map((k: any) => String(k))))
+      : JSON.parse(JSON.stringify(base.dirtyModulesSinceSync || [])),
     updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : Date.now()
   };
 }

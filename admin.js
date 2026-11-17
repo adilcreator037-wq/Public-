@@ -1,5 +1,7 @@
 import {
-  MASTER_DEFAULT_CONFIG,
+  EMPTY_ADMIN_CONFIG,
+  isCmsModuleKey,
+  extractConfigModule,
   mergeSiteConfig,
   generateSlug,
   generateSmartLegalHtml,
@@ -10,6 +12,8 @@ import {
   getCachedSiteConfigSync,
   getSiteConfigRemote,
   saveSiteConfigRemote,
+  saveSiteConfigModuleRemote,
+  saveSiteConfigModulesBatchRemote,
   resetSiteConfigRemote,
   uploadImageRemote,
   verifyGitHubRepoRemote,
@@ -27,20 +31,26 @@ import {
   logoutAdminUser
 } from './firebase-config.js';
 
-let currentConfig = mergeSiteConfig(getCachedSiteConfigSync(), MASTER_DEFAULT_CONFIG);
+let currentConfig = mergeSiteConfig(getCachedSiteConfigSync(), EMPTY_ADMIN_CONFIG);
 let activeTab = 'overview';
 let activeLegalPageIndex = 0;
 let authMode = 'credentials';
 let isDirty = false;
+const dirtyModules = new Set();
+let pendingClearGithubToken = false;
+let pendingClearTurnstileSecret = false;
 
 // State for Global Image Upload, Insert Image Modal, Link Modal & Visual Block Builder Modal
 let pendingUploadCallback = null;
-let activeImageModalTarget = null; // Either { type: 'id', id: string } or { type: 'collection', collection, index, key, textareaId, previewId }
-let activeVisualBlockTarget = null; // Either { type: 'id', id: string } or { type: 'collection', collection, index, key, textareaId, previewId }
-let activeLinkModalTarget = null; // Same descriptor shape for Link Insertion Modal
+let activeImageModalTarget = null;
+let activeVisualBlockTarget = null;
+let activeLinkModalTarget = null;
 let sectionSearchQuery = '';
 let newsSearchQuery = '';
 let faqSearchQuery = '';
+let openSectionIndex = 0;
+let openNewsIndex = 0;
+let openFaqIndex = 0;
 const editorUndoHistory = new Map();
 
 const $ = (id) => document.getElementById(id);
@@ -64,8 +74,86 @@ function showToast(message, type = 'default') {
   }, 3400);
 }
 
-function markDirty(message = 'Unsaved edits — click "Publish All Changes" to go live') {
+function getPrimaryModuleForActiveTab(tabId = activeTab) {
+  const map = {
+    overview: 'brand',
+    brand: 'brand',
+    specs: 'packageSpecs',
+    sections: 'sections',
+    news: 'newsSection',
+    faqs: 'faqsSection',
+    pages: 'pages',
+    domain: 'domainConfig'
+  };
+  return map[tabId] || 'brand';
+}
+
+function inferModuleKeyFromElement(el) {
+  if (!el) return getPrimaryModuleForActiveTab();
+  const col = el.dataset?.collection || el.getAttribute?.('data-collection') || '';
+  if (col === 'sections') return 'sections';
+  if (col === 'news') return 'newsSection';
+  if (col === 'faqs') return 'faqsSection';
+  if (col === 'pages') return 'pages';
+  if (col === 'menu' || col === 'footerQuickLinks') return 'navigation';
+  if (col === 'customSpecs') return 'packageSpecs';
+  if (col === 'internalLinks') return 'domainConfig';
+
+  const id = String(el.id || '');
+  if (id.startsWith('brand-')) return 'brand';
+  if (id.startsWith('hero-') || id.startsWith('cta-') || id.startsWith('floating-cta-')) return 'hero';
+  if (id.startsWith('ui-')) return 'uiConfig';
+  if (id.startsWith('specs-')) return 'packageSpecs';
+  if (id.startsWith('news-')) return 'newsSection';
+  if (id.startsWith('faqs-')) return 'faqsSection';
+  if (id === 'global-raw-html') return 'content';
+  if (id.startsWith('nav-') || id.startsWith('footer-')) return 'navigation';
+  if (id.startsWith('domain-')) return 'domainConfig';
+  if (id.startsWith('seo-') || id.startsWith('schema-')) return 'seo';
+  if (id.startsWith('sec-')) return 'securityGate';
+  if (id.startsWith('gh-')) return 'githubConfig';
+  return getPrimaryModuleForActiveTab();
+}
+
+function renderDirtyModulesSummary() {
+  const summaryEl = $('dirty-modules-summary');
+  const edited = Array.from(dirtyModules);
+  if (summaryEl) {
+    if (edited.length === 0) {
+      summaryEl.innerHTML = '';
+    } else {
+      summaryEl.innerHTML = edited
+        .map((m) => `<span class="sync-module-chip">${escapeHtml(m)}</span>`)
+        .join('');
+    }
+  }
+
+  const pendingSyncSet = new Set([
+    ...(Array.isArray(currentConfig?.dirtyModulesSinceSync) ? currentConfig.dirtyModulesSinceSync : []),
+    ...edited
+  ]);
+  const pendingArr = Array.from(pendingSyncSet);
+  const pendingTextEl = $('gh-pending-modules-text');
+  const pendingTagEl = $('gh-pending-count-tag');
+  if (pendingTextEl) {
+    pendingTextEl.innerHTML =
+      pendingArr.length === 0
+        ? '<span style="color:#059669;font-weight:700;">All modules synced to Public</span>'
+        : pendingArr.map((m) => `<span class="sync-module-chip">${escapeHtml(m)}</span>`).join(' ');
+  }
+  if (pendingTagEl) {
+    pendingTagEl.textContent = `${pendingArr.length} pending`;
+  }
+}
+
+function markDirty(message = 'Unsaved edits — click "Publish Edited Modules" to go live', moduleKey = null) {
   isDirty = true;
+  if (moduleKey && isCmsModuleKey(moduleKey)) {
+    dirtyModules.add(moduleKey);
+  } else {
+    dirtyModules.add(getPrimaryModuleForActiveTab());
+  }
+  renderDirtyModulesSummary();
   const fb = $('save-feedback-text');
   if (fb) {
     fb.textContent = message;
@@ -75,6 +163,8 @@ function markDirty(message = 'Unsaved edits — click "Publish All Changes" to g
 
 function markClean(message = 'All changes published and compiled to static public site') {
   isDirty = false;
+  dirtyModules.clear();
+  renderDirtyModulesSummary();
   const fb = $('save-feedback-text');
   if (fb) {
     fb.textContent = message;
@@ -177,7 +267,16 @@ function refreshBrandThumbs() {
     const inp = $(inputId);
     const img = $(imgId);
     if (inp && img) {
-      img.src = inp.value.trim() || '/assets/app-icon.svg';
+      const val = inp.value.trim();
+      if (val) {
+        img.src = val;
+        img.removeAttribute('hidden');
+        img.style.display = 'inline-block';
+      } else {
+        img.removeAttribute('src');
+        img.setAttribute('hidden', '');
+        img.style.display = 'none';
+      }
     }
   });
 }
@@ -516,25 +615,24 @@ function confirmInsertVisualBlockFromModal() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   1. AUTHENTICATION FLOW
+   1. AUTHENTICATION FLOW & DYNAMIC WORKSPACE MOUNTING
    ═══════════════════════════════════════════════════════════════════════════ */
 function setAuthMode(mode) {
   authMode = mode;
-  const tabCreds = $('tab-auth-credentials');
-  const tabKey = $('tab-auth-apikey');
-  const fieldsCreds = $('auth-credentials-fields');
-  const fieldsKey = $('auth-apikey-fields');
+  document.querySelectorAll('.auth-tab[data-auth-mode]').forEach((btn) => {
+    const isMatch = btn.getAttribute('data-auth-mode') === mode;
+    btn.classList.toggle('active', isMatch);
+    btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+  });
+  const groupCreds = $('auth-credentials-group') || $('auth-credentials-fields');
+  const groupKey = $('auth-apikey-group') || $('auth-apikey-fields');
 
   if (mode === 'apikey') {
-    tabCreds?.classList.remove('active');
-    tabKey?.classList.add('active');
-    if (fieldsCreds) fieldsCreds.style.display = 'none';
-    if (fieldsKey) fieldsKey.style.display = 'grid';
+    if (groupCreds) groupCreds.hidden = true;
+    if (groupKey) groupKey.hidden = false;
   } else {
-    tabCreds?.classList.add('active');
-    tabKey?.classList.remove('active');
-    if (fieldsCreds) fieldsCreds.style.display = 'grid';
-    if (fieldsKey) fieldsKey.style.display = 'none';
+    if (groupCreds) groupCreds.hidden = false;
+    if (groupKey) groupKey.hidden = true;
   }
 }
 
@@ -544,9 +642,24 @@ async function handleLoginSubmit(e) {
   const btn = $('btn-login-submit');
   if (errBox) errBox.classList.remove('visible');
 
-  const email = $('login-email')?.value.trim() || '';
-  const password = $('login-password')?.value || '';
-  const apiKey = $('login-apikey')?.value.trim() || '';
+  const email = authMode === 'credentials' ? ($('login-email')?.value.trim() || '') : '';
+  const password = authMode === 'credentials' ? ($('login-password')?.value || '') : '';
+  const apiKey = authMode === 'apikey' ? ($('login-apikey')?.value.trim() || '') : '';
+
+  if (authMode === 'apikey' && !apiKey) {
+    if (errBox) {
+      errBox.textContent = 'Please enter your administrator access key.';
+      errBox.classList.add('visible');
+    }
+    return;
+  }
+  if (authMode === 'credentials' && (!email || !password)) {
+    if (errBox) {
+      errBox.textContent = 'Please enter both administrator email and password.';
+      errBox.classList.add('visible');
+    }
+    return;
+  }
 
   if (btn) {
     btn.disabled = true;
@@ -557,28 +670,65 @@ async function handleLoginSubmit(e) {
     const result = await loginAdminUser(email, password, apiKey);
     if (!result.success) {
       if (errBox) {
-        errBox.textContent = result.error || 'Invalid credentials.';
+        errBox.textContent = result.error || 'Invalid administrator credentials.';
         errBox.classList.add('visible');
       }
       return;
     }
 
+    if ($('login-password')) $('login-password').value = '';
+    if ($('login-apikey')) $('login-apikey').value = '';
     await unlockAdminStudio();
-    showToast('Signed in to Master Admin Studio', 'success');
+    showToast('Signed in to Admin Studio', 'success');
   } catch (err) {
     if (errBox) {
-      errBox.textContent = err.message || 'Authentication error.';
+      errBox.textContent = err.message || 'Authentication failed.';
       errBox.classList.add('visible');
     }
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = 'Sign In to Admin Studio';
+      btn.textContent = 'Sign In to Workspace';
     }
   }
 }
 
+async function mountAuthenticatedWorkspaceDom() {
+  const shell = $('cms-shell');
+  if (!shell) return false;
+  if (shell.children.length > 0) return true;
+
+  try {
+    const res = await fetch('/api/admin/workspace', {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
+      }
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    if (!data?.success || typeof data.html !== 'string') return false;
+    shell.innerHTML = data.html;
+    bindWorkspaceDomEvents();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function unlockAdminStudio() {
+  const mounted = await mountAuthenticatedWorkspaceDom();
+  if (!mounted) {
+    const errBox = $('auth-error');
+    if (errBox) {
+      errBox.textContent = 'Session expired or unauthorized. Please sign in again.';
+      errBox.classList.add('visible');
+    }
+    return;
+  }
+
   const overlay = $('auth-overlay');
   const shell = $('cms-shell');
   if (overlay) overlay.hidden = true;
@@ -587,14 +737,17 @@ async function unlockAdminStudio() {
   try {
     const remote = await getSiteConfigRemote();
     if (remote) {
-      currentConfig = mergeSiteConfig(remote, MASTER_DEFAULT_CONFIG);
+      currentConfig = mergeSiteConfig(remote, EMPTY_ADMIN_CONFIG);
     }
   } catch {
-    currentConfig = mergeSiteConfig(getCachedSiteConfigSync(), MASTER_DEFAULT_CONFIG);
+    currentConfig = mergeSiteConfig(getCachedSiteConfigSync(), EMPTY_ADMIN_CONFIG);
   }
 
+  pendingClearGithubToken = false;
+  pendingClearTurnstileSecret = false;
   populateAllFields();
   resetNewsComposer();
+  markClean('Connected to live Firebase Admin workspace');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -735,11 +888,23 @@ if (typeof window !== 'undefined') {
    ═══════════════════════════════════════════════════════════════════════════ */
 function populateAllFields() {
   const c = currentConfig;
-  const ui = c.uiConfig || MASTER_DEFAULT_CONFIG.uiConfig;
+  const ui = c.uiConfig || EMPTY_ADMIN_CONFIG.uiConfig;
 
   // Topbar Brand & Live Firebase Storage Status
-  if ($('topbar-logo')) $('topbar-logo').src = c.brand.logoUrl || '/assets/app-icon.svg';
-  if ($('topbar-brand-title')) $('topbar-brand-title').textContent = `${c.brand.name || 'Site'} — Master CMS Studio`;
+  const topbarLogo = $('topbar-logo');
+  if (topbarLogo) {
+    const logoUrl = String(c.brand?.logoUrl || '').trim();
+    if (logoUrl) {
+      topbarLogo.src = logoUrl;
+      topbarLogo.removeAttribute('hidden');
+      topbarLogo.style.display = 'block';
+    } else {
+      topbarLogo.removeAttribute('src');
+      topbarLogo.setAttribute('hidden', '');
+      topbarLogo.style.display = 'none';
+    }
+  }
+  if ($('topbar-brand-title')) $('topbar-brand-title').textContent = `${c.brand.name || 'Workspace'} — Master CMS Studio`;
 
   const fbConfig = getActiveFirebaseConfig();
   const fbActive = isRealFirebaseConfig(fbConfig);
@@ -762,7 +927,7 @@ function populateAllFields() {
 
   // Quick 1-Tap Master Clone Fields in Overview
   setVal('qc-brand-name', c.brand.name);
-  setVal('qc-version', c.packageSpecs?.version || 'v4.8.2');
+  setVal('qc-version', c.packageSpecs?.version || '');
   setVal('qc-domain', c.domainConfig?.primaryDomain || c.seo.canonicalUrl);
   setVal('qc-email', c.brand.contactEmail);
   setVal('qc-download-url', c.securityGate?.primaryDownloadUrl || '');
@@ -842,7 +1007,7 @@ function populateAllFields() {
   renderHomepageOrderController();
 
   // Workspace 4: Technical Package Specifications Table
-  const specs = c.packageSpecs || MASTER_DEFAULT_CONFIG.packageSpecs;
+  const specs = c.packageSpecs || EMPTY_ADMIN_CONFIG.packageSpecs;
   setChecked('specs-enabled', specs.enabled !== false);
   setVal('specs-heading', specs.heading);
   setVal('specs-app-name', specs.appName);
@@ -884,21 +1049,35 @@ function populateAllFields() {
   setVal('footer-disclaimer-text', c.navigation.disclaimer);
   setVal('footer-copyright-text', c.navigation.copyright);
 
-  // Workspace 8: GitHub Static Website Publisher, Domain, Global SEO & Firebase
-  const gh = c.githubConfig || MASTER_DEFAULT_CONFIG.githubConfig;
-  setVal('gh-token', gh.fineGrainedToken || '');
+  // Workspace 8: GitHub Static Website Publisher, Domain, Global SEO & Firebase (Secrets masked cleanly!)
+  const gh = c.githubConfig || EMPTY_ADMIN_CONFIG.githubConfig;
+  setVal('gh-token', '');
+  const ghTokConfigured = Boolean(gh.hasFineGrainedToken || getLastEnvDiagnostics()?.githubTokenConfigured);
+  if ($('gh-token')) {
+    $('gh-token').placeholder = ghTokConfigured
+      ? 'Token configured on server (Leave blank to keep stored token)'
+      : 'github_pat_11ABCDEFG... (Needs Contents: Read and write permission)';
+  }
+  if ($('gh-token-status-tag')) {
+    $('gh-token-status-tag').textContent = ghTokConfigured ? '✓ Token Stored Server-Side' : 'Not Configured';
+    $('gh-token-status-tag').style.background = ghTokConfigured ? '#ecfdf5' : '#f1f5f9';
+    $('gh-token-status-tag').style.color = ghTokConfigured ? '#065f46' : '#64748b';
+  }
+  if ($('btn-clear-gh-token')) {
+    $('btn-clear-gh-token').style.display = gh.hasFineGrainedToken ? 'inline-flex' : 'none';
+  }
   setVal('gh-owner', gh.repoOwner || '');
   setVal('gh-repo', gh.repoName || '');
   setVal('gh-branch', gh.branch || 'main');
   setVal('gh-dir', gh.targetDirectory ?? 'dist-public');
   setVal(
     'gh-commit-msg',
-    gh.commitMessageTemplate || 'chore(static-publish): update compiled static public pages from Admin Studio'
+    gh.commitMessageTemplate || 'chore(static-publish): sync compiled static public site from Admin Studio'
   );
   setChecked('gh-auto-push', Boolean(gh.autoPushOnPublish));
   renderGitHubDeployHistory();
 
-  const dom = c.domainConfig || MASTER_DEFAULT_CONFIG.domainConfig;
+  const dom = c.domainConfig || EMPTY_ADMIN_CONFIG.domainConfig;
   setVal('domain-primary', dom.primaryDomain || c.seo.canonicalUrl);
   setVal('domain-ga-id', dom.googleAnalyticsId);
   setVal('domain-gsc', dom.googleSiteVerification);
@@ -927,7 +1106,14 @@ function populateAllFields() {
   setVal('seo-raw-jsonld', c.seo.rawJsonLd || '');
   updateJsonLdStatusIndicator(c.seo.rawJsonLd || '');
 
-  setVal('fb-api-key', fbConfig?.apiKey || '');
+  const fbKeyInput = $('fb-api-key');
+  if (fbKeyInput) {
+    fbKeyInput.value = fbConfig?.apiKey || '';
+    fbKeyInput.placeholder =
+      fbConfig?.hasEnvApiKey && !fbConfig?.apiKey
+        ? 'Configured via server environment variable (Protected)'
+        : 'Configured via server env or paste API key...';
+  }
   setVal('fb-project-id', fbConfig?.projectId || '');
   setVal('fb-auth-domain', fbConfig?.authDomain || '');
   setVal('fb-storage-bucket', fbConfig?.storageBucket || '');
@@ -937,19 +1123,33 @@ function populateAllFields() {
   renderEnvSecurityDiagnostics();
 
   // v12 7-Gate Security Gateway & AES-256-GCM Link Vault Fields
-  const sec = c.securityGate || MASTER_DEFAULT_CONFIG.securityGate;
+  const sec = c.securityGate || EMPTY_ADMIN_CONFIG.securityGate;
   setChecked('sec-enabled', sec.enabled !== false);
   setChecked('sec-show-specs', Boolean(sec.showSpecsOnGateway));
   setVal('sec-device-policy', sec.devicePolicyMode || 'universal_human');
   setVal('sec-btn-label', sec.proceedButtonLabel || 'PROCEED');
   setVal('sec-custom-heading', sec.customHeading || '');
   setVal('sec-custom-note', sec.customNoteHtml || '');
-  setVal('sec-app-slug', sec.appSlug || 'apexmobile');
-  setVal('sec-serial-id', sec.appSerialId || 'APM-482');
+  setVal('sec-app-slug', sec.appSlug || '');
+  setVal('sec-serial-id', sec.appSerialId || '');
   setVal('sec-primary-url', sec.primaryDownloadUrl || '');
   setVal('sec-encrypted-url', sec.encryptedPrimaryUrl || '');
   setVal('sec-turnstile-site-key', sec.turnstileSiteKey || '');
-  setVal('sec-turnstile-secret-key', sec.turnstileSecretKey || '');
+  setVal('sec-turnstile-secret-key', '');
+  const tsSecretConfigured = Boolean(sec.hasTurnstileSecretKey || getLastEnvDiagnostics()?.turnstileSecretKeyConfigured);
+  if ($('sec-turnstile-secret-key')) {
+    $('sec-turnstile-secret-key').placeholder = tsSecretConfigured
+      ? 'Secret stored server-side (Leave blank to keep)'
+      : '0x4AAAAAA... (Server-side siteverify secret)';
+  }
+  if ($('sec-ts-secret-status-tag')) {
+    $('sec-ts-secret-status-tag').textContent = tsSecretConfigured ? '✓ Stored Server-Side' : 'Write-Only Secret';
+    $('sec-ts-secret-status-tag').style.background = tsSecretConfigured ? '#ecfdf5' : '#f1f5f9';
+    $('sec-ts-secret-status-tag').style.color = tsSecretConfigured ? '#065f46' : '#64748b';
+  }
+  if ($('btn-clear-ts-secret')) {
+    $('btn-clear-ts-secret').style.display = sec.hasTurnstileSecretKey ? 'inline-flex' : 'none';
+  }
   setChecked('sec-paused', Boolean(sec.isPaused));
   setChecked('sec-coming-soon', Boolean(sec.isComingSoon));
   setVal('sec-daily-cap', sec.dailyIssueCap ?? 0);
@@ -968,6 +1168,7 @@ function populateAllFields() {
   syncUrlQuickPickers();
   updateSerpSimulator();
   refreshOverviewAndSeoAudit();
+  renderDirtyModulesSummary();
 }
 
 function setVal(id, val) {
@@ -984,7 +1185,7 @@ function setChecked(id, bool) {
    4. OVERVIEW, GITHUB DEPLOY HISTORY & AUTOMATED TECHNICAL SEO AUDIT
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderGitHubDeployHistory() {
-  const gh = currentConfig.githubConfig || MASTER_DEFAULT_CONFIG.githubConfig;
+  const gh = currentConfig.githubConfig || EMPTY_ADMIN_CONFIG.githubConfig;
   const listEl = $('gh-deploy-history-list');
   const badgeEl = $('gh-status-badge');
   const tagEl = $('gh-last-commit-tag');
@@ -1001,46 +1202,107 @@ function renderGitHubDeployHistory() {
     })`;
   }
 
+  renderDirtyModulesSummary();
+
   if (!listEl) return;
-  const history = Array.isArray(gh.deployHistory) ? gh.deployHistory : [];
-  if (history.length === 0) {
+  const syncLogs = Array.isArray(currentConfig.syncLogs) ? currentConfig.syncLogs : [];
+  const legacyHistory = Array.isArray(gh.deployHistory) ? gh.deployHistory : [];
+  const rows = syncLogs.length > 0 ? syncLogs : legacyHistory;
+
+  if (rows.length === 0) {
     listEl.innerHTML = `
       <div class="audit-row">
         <div>
-          <strong style="font-size:0.84rem;">Local Static Public Bundle Ready (/dist-public)</strong>
+          <strong style="font-size:0.84rem;">No GitHub Sync Commits Yet</strong>
           <div style="font-size:0.75rem; color:var(--text-muted);">
-            Every "Publish Changes" compiles 100% static HTML &amp; per-route JSON locally. Enter your GitHub Fine-Grained Token above to push commits directly to GitHub.
+            Save modules in Firebase and click <strong>Compile &amp; Push Static Website to GitHub Now</strong> above to push and log every Admin &rarr; Public sync commit.
           </div>
         </div>
-        <span class="audit-badge-pass">✓ Compiled</span>
+        <span class="audit-badge-pass">Ready</span>
       </div>
     `;
     return;
   }
 
-  listEl.innerHTML = history
-    .slice(0, 6)
-    .map(
-      (item) => `
-      <div class="audit-row">
-        <div>
-          <strong style="font-size:0.84rem;">${escapeHtml(item.message)}</strong>
-          <div style="font-size:0.75rem; color:var(--text-muted);">
-            ${new Date(item.timestamp).toLocaleString()} • ${item.filesCount || 0} static files ${
-        item.commitUrl
-          ? `• <a href="${escapeHtml(item.commitUrl)}" target="_blank" rel="noopener" style="color:var(--primary); font-weight:700;">View Commit ${escapeHtml(
-              item.commitSha.slice(0, 7)
-            )} ↗</a>`
-          : ''
-      }
-          </div>
+  listEl.innerHTML = rows
+    .slice(0, 12)
+    .map((item) => {
+      const mods = Array.isArray(item.modulesChanged) && item.modulesChanged.length > 0
+        ? item.modulesChanged.map((m) => `<span class="sync-module-chip clean">${escapeHtml(m)}</span>`).join(' ')
+        : '';
+      const pathsLine = Array.isArray(item.changedPaths) && item.changedPaths.length > 0
+        ? `Files: ${item.changedPaths.slice(0, 6).map((p) => `/${p}`).join(', ')}${item.changedPaths.length > 6 ? ` (+${item.changedPaths.length - 6} more)` : ''}`
+        : '';
+      const hasDiffCounts =
+        typeof item.addedCount === 'number' ||
+        typeof item.updatedCount === 'number' ||
+        typeof item.deletedCount === 'number' ||
+        typeof item.unchangedCount === 'number';
+      const diffHtml = hasDiffCounts
+        ? `<div class="diff-chip-row">
+            ${item.addedCount ? `<span class="diff-chip-add">+${item.addedCount} added</span>` : ''}
+            ${item.updatedCount ? `<span class="diff-chip-upd">~${item.updatedCount} updated</span>` : ''}
+            ${item.deletedCount ? `<span class="diff-chip-del">-${item.deletedCount} deleted</span>` : ''}
+            ${item.unchangedCount ? `<span class="diff-chip-skip">=${item.unchangedCount} unchanged</span>` : ''}
+          </div>`
+        : '';
+      const isFirebaseSave = item.trigger === 'firebase-save';
+      const badgeStyle =
+        item.status === 'success'
+          ? ''
+          : item.status === 'local-only'
+          ? 'background:#fffbeb; color:#92400e;'
+          : 'background:#fef2f2; color:#b91c1c;';
+      const badgeLabel = isFirebaseSave
+        ? item.status === 'success'
+          ? '✓ Saved to Firebase'
+          : '✓ Saved & Compiled'
+        : item.status === 'success'
+        ? item.skipped
+          ? '≡ Up to Date'
+          : '✓ Pushed to GitHub'
+        : item.status === 'local-only'
+        ? 'Local Compiled'
+        : 'Failed';
+      const stepsHtml =
+        Array.isArray(item.steps) && item.steps.length > 0
+          ? `<div class="sync-log-steps">${item.steps
+              .map((s) => `<div class="sync-log-step-line">• ${escapeHtml(s)}</div>`)
+              .join('')}</div>`
+          : '';
+      const errorHtml = item.errorDetail
+        ? `<div style="font-size:0.74rem; color:#b91c1c; background:#fef2f2; padding:5px 8px; border-radius:5px; margin-top:4px;">${escapeHtml(
+            item.errorDetail
+          )}</div>`
+        : '';
+
+      return `
+      <div class="sync-log-row">
+        <div class="sync-log-top">
+          <strong style="font-size:0.83rem;">${escapeHtml(item.message || 'Workspace Activity')}</strong>
+          <span class="audit-badge-pass" style="${badgeStyle}">${badgeLabel}</span>
         </div>
-        <span class="audit-badge-pass" style="${
-          item.status === 'success' ? '' : 'background:#fef2f2; color:#b91c1c;'
-        }">${item.status === 'success' ? '✓ Pushed' : 'Failed'}</span>
+        <div class="sync-log-meta">
+          <span>${new Date(item.timestamp).toLocaleString()}</span>
+          <span>• ${item.filesCount || 0} ${isFirebaseSave ? 'module(s)' : 'files'}</span>
+          ${item.trigger ? `<span>• ${escapeHtml(item.trigger)}</span>` : ''}
+          ${item.durationMs ? `<span>• ${item.durationMs}ms</span>` : ''}
+          ${
+            item.commitUrl && item.commitSha
+              ? `• <a href="${escapeHtml(item.commitUrl)}" target="_blank" rel="noopener" style="color:var(--accent); font-weight:700;">Commit ${escapeHtml(
+                  item.commitSha.slice(0, 7)
+                )} ↗</a>`
+              : ''
+          }
+        </div>
+        ${diffHtml}
+        ${mods ? `<div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;"><span style="font-size:0.7rem; color:var(--text-muted);">Modules:</span> ${mods}</div>` : ''}
+        ${pathsLine ? `<div class="sync-log-paths">${escapeHtml(pathsLine)}</div>` : ''}
+        ${stepsHtml}
+        ${errorHtml}
       </div>
-    `
-    )
+    `;
+    })
     .join('');
 }
 
@@ -1050,6 +1312,16 @@ function refreshOverviewAndSeoAudit() {
   const pagesCount = (currentConfig.pages || []).length;
   const sectionsCount = (currentConfig.sections || []).length;
   const faqsCount = (currentConfig.faqsSection?.items || []).length;
+
+  const emptyGuide = $('empty-db-workspace-guide');
+  if (emptyGuide) {
+    emptyGuide.hidden = !(
+      sectionsCount === 0 &&
+      newsCount === 0 &&
+      faqsCount === 0 &&
+      !(currentConfig.brand?.name || '').trim()
+    );
+  }
 
   if ($('stat-seo-score')) $('stat-seo-score').textContent = `${audit.score} / 100`;
   if ($('stat-news-count')) $('stat-news-count').textContent = String(newsCount);
@@ -1187,7 +1459,7 @@ function resetNewsComposer() {
   setVal('composer-news-slug', '');
   setVal('composer-news-category', 'Daily Update');
   setVal('composer-news-date', todayStr);
-  setVal('composer-news-author', `${currentConfig.brand?.name || 'ApexMobile'} Editorial Team`);
+  setVal('composer-news-author', `${currentConfig.brand?.name || 'Editorial'} Team`);
   setVal('composer-news-readtime', '2 min read');
   setChecked('composer-news-featured', false);
   setVal('composer-news-cover-url', '');
@@ -1251,7 +1523,7 @@ async function handlePublishComposerNews() {
     return;
   }
 
-  const brandName = currentConfig.brand?.name || 'ApexMobile';
+  const brandName = currentConfig.brand?.name || 'Website';
   const rawSlug = $('composer-news-slug')?.value.trim() || title;
   const slug = generateSlug(rawSlug) || `news-${Date.now()}`;
   const summary = $('composer-news-summary')?.value.trim() || `${title} — official daily update from ${brandName}.`;
@@ -1297,9 +1569,10 @@ async function handlePublishComposerNews() {
 
   renderNewsList();
   refreshOverviewAndSeoAudit();
-  await handleSaveAndPublish();
+  dirtyModules.add('newsSection');
+  await handleSaveActiveModule('newsSection');
   resetNewsComposer();
-  showToast(`News published & compiled to static /news/${slug}!`, 'success');
+  showToast(`News published & saved cleanly to [newsSection] (/news/${slug})!`, 'success');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1328,10 +1601,15 @@ function renderSectionsList() {
 
   const routeOptionsHtml = buildUrlPickerOptionsHtml('Quick Pick Route…');
 
+  if (openSectionIndex >= sections.length) {
+    openSectionIndex = Math.max(0, sections.length - 1);
+  }
+
   container.innerHTML = filtered
-    .map(
-      ({ sec, idx }) => `
-      <div class="item-card ${idx === 0 || q ? 'open' : ''}" data-section-idx="${idx}">
+    .map(({ sec, idx }) => {
+      const isOpen = idx === openSectionIndex || Boolean(q);
+      return `
+      <div class="item-card ${isOpen ? 'open' : ''}" data-section-idx="${idx}" data-card-collection="sections" data-card-index="${idx}">
         <div class="item-card-header" data-toggle-card>
           <div class="item-card-title-wrap">
             <span class="item-badge">Section #${idx + 1} • #${escapeHtml(sec.slug || 'section')}</span>
@@ -1343,6 +1621,7 @@ function renderSectionsList() {
             <span class="item-card-title">${escapeHtml(sec.heading || 'Untitled Section')}</span>
           </div>
           <div class="item-card-actions">
+            <button type="button" class="btn btn-sm btn-primary" data-inline-save-module="sections">Save</button>
             <button type="button" class="btn btn-sm" data-action="move-up" data-collection="sections" data-index="${idx}" ${
         idx === 0 ? 'disabled' : ''
       }>↑</button>
@@ -1351,7 +1630,7 @@ function renderSectionsList() {
       }>↓</button>
             <button type="button" class="btn btn-sm" data-action="clone" data-collection="sections" data-index="${idx}">Clone</button>
             <button type="button" class="btn btn-sm btn-danger" data-action="delete" data-collection="sections" data-index="${idx}">Delete</button>
-            <span class="btn btn-sm" data-card-chevron>${idx === 0 || q ? 'Hide ▲' : 'Edit ▼'}</span>
+            <span class="btn btn-sm" data-card-chevron>${isOpen ? 'Hide ▲' : 'Edit ▼'}</span>
           </div>
         </div>
         <div class="item-card-body">
@@ -1369,7 +1648,7 @@ function renderSectionsList() {
             </div>
             <div class="field">
               <label class="field-label">Section Heading (&lt;h2&gt;)</label>
-              <input type="text" class="input" value="${escapeHtml(
+              <input type="text" id="sec-heading-${idx}" class="input" value="${escapeHtml(
                 sec.heading
               )}" data-collection="sections" data-index="${idx}" data-key="heading" />
             </div>
@@ -1481,10 +1760,13 @@ function renderSectionsList() {
       )}</textarea>
             <div id="sec-preview-${idx}" class="live-preview-box"></div>
           </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="sections">💾 Save Section to Firebase</button>
+          </div>
         </div>
       </div>
-    `
-    )
+    `;
+    })
     .join('');
 }
 
@@ -1508,12 +1790,17 @@ function renderNewsList() {
     return;
   }
 
+  if (openNewsIndex >= articles.length) {
+    openNewsIndex = Math.max(0, articles.length - 1);
+  }
+
   const routeOptionsHtml = buildUrlPickerOptionsHtml('Quick Pick Route…');
 
   container.innerHTML = filtered
-    .map(
-      ({ art, idx }) => `
-      <div class="item-card ${idx === 0 || q ? 'open' : ''}">
+    .map(({ art, idx }) => {
+      const isOpen = idx === openNewsIndex || Boolean(q);
+      return `
+      <div class="item-card ${isOpen ? 'open' : ''}" data-card-collection="news" data-card-index="${idx}">
         <div class="item-card-header" data-toggle-card>
           <div class="item-card-title-wrap">
             <span class="item-badge">${escapeHtml(art.category || 'News')}</span>
@@ -1521,6 +1808,7 @@ function renderNewsList() {
             <span class="item-card-title">${escapeHtml(art.title || 'Untitled News')}</span>
           </div>
           <div class="item-card-actions">
+            <button type="button" class="btn btn-sm btn-primary" data-inline-save-module="newsSection">Save</button>
             <button type="button" class="btn btn-sm" data-action="move-up" data-collection="news" data-index="${idx}" ${
         idx === 0 ? 'disabled' : ''
       }>↑</button>
@@ -1531,7 +1819,7 @@ function renderNewsList() {
             <button type="button" class="btn btn-sm" data-action="clone" data-collection="news" data-index="${idx}">Clone</button>
             <a href="/news/${escapeHtml(art.slug)}" target="_blank" class="btn btn-sm">Preview ↗</a>
             <button type="button" class="btn btn-sm btn-danger" data-action="delete" data-collection="news" data-index="${idx}">Delete</button>
-            <span class="btn btn-sm" data-card-chevron>${idx === 0 || q ? 'Hide ▲' : 'Quick Edit ▼'}</span>
+            <span class="btn btn-sm" data-card-chevron>${isOpen ? 'Hide ▲' : 'Quick Edit ▼'}</span>
           </div>
         </div>
         <div class="item-card-body">
@@ -1544,7 +1832,7 @@ function renderNewsList() {
             </div>
             <div class="field">
               <label class="field-label">News Article Headline (&lt;h1&gt;)</label>
-              <input type="text" class="input" value="${escapeHtml(
+              <input type="text" id="news-title-${idx}" class="input" value="${escapeHtml(
                 art.title
               )}" data-collection="news" data-index="${idx}" data-key="title" />
             </div>
@@ -1669,10 +1957,13 @@ function renderNewsList() {
       )}</textarea>
             <div id="news-preview-${idx}" class="live-preview-box"></div>
           </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="newsSection">💾 Save Article to Firebase</button>
+          </div>
         </div>
       </div>
-    `
-    )
+    `;
+    })
     .join('');
 }
 
@@ -1695,16 +1986,22 @@ function renderFaqsList() {
     return;
   }
 
+  if (openFaqIndex >= items.length) {
+    openFaqIndex = Math.max(0, items.length - 1);
+  }
+
   container.innerHTML = filtered
-    .map(
-      ({ faq, idx }) => `
-      <div class="item-card ${idx === 0 || q ? 'open' : ''}">
+    .map(({ faq, idx }) => {
+      const isOpen = idx === openFaqIndex || Boolean(q);
+      return `
+      <div class="item-card ${isOpen ? 'open' : ''}" data-card-collection="faqs" data-card-index="${idx}">
         <div class="item-card-header" data-toggle-card>
           <div class="item-card-title-wrap">
             <span class="item-badge">Q${idx + 1}</span>
             <span class="item-card-title">${escapeHtml(faq.question || 'Untitled Question')}</span>
           </div>
           <div class="item-card-actions">
+            <button type="button" class="btn btn-sm btn-primary" data-inline-save-module="faqsSection">Save</button>
             <button type="button" class="btn btn-sm" data-action="move-up" data-collection="faqs" data-index="${idx}" ${
         idx === 0 ? 'disabled' : ''
       }>↑</button>
@@ -1713,14 +2010,14 @@ function renderFaqsList() {
       }>↓</button>
             <button type="button" class="btn btn-sm" data-action="clone" data-collection="faqs" data-index="${idx}">Clone</button>
             <button type="button" class="btn btn-sm btn-danger" data-action="delete" data-collection="faqs" data-index="${idx}">Delete</button>
-            <span class="btn btn-sm" data-card-chevron>${idx === 0 || q ? 'Hide ▲' : 'Edit ▼'}</span>
+            <span class="btn btn-sm" data-card-chevron>${isOpen ? 'Hide ▲' : 'Edit ▼'}</span>
           </div>
         </div>
         <div class="item-card-body">
           <div class="form-grid">
             <div class="field">
               <label class="field-label">Question (&lt;h3&gt;)</label>
-              <input type="text" class="input" value="${escapeHtml(
+              <input type="text" id="faq-question-${idx}" class="input" value="${escapeHtml(
                 faq.question
               )}" data-collection="faqs" data-index="${idx}" data-key="question" />
             </div>
@@ -1730,11 +2027,14 @@ function renderFaqsList() {
         faq.answer
       )}</textarea>
             </div>
+            <div style="display:flex; justify-content:flex-end;">
+              <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="faqsSection">💾 Save FAQ to Firebase</button>
+            </div>
           </div>
         </div>
       </div>
-    `
-    )
+    `;
+    })
     .join('');
 }
 
@@ -1994,7 +2294,7 @@ function updateLiveThemePreviewCard() {
   const textCol = $('ui-text-color')?.value.trim() || '#1F2937';
   const headingCol = $('ui-heading-color')?.value.trim() || '#111827';
   const radius = $('ui-card-radius')?.value || '10px';
-  const brandName = $('brand-name')?.value.trim() || 'ApexMobile';
+  const brandName = $('brand-name')?.value.trim() || 'Your Brand';
 
   card.style.background = bgPage;
   const surf = $('ltp-surface');
@@ -2154,7 +2454,8 @@ function applyColorThemePreset(presetKey) {
   setVal('ui-heading-color', p.headingColor);
   syncColorPickersFromTextInputs();
   collectScalarFields();
-  markDirty('Applied color theme preset — click "Publish Changes" to compile & go live');
+  dirtyModules.add('brand');
+  markDirty('Applied color theme preset — click "Publish Edited Modules" to go live', 'uiConfig');
   showToast(`Applied "${presetKey}" color theme!`, 'success');
 }
 
@@ -2218,7 +2519,7 @@ function renderInternalLinksList() {
   const container = $('internal-links-list');
   if (!container) return;
   if (!currentConfig.domainConfig) {
-    currentConfig.domainConfig = { ...MASTER_DEFAULT_CONFIG.domainConfig };
+    currentConfig.domainConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.domainConfig));
   }
   if (!Array.isArray(currentConfig.domainConfig.internalLinks)) {
     currentConfig.domainConfig.internalLinks = [];
@@ -2274,20 +2575,20 @@ function renderInternalLinksList() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   8. COLLECT FORM DATA, SAVE LIVE FIREBASE & GITHUB STATIC PUSH
+   8. COLLECT FORM DATA, GRANULAR MODULE SAVES, LIVE FIREBASE & GITHUB SYNC
    ═══════════════════════════════════════════════════════════════════════════ */
 function collectScalarFields() {
   const c = currentConfig;
-  if (!c.uiConfig) c.uiConfig = JSON.parse(JSON.stringify(MASTER_DEFAULT_CONFIG.uiConfig));
+  if (!c.uiConfig) c.uiConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.uiConfig));
 
-  c.brand.name = $('brand-name')?.value.trim() || 'ApexMobile';
+  c.brand.name = $('brand-name')?.value.trim() || '';
   c.brand.shortName = $('brand-short-name')?.value.trim() || c.brand.name;
-  c.brand.tagline = $('brand-tagline')?.value.trim() || 'High-Speed Edge Utility & Package Hub';
-  c.brand.contactEmail = $('brand-email')?.value.trim() || 'support@apexmobile.example.com';
-  c.brand.logoUrl = $('brand-logo')?.value.trim() || '/assets/app-icon.svg';
-  c.brand.faviconUrl = $('brand-favicon')?.value.trim() || c.brand.logoUrl;
-  c.brand.searchLogoUrl = $('brand-search-logo')?.value.trim() || c.brand.logoUrl;
-  c.brand.appleTouchIconUrl = $('brand-apple-icon')?.value.trim() || c.brand.logoUrl;
+  c.brand.tagline = $('brand-tagline')?.value.trim() || '';
+  c.brand.contactEmail = $('brand-email')?.value.trim() || '';
+  c.brand.logoUrl = $('brand-logo')?.value.trim() || '';
+  c.brand.faviconUrl = $('brand-favicon')?.value.trim() || '';
+  c.brand.searchLogoUrl = $('brand-search-logo')?.value.trim() || '';
+  c.brand.appleTouchIconUrl = $('brand-apple-icon')?.value.trim() || '';
   c.brand.accentColor = $('brand-color')?.value.trim() || '#EF4444';
   c.brand.themeColor = $('brand-theme-color')?.value.trim() || c.brand.accentColor;
 
@@ -2297,22 +2598,21 @@ function collectScalarFields() {
   c.hero.metaDescription = $('hero-meta-desc')?.value.trim() || '';
   c.hero.introHtml = $('hero-intro-html')?.value || '';
   c.hero.showBanner = Boolean($('hero-show-banner')?.checked);
-  c.hero.bannerImageUrl = $('hero-banner-url')?.value.trim() || '/assets/hero-banner.svg';
+  c.hero.bannerImageUrl = $('hero-banner-url')?.value.trim() || '';
   c.hero.bannerAlt = $('hero-banner-alt')?.value.trim() || '';
   c.hero.bannerCaption = $('hero-banner-caption')?.value.trim() || '';
 
   c.uiConfig.showHeroCtaButtons = Boolean($('ui-show-hero-ctas')?.checked);
-  c.hero.secondaryCta.label = $('cta-left-text')?.value.trim() || 'Installation Guide';
-  c.hero.secondaryCta.url = $('cta-left-url')?.value.trim() || '#install-guide';
+  c.hero.secondaryCta.label = $('cta-left-text')?.value.trim() || '';
+  c.hero.secondaryCta.url = $('cta-left-url')?.value.trim() || '';
   c.hero.secondaryCta.relSponsored = Boolean($('cta-left-sponsored')?.checked);
-  c.hero.primaryCta.label = $('cta-right-text')?.value.trim() || 'Download Official Package';
-  c.hero.primaryCta.url = $('cta-right-url')?.value.trim() || '#technical-specifications';
+  c.hero.primaryCta.label = $('cta-right-text')?.value.trim() || '';
+  c.hero.primaryCta.url = $('cta-right-url')?.value.trim() || '';
   c.hero.primaryCta.relSponsored = Boolean($('cta-right-sponsored')?.checked);
   c.hero.floatingCta.enabled = Boolean($('floating-cta-enabled')?.checked);
-  c.hero.floatingCta.label = $('floating-cta-text')?.value.trim() || '⚡ Download';
-  c.hero.floatingCta.url = $('floating-cta-url')?.value.trim() || '#technical-specifications';
+  c.hero.floatingCta.label = $('floating-cta-text')?.value.trim() || '';
+  c.hero.floatingCta.url = $('floating-cta-url')?.value.trim() || '';
 
-  // UI Customizer & Hamburger Drawer Fields
   c.uiConfig.maxContainerWidth = $('ui-max-width')?.value || '768px';
   c.uiConfig.fontFamily = $('ui-font-family')?.value || 'system';
   c.uiConfig.baseFontSize = $('ui-font-size')?.value || '16px';
@@ -2320,19 +2620,19 @@ function collectScalarFields() {
   c.uiConfig.surfaceBackgroundColor = $('ui-bg-surface')?.value.trim() || '#FFFFFF';
   c.uiConfig.headerBackgroundColor = $('ui-header-bg')?.value.trim() || '#FFFFFF';
   c.uiConfig.headerTextColor = $('ui-header-text')?.value.trim() || '#111827';
-  c.uiConfig.footerBackgroundColor = $('ui-footer-bg')?.value.trim() || '#F9FAFB';
-  c.uiConfig.footerTextColor = $('ui-footer-text')?.value.trim() || '#4B5563';
-  c.uiConfig.borderColor = $('ui-border-color')?.value.trim() || '#E5E7EB';
+  c.uiConfig.footerBackgroundColor = $('ui-footer-bg')?.value.trim() || '#0F172A';
+  c.uiConfig.footerTextColor = $('ui-footer-text')?.value.trim() || '#F8FAFC';
+  c.uiConfig.borderColor = $('ui-border-color')?.value.trim() || '#E2E8F0';
   c.uiConfig.cardBorderRadius = $('ui-card-radius')?.value || '12px';
   c.uiConfig.buttonTextColor = $('ui-btn-text-color')?.value.trim() || '#FFFFFF';
   c.uiConfig.textColor = $('ui-text-color')?.value.trim() || '#1F2937';
   c.uiConfig.headingColor = $('ui-heading-color')?.value.trim() || '#111827';
   c.uiConfig.headerNewsButtonLabel = $('ui-header-news-label')?.value.trim() || 'News';
   c.uiConfig.homepageNewsLimit = Math.max(1, Number($('ui-home-news-limit')?.value) || 5);
-  c.uiConfig.newsReadMoreLabel = $('ui-news-readmore')?.value.trim() || 'Read Full News Article →';
-  c.uiConfig.newsViewAllLabel = $('ui-news-viewall')?.value.trim() || 'View All Daily News →';
-  c.uiConfig.backToHomeLabel = $('ui-back-home-label')?.value.trim() || '← Back to Main Page';
-  c.uiConfig.allNewsBreadcrumbLabel = $('ui-all-news-label')?.value.trim() || 'All Daily News →';
+  c.uiConfig.newsReadMoreLabel = $('ui-news-readmore')?.value.trim() || 'Read Full Article →';
+  c.uiConfig.newsViewAllLabel = $('ui-news-viewall')?.value.trim() || 'View All News →';
+  c.uiConfig.backToHomeLabel = $('ui-back-home-label')?.value.trim() || '← Back to Home';
+  c.uiConfig.allNewsBreadcrumbLabel = $('ui-all-news-label')?.value.trim() || 'All News →';
   c.uiConfig.showHeaderNewsButton = Boolean($('ui-show-header-news')?.checked);
   c.uiConfig.showNewsCountInHeader = Boolean($('ui-show-news-count')?.checked);
   c.uiConfig.autoIncludeSectionsInDrawer = Boolean($('ui-drawer-auto-sections')?.checked);
@@ -2347,23 +2647,23 @@ function collectScalarFields() {
   c.uiConfig.showFooterDisclaimer = Boolean($('ui-show-footer-disclaimer')?.checked);
   c.uiConfig.showFooterLinksHeading = Boolean($('ui-show-footer-links-heading')?.checked);
 
-  if (!c.packageSpecs) c.packageSpecs = { ...MASTER_DEFAULT_CONFIG.packageSpecs };
+  if (!c.packageSpecs) c.packageSpecs = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.packageSpecs));
   c.packageSpecs.enabled = Boolean($('specs-enabled')?.checked);
   c.packageSpecs.heading = $('specs-heading')?.value.trim() || 'Technical Package Specifications';
   c.packageSpecs.appName = $('specs-app-name')?.value.trim() || c.brand.name;
-  c.packageSpecs.version = $('specs-version')?.value.trim() || 'v4.8.2';
-  c.packageSpecs.fileSize = $('specs-size')?.value.trim() || '64.2 MB';
-  c.packageSpecs.operatingSystem = $('specs-os')?.value.trim() || 'Android 9.0+ / iOS 15.0+';
-  c.packageSpecs.packageFormat = $('specs-format')?.value.trim() || 'Signed Package';
-  c.packageSpecs.license = $('specs-license')?.value.trim() || 'Freeware';
-  c.packageSpecs.securityStatus = $('specs-security')?.value.trim() || 'Verified Clean (0/72 Engines)';
-  c.packageSpecs.lastUpdated = $('specs-updated')?.value.trim() || 'November 4, 2026';
+  c.packageSpecs.version = $('specs-version')?.value.trim() || '';
+  c.packageSpecs.fileSize = $('specs-size')?.value.trim() || '';
+  c.packageSpecs.operatingSystem = $('specs-os')?.value.trim() || '';
+  c.packageSpecs.packageFormat = $('specs-format')?.value.trim() || '';
+  c.packageSpecs.license = $('specs-license')?.value.trim() || '';
+  c.packageSpecs.securityStatus = $('specs-security')?.value.trim() || '';
+  c.packageSpecs.lastUpdated = $('specs-updated')?.value.trim() || '';
   c.packageSpecs.sha256 = $('specs-sha256')?.value.trim() || '';
   c.packageSpecs.metaTitle = $('specs-meta-title')?.value.trim() || '';
   c.packageSpecs.metaDescription = $('specs-meta-desc')?.value.trim() || '';
 
   c.newsSection.enabled = Boolean($('news-enabled')?.checked);
-  c.newsSection.heading = $('news-heading')?.value.trim() || 'Daily News & Release Updates';
+  c.newsSection.heading = $('news-heading')?.value.trim() || 'Latest News & Updates';
   c.newsSection.metaTitle = $('news-meta-title')?.value.trim() || '';
   c.newsSection.metaDescription = $('news-meta-desc')?.value.trim() || '';
 
@@ -2377,28 +2677,36 @@ function collectScalarFields() {
   c.navigation.showFooterBrandSummary = Boolean($('nav-show-footer-summary')?.checked);
   c.navigation.showFooterContactEmail = Boolean($('nav-show-footer-email')?.checked);
   c.navigation.footerSummary = $('nav-footer-summary')?.value.trim() || '';
-  c.navigation.disclaimerHeading = $('footer-disclaimer-heading')?.value.trim() || 'Legal & Trademark Disclaimer';
-  c.navigation.siteLinksHeading = $('footer-links-heading')?.value.trim() || 'Official Legal & Support Pages';
+  c.navigation.disclaimerHeading = $('footer-disclaimer-heading')?.value.trim() || 'Legal Disclaimer';
+  c.navigation.siteLinksHeading = $('footer-links-heading')?.value.trim() || 'Legal & Support Pages';
   c.navigation.disclaimerMetaTitle = $('footer-meta-title')?.value.trim() || '';
   c.navigation.disclaimerMetaDescription = $('footer-meta-desc')?.value.trim() || '';
   c.navigation.disclaimer = $('footer-disclaimer-text')?.value.trim() || '';
   c.navigation.copyright = $('footer-copyright-text')?.value.trim() || '';
 
-  // GitHub Fine-Grained Token Static Publisher Settings
-  if (!c.githubConfig) c.githubConfig = { ...MASTER_DEFAULT_CONFIG.githubConfig };
-  c.githubConfig.fineGrainedToken = $('gh-token')?.value.trim() || '';
+  if (!c.githubConfig) c.githubConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.githubConfig));
+  const newGhToken = $('gh-token')?.value.trim() || '';
+  if (pendingClearGithubToken) {
+    c.githubConfig.fineGrainedToken = '';
+    c.githubConfig.clearFineGrainedToken = true;
+  } else if (newGhToken) {
+    c.githubConfig.fineGrainedToken = newGhToken;
+    delete c.githubConfig.clearFineGrainedToken;
+  } else {
+    c.githubConfig.fineGrainedToken = '';
+    delete c.githubConfig.clearFineGrainedToken;
+  }
   c.githubConfig.repoOwner = $('gh-owner')?.value.trim() || '';
   c.githubConfig.repoName = $('gh-repo')?.value.trim() || '';
   c.githubConfig.branch = $('gh-branch')?.value.trim() || 'main';
   c.githubConfig.targetDirectory = $('gh-dir')?.value.trim() ?? 'dist-public';
   c.githubConfig.commitMessageTemplate =
     $('gh-commit-msg')?.value.trim() ||
-    'chore(static-publish): update compiled static public pages from Admin Studio';
+    'chore(static-publish): sync compiled static public site from Admin Studio';
   c.githubConfig.autoPushOnPublish = Boolean($('gh-auto-push')?.checked);
 
-  if (!c.domainConfig) c.domainConfig = { ...MASTER_DEFAULT_CONFIG.domainConfig };
-  const primaryDom =
-    $('domain-primary')?.value.trim() || $('seo-canonical')?.value.trim() || 'https://apexmobile.example.com';
+  if (!c.domainConfig) c.domainConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.domainConfig));
+  const primaryDom = $('domain-primary')?.value.trim() || $('seo-canonical')?.value.trim() || '';
   c.domainConfig.primaryDomain = primaryDom;
   c.domainConfig.googleAnalyticsId = $('domain-ga-id')?.value.trim() || '';
   c.domainConfig.googleSiteVerification = $('domain-gsc')?.value.trim() || '';
@@ -2418,15 +2726,15 @@ function collectScalarFields() {
 
   c.seo.enableSoftwareSchema = Boolean($('schema-app-enabled')?.checked);
   c.seo.softwareDetails.name = $('schema-app-name')?.value.trim() || c.brand.name;
-  c.seo.softwareDetails.operatingSystem = $('schema-app-os')?.value.trim() || 'Android 9.0+, iOS 15.0+';
+  c.seo.softwareDetails.operatingSystem = $('schema-app-os')?.value.trim() || '';
   c.seo.softwareDetails.applicationCategory = $('schema-app-category')?.value.trim() || 'UtilitiesApplication';
   c.seo.softwareDetails.price = $('schema-app-price')?.value.trim() || '0.00';
   c.seo.softwareDetails.priceCurrency = $('schema-app-currency')?.value.trim() || 'USD';
-  c.seo.softwareDetails.ratingValue = $('schema-app-rating')?.value.trim() || '4.9';
-  c.seo.softwareDetails.reviewCount = $('schema-app-votes')?.value.trim() || '18420';
+  c.seo.softwareDetails.ratingValue = $('schema-app-rating')?.value.trim() || '5.0';
+  c.seo.softwareDetails.reviewCount = $('schema-app-votes')?.value.trim() || '0';
   c.seo.rawJsonLd = $('seo-raw-jsonld')?.value.trim() || '';
 
-  if (!c.securityGate) c.securityGate = { ...MASTER_DEFAULT_CONFIG.securityGate };
+  if (!c.securityGate) c.securityGate = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.securityGate));
   c.securityGate.enabled = Boolean($('sec-enabled')?.checked);
   c.securityGate.showSpecsOnGateway = Boolean($('sec-show-specs')?.checked);
   c.securityGate.devicePolicyMode =
@@ -2434,8 +2742,9 @@ function collectScalarFields() {
   c.securityGate.proceedButtonLabel = $('sec-btn-label')?.value.trim() || 'PROCEED';
   c.securityGate.customHeading = $('sec-custom-heading')?.value.trim() || '';
   c.securityGate.customNoteHtml = $('sec-custom-note')?.value || '';
-  c.securityGate.appSlug = generateSlug($('sec-app-slug')?.value.trim() || c.brand.shortName || c.brand.name || 'apexmobile') || 'apexmobile';
-  c.securityGate.appSerialId = $('sec-serial-id')?.value.trim() || 'APM-482';
+  c.securityGate.appSlug =
+    generateSlug($('sec-app-slug')?.value.trim() || c.brand.shortName || c.brand.name || '') || '';
+  c.securityGate.appSerialId = $('sec-serial-id')?.value.trim() || '';
 
   let resolvedProtectedUrl =
     $('sec-primary-url')?.value.trim() ||
@@ -2458,10 +2767,18 @@ function collectScalarFields() {
   setVal('sec-primary-url', resolvedProtectedUrl);
 
   c.securityGate.encryptedPrimaryUrl = $('sec-encrypted-url')?.value.trim() || '';
-  const resolvedSiteKey = $('sec-turnstile-site-key')?.value.trim() || '';
-  const resolvedSecretKey = $('sec-turnstile-secret-key')?.value.trim() || '';
-  c.securityGate.turnstileSiteKey = resolvedSiteKey;
-  c.securityGate.turnstileSecretKey = resolvedSecretKey;
+  c.securityGate.turnstileSiteKey = $('sec-turnstile-site-key')?.value.trim() || '';
+  const newTsSecret = $('sec-turnstile-secret-key')?.value.trim() || '';
+  if (pendingClearTurnstileSecret) {
+    c.securityGate.turnstileSecretKey = '';
+    c.securityGate.clearTurnstileSecretKey = true;
+  } else if (newTsSecret) {
+    c.securityGate.turnstileSecretKey = newTsSecret;
+    delete c.securityGate.clearTurnstileSecretKey;
+  } else {
+    c.securityGate.turnstileSecretKey = '';
+    delete c.securityGate.clearTurnstileSecretKey;
+  }
   c.securityGate.isPaused = Boolean($('sec-paused')?.checked);
   c.securityGate.isComingSoon = Boolean($('sec-coming-soon')?.checked);
   c.securityGate.dailyIssueCap = Math.max(0, Number($('sec-daily-cap')?.value) || 0);
@@ -2545,11 +2862,30 @@ function renderStaticBundleInspector(bundleData) {
   const box = $('static-bundle-inspector-box');
   const tbody = $('static-bundle-tbody');
   const countTag = $('static-bundle-count-tag');
+  const sourceSummaryEl = $('static-bundle-source-summary');
   if (!box || !tbody || !bundleData || !Array.isArray(bundleData.filesList)) return;
 
   box.style.display = 'block';
   if (countTag) {
     countTag.textContent = `${bundleData.totalFiles || bundleData.filesList.length} static public files`;
+  }
+  if (sourceSummaryEl) {
+    const srcLabel = bundleData.contentSource || (isRealFirebaseConfig(getActiveFirebaseConfig()) ? 'Live Cloud Firestore' : 'Local Admin Workspace');
+    const brandName = bundleData.brandSummary?.name || currentConfig.brand?.name || '(Not configured)';
+    const rawLogoUrl = bundleData.brandSummary?.logoUrl || currentConfig.brand?.logoUrl || '';
+    const logoDisplay = !rawLogoUrl
+      ? '(None configured)'
+      : rawLogoUrl.startsWith('data:')
+        ? `Inline Data URI (${rawLogoUrl.length} chars)`
+        : rawLogoUrl.length > 68
+          ? `${rawLogoUrl.slice(0, 65)}…`
+          : rawLogoUrl;
+    const iconsCount = bundleData.seoManifestSummary?.manifestIconsCount ?? 0;
+    const manifestStatus = bundleData.seoManifestSummary?.manifestEnabled === false ? 'Disabled' : `manifest.webmanifest (${iconsCount} icon${iconsCount === 1 ? '' : 's'})`;
+    const seoStatus = `${bundleData.seoManifestSummary?.sitemapEnabled === false ? 'No Sitemap' : 'sitemap.xml'} · robots.txt${bundleData.seoManifestSummary?.rssEnabled ? ' · feed.xml' : ''}`;
+    sourceSummaryEl.innerHTML =
+      `<div><strong>Source:</strong> ${escapeHtml(srcLabel)} &nbsp;|&nbsp; <strong>Brand:</strong> ${escapeHtml(brandName)} &nbsp;|&nbsp; <strong>Logo:</strong> <code title="${escapeHtml(rawLogoUrl)}">${escapeHtml(logoDisplay)}</code></div>` +
+      `<div style="margin-top:3px;"><strong>Web Manifest:</strong> ${escapeHtml(manifestStatus)} &nbsp;|&nbsp; <strong>SEO Files:</strong> ${escapeHtml(seoStatus)}</div>`;
   }
 
   tbody.innerHTML = bundleData.filesList
@@ -2573,9 +2909,9 @@ async function handleInspectStaticBundle() {
     btn.textContent = 'Inspecting Static Bundle...';
   }
   try {
-    const token = localStorage.getItem('cms_admin_bearer_token') || '';
     const res = await fetch('/api/static-bundle', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'X-Admin-CSRF': '1' }
     });
     const data = await res.json().catch(() => null);
     if (res.ok && data?.success) {
@@ -2594,65 +2930,157 @@ async function handleInspectStaticBundle() {
   }
 }
 
+function appendPipelineStep(stepText) {
+  const box = $('gh-sync-pipeline-log');
+  if (!box) return;
+  box.classList.add('visible');
+  const line = document.createElement('div');
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${stepText}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
 async function handleCompileAndPushToGitHub() {
   collectScalarFields();
   currentConfig.updatedAt = Date.now();
 
   const btn = $('btn-publish-github');
   const feedbackEl = $('gh-verify-feedback');
+  const pipeEl = $('gh-sync-pipeline-log');
+  if (pipeEl) {
+    pipeEl.innerHTML = '';
+    pipeEl.classList.add('visible');
+  }
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Compiling Static HTML & Pushing to GitHub...';
+    btn.textContent = 'Syncing & Pushing to GitHub...';
   }
 
   try {
-    // 1. Save live config to Firebase + Server first
-    await saveSiteConfigRemote(currentConfig);
+    const pendingEdits = Array.from(dirtyModules);
+    if (pendingEdits.length > 0) {
+      appendPipelineStep(`1/3 Batch-saving ${pendingEdits.length} edited module(s) [${pendingEdits.join(', ')}] to Live Firebase...`);
+      const batchMap = {};
+      for (const mk of pendingEdits) {
+        batchMap[mk] = extractConfigModule(currentConfig, mk);
+      }
+      await saveSiteConfigModulesBatchRemote(batchMap, pendingEdits);
+    } else {
+      appendPipelineStep('1/3 Verifying live Firebase workspace...');
+    }
 
-    // 2. Compile & Push static files to GitHub
+    appendPipelineStep('2/3 Compiling full static public HTML, assets, sitemap.xml, robots.txt & diffing GitHub blobs...');
     const res = await publishStaticSiteToGitHubRemote(currentConfig.githubConfig, currentConfig);
+    pendingClearGithubToken = false;
 
     if (res?.compiledBundle) {
       renderStaticBundleInspector(res.compiledBundle);
     }
 
+    if (res?.config) {
+      currentConfig = mergeSiteConfig(res.config, EMPTY_ADMIN_CONFIG);
+      populateAllFields();
+    }
+
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
       if (res.success) {
-        feedbackEl.innerHTML = `
-          <div style="color:#065f46; font-weight:700;">Successfully Compiled &amp; Pushed ${
-            res.filesCount || 0
-          } Static Files to GitHub!</div>
-          <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">
-            Commit SHA: <code>${escapeHtml((res.commitSha || '').slice(0, 10))}</code> •
-            <a href="${escapeHtml(
-              res.commitUrl || '#'
-            )}" target="_blank" rel="noopener" style="color:var(--accent); font-weight:700;">Open Commit on GitHub ↗</a>
-          </div>
-        `;
-        const latest = await getSiteConfigRemote();
-        if (latest) {
-          currentConfig = mergeSiteConfig(latest, MASTER_DEFAULT_CONFIG);
-          renderGitHubDeployHistory();
+        const diffSummary = `+${res.addedCount || 0} added, ~${res.updatedCount || 0} updated, -${res.deletedCount || 0} deleted, =${res.unchangedCount || 0} unchanged`;
+        if (res.skipped) {
+          appendPipelineStep(`3/3 ≡ Remote GitHub branch already identical (${diffSummary}) — skipped redundant commit.`);
+          feedbackEl.innerHTML = `
+            <div style="color:#065f46; font-weight:700;">≡ GitHub Static Site Already Up to Date (0 Changed Files)</div>
+            <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; font-variant-numeric:tabular-nums;">
+              Tree Diff: ${escapeHtml(diffSummary)} • All live Firebase modules synced.
+            </div>
+          `;
+          markClean('Verified live Firebase & confirmed GitHub public site is up to date');
+          showToast('GitHub static site already up to date (0 changed files)', 'success');
+        } else {
+          appendPipelineStep(`3/3 ✓ Pushed ${res.filesCount || 0} changed file(s) to GitHub (${(res.commitSha || '').slice(0, 7)}): ${diffSummary}.`);
+          feedbackEl.innerHTML = `
+            <div style="color:#065f46; font-weight:700;">✓ Successfully Compiled &amp; Pushed Static Website to GitHub!</div>
+            <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; font-variant-numeric:tabular-nums;">
+              ${escapeHtml(diffSummary)} • Commit SHA: <code>${escapeHtml((res.commitSha || '').slice(0, 10))}</code> •
+              <a href="${escapeHtml(
+                res.commitUrl || '#'
+              )}" target="_blank" rel="noopener" style="color:var(--accent); font-weight:700;">Open Commit on GitHub ↗</a>
+            </div>
+          `;
+          markClean(`Synced Firebase & pushed static update (${diffSummary})`);
+          showToast(`Pushed static update to GitHub (+${res.addedCount || 0} / ~${res.updatedCount || 0} / -${res.deletedCount || 0})!`, 'success');
         }
-        markClean('Saved to Live Admin & pushed 100% static site to GitHub!');
-        showToast(`Pushed ${res.filesCount || 0} static files to GitHub!`, 'success');
       } else {
+        appendPipelineStep(`3/3 ⚠️ Local static bundle compiled (${res.compiledLocalFiles || 0} files), GitHub notice: ${res.error}`);
         feedbackEl.innerHTML = `
           <div style="color:#b91c1c; font-weight:700;">Local Static Bundle Compiled (${
             res.compiledLocalFiles || 0
-          } files in /dist-public), but GitHub Push Needs Token:</div>
+          } files in /dist-public), GitHub Push Notice:</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">${escapeHtml(
             res.error || 'Check your GitHub Fine-Grained Token, Owner, and Repo Name.'
           )}</div>
         `;
-        showToast(res.error || 'GitHub push failed — check token & repo settings', 'error');
+        renderGitHubDeployHistory();
+        showToast(res.error || 'GitHub push needs valid token & repo', 'error');
       }
     }
   } finally {
     if (btn) {
       btn.disabled = false;
       btn.textContent = 'Compile & Push Static Website to GitHub Now';
+    }
+  }
+}
+
+async function handleSaveActiveModule(explicitModuleKey = null) {
+  collectScalarFields();
+  const targetModule = isCmsModuleKey(explicitModuleKey)
+    ? explicitModuleKey
+    : getPrimaryModuleForActiveTab();
+  const moduleSlice = extractConfigModule(currentConfig, targetModule);
+
+  const btnModule = $('btn-save-active-module');
+  if (btnModule) {
+    btnModule.disabled = true;
+    btnModule.textContent = `Saving [${targetModule}]...`;
+  }
+
+  const siblingDirtySlices = {};
+  for (const mk of dirtyModules) {
+    if (mk !== targetModule && isCmsModuleKey(mk)) {
+      siblingDirtySlices[mk] = extractConfigModule(currentConfig, mk);
+    }
+  }
+
+  try {
+    const res = await saveSiteConfigModuleRemote(targetModule, moduleSlice, Array.from(dirtyModules));
+    if (targetModule === 'githubConfig') pendingClearGithubToken = false;
+    if (targetModule === 'securityGate') pendingClearTurnstileSecret = false;
+
+    if (res && res.success) {
+      if (res.config) {
+        const merged = mergeSiteConfig(res.config, EMPTY_ADMIN_CONFIG);
+        for (const [mk, slice] of Object.entries(siblingDirtySlices)) {
+          merged[mk] = slice;
+        }
+        currentConfig = merged;
+      }
+      dirtyModules.delete(targetModule);
+      if (dirtyModules.size === 0) {
+        markClean(res.message);
+      } else {
+        renderDirtyModulesSummary();
+      }
+      renderGitHubDeployHistory();
+      refreshOverviewAndSeoAudit();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res?.error || `Failed saving module [${targetModule}].`, 'error');
+    }
+  } finally {
+    if (btnModule) {
+      btnModule.disabled = false;
+      btnModule.textContent = 'Save This Module Only';
     }
   }
 }
@@ -2673,20 +3101,46 @@ async function handleSaveAndPublish() {
   }
 
   try {
-    const res = await saveSiteConfigRemote(currentConfig);
+    const editedModules = Array.from(dirtyModules);
+    const shouldAutoPush = Boolean(currentConfig.githubConfig?.autoPushOnPublish);
+
+    // Single atomic batch commit for all edited modules (zero sequential loops & zero full-DB rewrite)
+    if (!shouldAutoPush && editedModules.length > 0 && editedModules.length <= 8) {
+      const modulesMap = {};
+      for (const modKey of editedModules) {
+        modulesMap[modKey] = extractConfigModule(currentConfig, modKey);
+      }
+      const batchRes = await saveSiteConfigModulesBatchRemote(modulesMap, editedModules);
+      if (!batchRes?.success) {
+        throw new Error(batchRes?.error || 'Error saving edited modules');
+      }
+      if (batchRes.config) {
+        currentConfig = mergeSiteConfig(batchRes.config, EMPTY_ADMIN_CONFIG);
+      }
+      for (const modKey of editedModules) dirtyModules.delete(modKey);
+      pendingClearGithubToken = false;
+      pendingClearTurnstileSecret = false;
+      const summaryMsg = batchRes.message || `Saved [${editedModules.join(', ')}] to Live Firebase & compiled static public routes`;
+      populateAllFields();
+      markClean(summaryMsg);
+      showToast(summaryMsg, 'success');
+      return;
+    }
+
+    const res = await saveSiteConfigRemote(currentConfig, editedModules);
+    pendingClearGithubToken = false;
+    pendingClearTurnstileSecret = false;
+
     if (res && res.success === false) {
       showToast(res.error || 'Saved locally, but server sync returned a warning.', 'error');
     } else {
+      dirtyModules.clear();
       if (res?.config) {
-        currentConfig = mergeSiteConfig(res.config, MASTER_DEFAULT_CONFIG);
-        setVal('sec-encrypted-url', currentConfig.securityGate?.encryptedPrimaryUrl || '');
-        setVal('sec-primary-url', currentConfig.securityGate?.primaryDownloadUrl || '');
+        currentConfig = mergeSiteConfig(res.config, EMPTY_ADMIN_CONFIG);
+        populateAllFields();
       }
-      const ghMsg = res?.githubPush?.success
-        ? ` + Pushed ${res.staticBundle?.totalFiles || ''} static files to GitHub!`
-        : ` (${res?.staticBundle?.totalFiles || 9} static routes compiled)`;
-      markClean(`Published to Live Admin & compiled static public website${ghMsg}`);
-      showToast(`Published & compiled static website${ghMsg}`, 'success');
+      markClean(res.message || 'Published to Live Firebase & compiled static public website');
+      showToast(res.message || 'Published & compiled static website', 'success');
     }
     renderGitHubDeployHistory();
     refreshOverviewAndSeoAudit();
@@ -2699,7 +3153,7 @@ async function handleSaveAndPublish() {
     }
     if (btnBottom) {
       btnBottom.disabled = false;
-      btnBottom.textContent = 'Publish All Changes';
+      btnBottom.textContent = 'Publish Edited Modules';
     }
   }
 }
@@ -2731,24 +3185,7 @@ function rerenderCollection(name) {
   refreshOverviewAndSeoAudit();
 }
 
-function initAdminEvents() {
-  // Global Device Image File Picker Change Handler
-  $('global-image-file-picker')?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !pendingUploadCallback) return;
-
-    showToast('Uploading image...', 'default');
-    const result = await uploadImageRemote(file);
-    if (result.success && result.url) {
-      pendingUploadCallback(result.url);
-      markDirty();
-      showToast('Image uploaded and linked!', 'success');
-    } else {
-      showToast(result.error || 'Image upload failed.', 'error');
-    }
-    pendingUploadCallback = null;
-  });
-
+function bindWorkspaceDomEvents() {
   // Insert Image Modal Controls
   $('btn-close-image-modal')?.addEventListener('click', closeInsertImageModal);
   $('btn-confirm-insert-image')?.addEventListener('click', confirmInsertImageFromModal);
@@ -2792,8 +3229,8 @@ function initAdminEvents() {
   $('btn-apply-quick-clone')?.addEventListener('click', () => {
     collectScalarFields();
     const c = currentConfig;
-    const brandName = ($('qc-brand-name')?.value || '').trim() || c.brand.name || 'ApexMobile';
-    const ver = ($('qc-version')?.value || '').trim() || c.packageSpecs.version || 'v4.8.2';
+    const brandName = ($('qc-brand-name')?.value || '').trim() || c.brand.name || 'MyBrand';
+    const ver = ($('qc-version')?.value || '').trim() || c.packageSpecs.version || 'v1.0.0';
     const domain = ($('qc-domain')?.value || '').trim() || c.domainConfig.primaryDomain || c.seo.canonicalUrl;
     const email = ($('qc-email')?.value || '').trim() || c.brand.contactEmail;
     const dlUrl = ($('qc-download-url')?.value || '').trim();
@@ -2827,7 +3264,9 @@ function initAdminEvents() {
     }
 
     const cleanOrigin = domain.replace(/\/+$/, '');
-    c.domainConfig.customRobotsTxt = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /moreinfo\nDisallow: /download\nDisallow: /api/\n\nSitemap: ${cleanOrigin}/sitemap.xml`;
+    if (cleanOrigin) {
+      c.domainConfig.customRobotsTxt = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /moreinfo\nDisallow: /download\nDisallow: /api/\n\nSitemap: ${cleanOrigin}/sitemap.xml`;
+    }
     c.navigation.copyright = `© ${new Date().getFullYear()} ${brandName}. All Rights Reserved.`;
     c.pages = (c.pages || []).map((pg) => {
       if (pg.slug.includes('privacy')) return { ...pg, metaTitle: `Privacy Policy | ${brandName}`, htmlContent: generateSmartLegalHtml('privacy', brandName, cleanOrigin, email) };
@@ -2837,9 +3276,12 @@ function initAdminEvents() {
       return pg;
     });
 
+    ['brand', 'hero', 'packageSpecs', 'seo', 'domainConfig', 'navigation', 'pages', 'securityGate'].forEach((k) =>
+      dirtyModules.add(k)
+    );
     populateAllFields();
-    markDirty(`Master Clone applied for "${brandName}" — click "Publish All Changes" to go live`);
-    showToast(`Re-branded entire site to "${brandName}" (${ver})!`, 'success');
+    markDirty(`Master Clone applied for "${brandName}" — click "Publish Edited Modules" to go live`, 'brand');
+    showToast(`Re-branded site to "${brandName}" (${ver})!`, 'success');
   });
 
   // Search Filters & Expand / Collapse All Controls
@@ -2855,6 +3297,7 @@ function initAdminEvents() {
     });
   });
   $('btn-sections-collapse-all')?.addEventListener('click', () => {
+    openSectionIndex = -1;
     document.querySelectorAll('#sections-list .item-card').forEach((card) => {
       card.classList.remove('open');
       const ch = card.querySelector('[data-card-chevron]');
@@ -2874,6 +3317,7 @@ function initAdminEvents() {
     });
   });
   $('btn-news-collapse-all')?.addEventListener('click', () => {
+    openNewsIndex = -1;
     document.querySelectorAll('#news-list .item-card').forEach((card) => {
       card.classList.remove('open');
       const ch = card.querySelector('[data-card-chevron]');
@@ -2893,6 +3337,7 @@ function initAdminEvents() {
     });
   });
   $('btn-faqs-collapse-all')?.addEventListener('click', () => {
+    openFaqIndex = -1;
     document.querySelectorAll('#faqs-list .item-card').forEach((card) => {
       card.classList.remove('open');
       const ch = card.querySelector('[data-card-chevron]');
@@ -2925,7 +3370,7 @@ function initAdminEvents() {
       }
       currentConfig.packageSpecs.customRows.push({ ...row });
       renderCustomSpecsRows();
-      markDirty();
+      markDirty('Added specification row preset', 'packageSpecs');
       showToast(`Added "${row.label}" specification row!`, 'success');
     });
   });
@@ -2933,12 +3378,12 @@ function initAdminEvents() {
   document.querySelectorAll('[data-faq-preset]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const preset = btn.getAttribute('data-faq-preset');
-      const brandName = currentConfig.brand?.name || 'ApexMobile';
-      const ver = currentConfig.packageSpecs?.version || 'v4.8.2';
+      const brandName = currentConfig.brand?.name || 'Website';
+      const ver = currentConfig.packageSpecs?.version || 'latest version';
       const map = {
         free: {
           question: `Is ${brandName} completely free to download and use?`,
-          answer: `Yes, the official ${brandName} ${ver} package listed on this portal is freeware with zero hidden subscription locks or trial expiration.`
+          answer: `Yes, the official ${brandName} (${ver}) package listed on this portal is freeware with zero hidden subscription locks or trial expiration.`
         },
         safety: {
           question: `How can I verify that the ${brandName} installer is authentic and clean?`,
@@ -2950,15 +3395,16 @@ function initAdminEvents() {
         },
         compat: {
           question: `Which Android and iOS versions are supported by ${brandName}?`,
-          answer: `${brandName} ${ver} supports ${currentConfig.packageSpecs?.operatingSystem || 'Android 9.0+ and iOS 15.0+'} across both smartphone and tablet form factors.`
+          answer: `${brandName} (${ver}) supports ${currentConfig.packageSpecs?.operatingSystem || 'Android 9.0+ and iOS 15.0+'} across both smartphone and tablet form factors.`
         }
       };
       const faq = map[preset];
       if (!faq) return;
       currentConfig.faqsSection.items.push({ id: `faq-${Date.now()}`, ...faq });
+      openFaqIndex = currentConfig.faqsSection.items.length - 1;
       renderFaqsList();
       refreshOverviewAndSeoAudit();
-      markDirty();
+      markDirty('Added quick FAQ item', 'faqsSection');
       showToast('Added quick FAQ item!', 'success');
     });
   });
@@ -2966,18 +3412,18 @@ function initAdminEvents() {
   document.querySelectorAll('[data-page-template]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tpl = btn.getAttribute('data-page-template');
-      const brandName = currentConfig.brand?.name || 'ApexMobile';
-      const email = currentConfig.brand?.contactEmail || 'support@example.com';
+      const brandName = currentConfig.brand?.name || 'Website';
+      const email = currentConfig.brand?.contactEmail || '';
       const nowMonth = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       const tplMap = {
         about: {
           label: 'About Us',
           slug: 'about-us',
           h1: `About ${brandName}`,
-          subtitle: `Official Verified Portal & Engineering Mission`,
-          metaTitle: `About ${brandName} | Verified Portal`,
+          subtitle: `Official Website & Engineering Mission`,
+          metaTitle: `About ${brandName}`,
           metaDescription: `Learn about the engineering mission, checksum transparency, and editorial standards of ${brandName}.`,
-          htmlContent: `<h2>Who We Are</h2>\n<p>${brandName} publishes cryptographically verified mobile release packages, documentation, and daily changelogs with strict zero-telemetry standards.</p>\n<h2>Contact & Transparency</h2>\n<p>Reach our editorial and engineering desk anytime at <a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>.</p>`
+          htmlContent: `<h2>Who We Are</h2>\n<p>${brandName} publishes cryptographically verified mobile release packages, documentation, and daily changelogs with strict zero-telemetry standards.</p>${email ? `\n<h2>Contact & Transparency</h2>\n<p>Reach our editorial and engineering desk anytime at <a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>.</p>` : ''}`
         },
         disclosure: {
           label: 'Editorial Disclosure',
@@ -3014,7 +3460,7 @@ function initAdminEvents() {
       renderPagesList();
       syncUrlQuickPickers();
       refreshOverviewAndSeoAudit();
-      markDirty();
+      markDirty(`Created standalone "${item.label}" page`, 'pages');
       showToast(`Created standalone "${item.label}" page!`, 'success');
     });
   });
@@ -3032,10 +3478,67 @@ function initAdminEvents() {
     showToast(`Generated slug: /news/${slug}`, 'success');
   });
 
-  // GitHub Fine-Grained Token Publisher & Static Bundle Inspector Buttons
+  // GitHub Fine-Grained Token Publisher, Clear Logs, Clear Secret & Static Bundle Inspector Buttons
   $('btn-verify-github')?.addEventListener('click', handleVerifyGitHubAccess);
   $('btn-publish-github')?.addEventListener('click', handleCompileAndPushToGitHub);
   $('btn-inspect-static-bundle')?.addEventListener('click', handleInspectStaticBundle);
+
+  $('btn-clear-sync-logs')?.addEventListener('click', async () => {
+    const btn = $('btn-clear-sync-logs');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Clearing...';
+    }
+    try {
+      const res = await fetch('/api/admin/clear-logs', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Admin-CSRF': '1'
+        }
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        if (data.config) {
+          currentConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+        } else {
+          currentConfig.syncLogs = [];
+          if (currentConfig.githubConfig) currentConfig.githubConfig.deployHistory = [];
+        }
+        renderGitHubDeployHistory();
+        showToast('Cleared Sync & Activity Logs', 'success');
+      } else {
+        showToast(data?.error || 'Could not clear logs', 'error');
+      }
+    } catch {
+      showToast('Network error clearing logs', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Clear Logs';
+      }
+    }
+  });
+
+  $('btn-clear-gh-token')?.addEventListener('click', () => {
+    pendingClearGithubToken = true;
+    setVal('gh-token', '');
+    if (currentConfig.githubConfig) currentConfig.githubConfig.hasFineGrainedToken = false;
+    markDirty('Marked stored GitHub token for removal — Save [githubConfig] to apply', 'githubConfig');
+    populateAllFields();
+    showToast('Token marked for removal — save to apply');
+  });
+
+  $('btn-clear-ts-secret')?.addEventListener('click', () => {
+    pendingClearTurnstileSecret = true;
+    setVal('sec-turnstile-secret-key', '');
+    if (currentConfig.securityGate) currentConfig.securityGate.hasTurnstileSecretKey = false;
+    markDirty('Marked stored Turnstile secret for removal — Save [securityGate] to apply', 'securityGate');
+    populateAllFields();
+    showToast('Turnstile secret marked for removal — save to apply');
+  });
 
   // 1-Click AES-256-GCM URL Encryption Button
   $('btn-encrypt-vault-url')?.addEventListener('click', async () => {
@@ -3051,12 +3554,13 @@ function initAdminEvents() {
       btn.textContent = 'Encrypting with AES-256-GCM…';
     }
     try {
-      const token = localStorage.getItem('cms_admin_bearer_token') || '';
       const res = await fetch('/api/admin/encrypt-url', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          Accept: 'application/json',
+          'X-Admin-CSRF': '1'
         },
         body: JSON.stringify({ url: rawUrl })
       });
@@ -3064,7 +3568,7 @@ function initAdminEvents() {
       if (res.ok && data?.success && data?.encryptedUrl) {
         setVal('sec-encrypted-url', data.encryptedUrl);
         collectScalarFields();
-        markDirty('Encrypted download URL into AES-256-GCM v2 vault — click Publish to save');
+        markDirty('Encrypted download URL into AES-256-GCM v2 vault — click Publish to save', 'securityGate');
         showToast('URL encrypted with AES-256-GCM (v2.<iv>.<cipher>)!', 'success');
       } else {
         showToast(data?.error || 'Encryption failed.', 'error');
@@ -3084,20 +3588,32 @@ function initAdminEvents() {
   $('admin-drawer-close')?.addEventListener('click', closeAdminNavDrawer);
   $('admin-nav-backdrop')?.addEventListener('click', closeAdminNavDrawer);
 
-  // Auth mode tabs
-  $('tab-auth-credentials')?.addEventListener('click', () => setAuthMode('credentials'));
-  $('tab-auth-apikey')?.addEventListener('click', () => setAuthMode('apikey'));
-  $('auth-form')?.addEventListener('submit', handleLoginSubmit);
-
-  // Logout
+  // Logout (Revokes server JTI, clears cookies, wipes in-memory & DOM state)
   $('btn-logout')?.addEventListener('click', async () => {
     await logoutAdminUser();
-    if ($('cms-shell')) $('cms-shell').hidden = true;
+    closeAdminNavDrawer();
+    currentConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
+    dirtyModules.clear();
+    editorUndoHistory.clear();
+    isDirty = false;
+    pendingClearGithubToken = false;
+    pendingClearTurnstileSecret = false;
+    if ($('login-email')) $('login-email').value = '';
+    if ($('login-password')) $('login-password').value = '';
+    if ($('login-apikey')) $('login-apikey').value = '';
+    if ($('auth-error')) {
+      $('auth-error').textContent = '';
+      $('auth-error').classList.remove('visible');
+    }
+    if ($('cms-shell')) {
+      $('cms-shell').innerHTML = '';
+      $('cms-shell').hidden = true;
+    }
     if ($('auth-overlay')) $('auth-overlay').hidden = false;
     showToast('Signed out of Admin Studio');
   });
 
-  // Desktop Sidebar & Hamburger Drawer Tab Navigation
+  // Desktop Sidebar, Mobile Quick Tabs & Hamburger Drawer Tab Navigation
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.dataset.tab) switchTab(btn.dataset.tab);
@@ -3124,13 +3640,49 @@ function initAdminEvents() {
   document.querySelectorAll('[data-jump-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const targetTab = btn.getAttribute('data-jump-tab');
-      if (targetTab) switchTab(targetTab);
+      if (targetTab) {
+        switchTab(targetTab);
+        if (btn.id === 'btn-quick-jump-logs') {
+          setTimeout(() => {
+            $('gh-deploy-history-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 120);
+        }
+      }
     });
   });
 
-  // Save Buttons
+  // Smartphone 1-Tap Quick-Add Content Bar on Overview
+  $('btn-quick-add-news')?.addEventListener('click', () => {
+    switchTab('news');
+    resetNewsComposer();
+    setTimeout(() => {
+      const titleInput = $('composer-news-title');
+      if (titleInput) {
+        titleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        titleInput.focus();
+      }
+    }, 80);
+  });
+
+  $('btn-quick-add-section')?.addEventListener('click', () => {
+    switchTab('sections');
+    $('btn-add-section')?.click();
+  });
+
+  $('btn-quick-add-faq')?.addEventListener('click', () => {
+    switchTab('faqs');
+    $('btn-add-faq')?.click();
+  });
+
+  $('btn-quick-add-page')?.addEventListener('click', () => {
+    switchTab('pages');
+    $('btn-add-page')?.click();
+  });
+
+  // Save Buttons (Full Edited Modules + Single Active Module Only)
   $('btn-top-save')?.addEventListener('click', handleSaveAndPublish);
   $('btn-bottom-save')?.addEventListener('click', handleSaveAndPublish);
+  $('btn-save-active-module')?.addEventListener('click', () => handleSaveActiveModule());
 
   // Daily News Composer Events
   $('composer-news-title')?.addEventListener('input', (e) => {
@@ -3160,7 +3712,7 @@ function initAdminEvents() {
   $('btn-news-autofill-seo')?.addEventListener('click', () => {
     const headline = $('composer-news-title')?.value.trim() || '';
     const summary = $('composer-news-summary')?.value.trim() || '';
-    const brandName = currentConfig.brand?.name || 'ApexMobile';
+    const brandName = currentConfig.brand?.name || 'Official';
     if (!headline) {
       showToast('Enter a News Headline first to auto-generate SEO Meta tags.', 'error');
       return;
@@ -3217,7 +3769,7 @@ function initAdminEvents() {
       hash += chars[Math.floor(Math.random() * chars.length)];
     }
     setVal('specs-sha256', hash);
-    markDirty();
+    markDirty('Generated new SHA-256 hash', 'packageSpecs');
     showToast('Generated new 64-character SHA-256 hash', 'success');
   });
 
@@ -3231,10 +3783,10 @@ function initAdminEvents() {
       value: 'ARM64-v8a / Universal'
     });
     renderCustomSpecsRows();
-    markDirty();
+    markDirty('Added custom specification row', 'packageSpecs');
   });
 
-  // Add Blank Section
+  // Add Blank Section (Auto-expands & focuses new card for smartphone ergonomics)
   $('btn-add-section')?.addEventListener('click', () => {
     const num = (currentConfig.sections?.length || 0) + 1;
     const brandName = currentConfig.brand?.name || 'Brand';
@@ -3254,18 +3806,27 @@ function initAdminEvents() {
       ctaUrl: '',
       htmlContent: `<p>Write your plain editorial content for Section ${num} here.</p>`
     });
+    openSectionIndex = currentConfig.sections.length - 1;
     renderSectionsList();
     refreshOverviewAndSeoAudit();
-    markDirty();
-    showToast('Added new content section');
+    markDirty('Added new content section', 'sections');
+    showToast('Added new content section — ready to edit');
+    setTimeout(() => {
+      const cards = document.querySelectorAll('#sections-list .item-card');
+      const lastCard = cards[cards.length - 1];
+      if (lastCard) {
+        lastCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        lastCard.querySelector('input[data-key="heading"]')?.focus();
+      }
+    }, 60);
   });
 
   // 1-Click Section Templates
   document.querySelectorAll('[data-section-template]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tpl = btn.getAttribute('data-section-template');
-      const brandName = currentConfig.brand?.name || 'ApexMobile';
-      const ver = currentConfig.packageSpecs?.version || 'v4.8.2';
+      const brandName = currentConfig.brand?.name || 'Website';
+      const ver = currentConfig.packageSpecs?.version || 'Latest Release';
       let newSec = null;
 
       if (tpl === 'features') {
@@ -3340,9 +3901,10 @@ function initAdminEvents() {
 
       if (newSec) {
         currentConfig.sections.push(newSec);
+        openSectionIndex = currentConfig.sections.length - 1;
         renderSectionsList();
         refreshOverviewAndSeoAudit();
-        markDirty();
+        markDirty(`Added "${newSec.heading}" section template`, 'sections');
         showToast(`Added "${newSec.heading}" section template!`, 'success');
       }
     });
@@ -3352,8 +3914,8 @@ function initAdminEvents() {
   document.querySelectorAll('[data-news-template]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tpl = btn.getAttribute('data-news-template');
-      const brandName = currentConfig.brand?.name || 'ApexMobile';
-      const ver = currentConfig.packageSpecs?.version || 'v4.8.2';
+      const brandName = currentConfig.brand?.name || 'Website';
+      const ver = currentConfig.packageSpecs?.version || 'Latest Release';
       const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
       if (tpl === 'release') {
@@ -3402,7 +3964,7 @@ function initAdminEvents() {
     });
   });
 
-  // Add FAQ
+  // Add FAQ (Auto-expands & focuses new FAQ card)
   $('btn-add-faq')?.addEventListener('click', () => {
     const num = (currentConfig.faqsSection?.items?.length || 0) + 1;
     currentConfig.faqsSection.items.push({
@@ -3410,10 +3972,19 @@ function initAdminEvents() {
       question: `Frequently Asked Question #${num}?`,
       answer: `Clear, direct answer to question #${num} for visitors and Google FAQPage schema.`
     });
+    openFaqIndex = currentConfig.faqsSection.items.length - 1;
     renderFaqsList();
     refreshOverviewAndSeoAudit();
-    markDirty();
-    showToast('Added new FAQ question');
+    markDirty('Added new FAQ question', 'faqsSection');
+    showToast('Added new FAQ question — ready to edit');
+    setTimeout(() => {
+      const cards = document.querySelectorAll('#faqs-list .item-card');
+      const lastCard = cards[cards.length - 1];
+      if (lastCard) {
+        lastCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        lastCard.querySelector('input[data-key="question"]')?.focus();
+      }
+    }, 60);
   });
 
   // Add Standalone Footer Page
@@ -3439,7 +4010,7 @@ function initAdminEvents() {
     activeLegalPageIndex = currentConfig.pages.length - 1;
     renderPagesList();
     refreshOverviewAndSeoAudit();
-    markDirty();
+    markDirty('Added standalone legal page', 'pages');
     showToast('Added new standalone legal page');
   });
 
@@ -3483,7 +4054,7 @@ function initAdminEvents() {
     });
 
     renderPagesList();
-    markDirty();
+    markDirty('Updated all legal pages with brand & email', 'pages');
     showToast(`Updated all legal pages with ${b} & ${e}`, 'success');
   });
 
@@ -3498,7 +4069,7 @@ function initAdminEvents() {
       metaDescription: `Navigate to section on ${brandName}.`
     });
     renderMenuLinksList();
-    markDirty();
+    markDirty('Added header menu link', 'navigation');
     showToast('Added new header menu link');
   });
 
@@ -3514,7 +4085,7 @@ function initAdminEvents() {
       openInNewTab: false
     });
     renderFooterQuickLinksList();
-    markDirty();
+    markDirty('Added footer quick link', 'navigation');
     showToast('Added custom footer quick link');
   });
 
@@ -3531,7 +4102,7 @@ function initAdminEvents() {
     });
     renderInternalLinksList();
     refreshOverviewAndSeoAudit();
-    markDirty();
+    markDirty('Added smart internal link rule', 'domainConfig');
     showToast('Added smart internal link rule');
   });
 
@@ -3554,7 +4125,7 @@ function initAdminEvents() {
         const txt = targetId ? $(targetId) : null;
         if (txt) txt.value = val;
         updateLiveThemePreviewCard();
-        markDirty();
+        markDirty('Updated theme color', 'uiConfig');
       });
     });
   });
@@ -3569,10 +4140,317 @@ function initAdminEvents() {
     });
   });
 
-  // Delegated Clicks (Upload Buttons, Image Modal, Visual Block Modal, Legal Page Selector, Accordion, Move, Delete, Snippets)
+  // Show/Hide Toggle for Firebase API Key inside Workspace
+  $('btn-toggle-fb-apikey')?.addEventListener('click', () => {
+    const inp = $('fb-api-key');
+    const btn = $('btn-toggle-fb-apikey');
+    if (!inp || !btn) return;
+    const isPass = inp.type === 'password';
+    inp.type = isPass ? 'text' : 'password';
+    btn.textContent = isPass ? 'Hide' : 'Show';
+  });
+
+  // Parse Firebase SDK Snippet or JSON Helper
+  const applyParsedFirebaseSnippet = (rawText) => {
+    const parsed = parseFirebaseConfigSnippet(rawText);
+    if (!parsed) return false;
+    setVal('fb-api-key', parsed.apiKey);
+    setVal('fb-project-id', parsed.projectId);
+    setVal('fb-auth-domain', parsed.authDomain);
+    setVal('fb-storage-bucket', parsed.storageBucket);
+    setVal('fb-messaging-sender-id', parsed.messagingSenderId);
+    setVal('fb-app-id', parsed.appId);
+    setVal('fb-database-id', parsed.databaseId || '(default)');
+    return true;
+  };
+
+  const readFirebaseFormFields = () => {
+    return normalizeFirebaseClientConfig({
+      apiKey: $('fb-api-key')?.value || '',
+      projectId: $('fb-project-id')?.value || '',
+      authDomain: $('fb-auth-domain')?.value || '',
+      storageBucket: $('fb-storage-bucket')?.value || '',
+      messagingSenderId: $('fb-messaging-sender-id')?.value || '',
+      appId: $('fb-app-id')?.value || '',
+      databaseId: $('fb-database-id')?.value || '(default)'
+    });
+  };
+
+  const showFirebaseFeedback = (ok, title, details = '') => {
+    const box = $('fb-test-feedback');
+    if (!box) return;
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="font-weight:700; color:${ok ? '#065f46' : '#b91c1c'};">${escapeHtml(title)}</div>
+      ${details ? `<div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; line-height:1.45;">${escapeHtml(details)}</div>` : ''}
+    `;
+  };
+
+  $('btn-parse-fb-snippet')?.addEventListener('click', () => {
+    const raw = $('fb-snippet-input')?.value || '';
+    if (!raw.trim()) {
+      showToast('Paste your Firebase config snippet or JSON object first.', 'error');
+      return;
+    }
+    if (!applyParsedFirebaseSnippet(raw)) {
+      showToast('Could not detect Firebase keys. Ensure apiKey and projectId are included.', 'error');
+      return;
+    }
+    showFirebaseFeedback(
+      true,
+      '✓ Parsed All Firebase Config Fields',
+      'Click "Save & Connect Firebase" or "Test Firestore Connection" to verify live Firestore sync.'
+    );
+    showToast('Auto-filled Firebase fields from snippet!', 'success');
+  });
+
+  // Auto-parse if admin accidentally pastes full snippet/JSON into the API Key input
+  $('fb-api-key')?.addEventListener('paste', (e) => {
+    const pasted = e.clipboardData?.getData('text') || '';
+    if (pasted.includes('{') && pasted.includes('projectId')) {
+      e.preventDefault();
+      if (applyParsedFirebaseSnippet(pasted)) {
+        showToast('Detected Firebase SDK snippet and auto-filled all fields!', 'success');
+      }
+    }
+  });
+
+  // Save Firebase Runtime Keys + Test Connection + Sync Live Document
+  $('btn-save-firebase')?.addEventListener('click', async () => {
+    const rawApiKey = $('fb-api-key')?.value || '';
+    if (rawApiKey.includes('{') && rawApiKey.includes('projectId')) {
+      applyParsedFirebaseSnippet(rawApiKey);
+    }
+    const fb = readFirebaseFormFields();
+    const activeFb = getActiveFirebaseConfig();
+    if (!fb.apiKey && activeFb?.hasEnvApiKey && fb.projectId) {
+      fb.hasEnvApiKey = true;
+    }
+    if (!isRealFirebaseConfig(fb)) {
+      showFirebaseFeedback(
+        false,
+        'Invalid Firebase Credentials',
+        'Please provide a real FIREBASE_API_KEY (AIza...) and FIREBASE_PROJECT_ID.'
+      );
+      showToast('Valid FIREBASE_API_KEY and FIREBASE_PROJECT_ID are required.', 'error');
+      return;
+    }
+
+    const btn = $('btn-save-firebase');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+    }
+
+    try {
+      saveActiveFirebaseConfig(fb);
+      await fetch('/api/firebase/connect', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Admin-CSRF': '1'
+        },
+        body: JSON.stringify(fb)
+      }).catch(() => null);
+
+      const testRes = await testFirebaseConnectionRemote(fb.apiKey ? fb : null);
+      populateAllFields();
+
+      if (testRes.success) {
+        if (testRes.cloudConfig && (testRes.cloudConfig.updatedAt || 0) > (currentConfig.updatedAt || 0)) {
+          currentConfig = mergeSiteConfig(testRes.cloudConfig, EMPTY_ADMIN_CONFIG);
+          populateAllFields();
+        }
+        showFirebaseFeedback(
+          true,
+          `✓ Connected & Saved: ${fb.projectId}`,
+          testRes.message || 'Live Cloud Firestore is active for Admin Studio.'
+        );
+        showToast(`Firebase connected (${fb.projectId})`, 'success');
+      } else {
+        showFirebaseFeedback(
+          false,
+          `Saved Keys for ${fb.projectId}, Connection Notice:`,
+          `${testRes.error || 'Could not reach Firestore.'} (Check Firestore Rules or verify Cloud Firestore is enabled in Firebase Console.)`
+        );
+        showToast(testRes.error || 'Firebase saved with connection warning', 'error');
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Save & Connect Firebase';
+      }
+    }
+  });
+
+  // Test Firestore Connection without overwriting saved runtime keys
+  $('btn-test-firebase')?.addEventListener('click', async () => {
+    const fb = readFirebaseFormFields();
+    const btn = $('btn-test-firebase');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Testing...';
+    }
+    try {
+      const testRes = await testFirebaseConnectionRemote(fb.apiKey && fb.projectId ? fb : null);
+      if (testRes.success) {
+        showFirebaseFeedback(
+          true,
+          `✓ Firestore Connected (${testRes.projectId})`,
+          testRes.message
+        );
+        showToast('Firestore connection verified!', 'success');
+      } else {
+        showFirebaseFeedback(
+          false,
+          'Firestore Connection Check Failed',
+          testRes.error || 'Verify your API Key, Project ID, and Firestore Security Rules.'
+        );
+        showToast(testRes.error || 'Firestore connection failed', 'error');
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Test Firestore Connection';
+      }
+    }
+  });
+
+  // Revert to .env / Server Firebase Defaults
+  $('btn-clear-firebase')?.addEventListener('click', async () => {
+    clearActiveFirebaseConfig();
+    await fetch('/api/firebase/connect', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
+      },
+      body: JSON.stringify({ clear: true })
+    }).catch(() => null);
+    setVal('fb-snippet-input', '');
+    populateAllFields();
+    showFirebaseFeedback(
+      true,
+      'Reverted to .env / Server Defaults',
+      'Cleared runtime Firebase override.'
+    );
+    showToast('Reverted Firebase settings to .env defaults');
+  });
+
+  // Export Master Site JSON Backup (Secrets already sanitized)
+  $('btn-export-json')?.addEventListener('click', () => {
+    collectScalarFields();
+    const blob = new Blob([JSON.stringify(currentConfig, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${generateSlug(currentConfig.brand.name || 'master-cms')}-backup.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Exported full site JSON backup');
+  });
+
+  // Import Master Site JSON Backup
+  $('input-import-json')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      currentConfig = mergeSiteConfig(parsed, EMPTY_ADMIN_CONFIG);
+      populateAllFields();
+      markDirty('Imported JSON snapshot — click "Publish Edited Modules" to compile & go live');
+      showToast('Imported JSON configuration successfully!', 'success');
+    } catch {
+      showToast('Invalid JSON backup file.', 'error');
+    }
+  });
+
+  // Clear Admin Data (Empty Live Firebase State)
+  $('btn-reset-defaults')?.addEventListener('click', async () => {
+    const fresh = await resetSiteConfigRemote();
+    currentConfig = mergeSiteConfig(fresh, EMPTY_ADMIN_CONFIG);
+    openSectionIndex = -1;
+    openNewsIndex = -1;
+    openFaqIndex = -1;
+    populateAllFields();
+    markClean('Cleared all Admin content to clean Empty Firebase State');
+    showToast('Cleared Admin workspace to empty Firebase state', 'success');
+  });
+}
+
+let authEventsBound = false;
+function initAuthEvents() {
+  if (authEventsBound) return;
+  authEventsBound = true;
+
+  // Global Device Image File Picker Change Handler
+  $('global-image-file-picker')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !pendingUploadCallback) return;
+
+    showToast('Uploading image...', 'default');
+    const result = await uploadImageRemote(file);
+    if (result.success && result.url) {
+      pendingUploadCallback(result.url);
+      markDirty();
+      showToast('Image uploaded and linked!', 'success');
+    } else {
+      showToast(result.error || 'Image upload failed.', 'error');
+    }
+    pendingUploadCallback = null;
+  });
+
+  // Auth mode tabs (supports both data-auth-mode buttons and legacy IDs)
+  document.querySelectorAll('.auth-tab[data-auth-mode]').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const mode = tab.getAttribute('data-auth-mode') || 'credentials';
+      setAuthMode(mode);
+    });
+  });
+  $('tab-auth-credentials')?.addEventListener('click', () => setAuthMode('credentials'));
+  $('tab-auth-apikey')?.addEventListener('click', () => setAuthMode('apikey'));
+
+  const loginFormEl = $('login-form') || $('auth-form');
+  loginFormEl?.addEventListener('submit', handleLoginSubmit);
+
+  // Show/Hide Password & API Key Toggles on Login Screen
+  $('btn-toggle-login-pass')?.addEventListener('click', () => {
+    const inp = $('login-password');
+    const btn = $('btn-toggle-login-pass');
+    if (!inp || !btn) return;
+    const isPass = inp.type === 'password';
+    inp.type = isPass ? 'text' : 'password';
+    btn.textContent = isPass ? 'Hide' : 'Show';
+  });
+
+  $('btn-toggle-login-apikey')?.addEventListener('click', () => {
+    const inp = $('login-apikey');
+    const btn = $('btn-toggle-login-apikey');
+    if (!inp || !btn) return;
+    const isPass = inp.type === 'password';
+    inp.type = isPass ? 'text' : 'password';
+    btn.textContent = isPass ? 'Hide' : 'Show';
+  });
+
+  // Delegated Clicks (Inline Module Save, Upload Buttons, Image Modal, Visual Block Modal, Legal Page Selector, Accordion, Move, Delete, Snippets)
   document.addEventListener('click', (e) => {
     const target = e.target;
     if (!(target instanceof HTMLElement)) return;
+
+    // 0. Inline Save Module Button inside Section, News, or FAQ cards (`data-inline-save-module`)
+    const inlineSaveBtn = target.closest('[data-inline-save-module]');
+    if (inlineSaveBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const modKey = inlineSaveBtn.getAttribute('data-inline-save-module');
+      if (modKey) handleSaveActiveModule(modKey);
+      return;
+    }
 
     // 1. Device Image Upload Button for Scalar Input (`data-upload-target`)
     const scalarUploadBtn = target.closest('[data-upload-target]');
@@ -3708,6 +4586,8 @@ function initAdminEvents() {
       if (list && list[idx]) {
         const src = list[idx].heading || list[idx].title || list[idx].label || list[idx].h1 || 'item';
         list[idx].slug = generateSlug(src) || `${col}-${idx + 1}`;
+        if (col === 'sections') openSectionIndex = idx;
+        if (col === 'news') openNewsIndex = idx;
         rerenderCollection(col);
         syncUrlQuickPickers();
         markDirty();
@@ -3722,7 +4602,7 @@ function initAdminEvents() {
       const col = autoSeoBtn.getAttribute('data-autoseo-collection');
       const idx = Number(autoSeoBtn.getAttribute('data-index'));
       const list = getCollectionRef(col);
-      const brandName = currentConfig.brand?.name || 'ApexMobile';
+      const brandName = currentConfig.brand?.name || 'Website';
       if (list && list[idx]) {
         const item = list[idx];
         const title = item.heading || item.title || item.h1 || item.label || brandName;
@@ -3730,6 +4610,8 @@ function initAdminEvents() {
         item.metaDescription =
           item.summary ||
           `${title} — official verified documentation, updates, and resources from ${brandName}.`;
+        if (col === 'sections') openSectionIndex = idx;
+        if (col === 'news') openNewsIndex = idx;
         rerenderCollection(col);
         markDirty();
         showToast('Auto-filled SEO Meta Title & Description!', 'success');
@@ -3748,7 +4630,7 @@ function initAdminEvents() {
       if (targetIdx >= 0 && targetIdx < order.length) {
         [order[idx], order[targetIdx]] = [order[targetIdx], order[idx]];
         renderHomepageOrderController();
-        markDirty();
+        markDirty('Reordered homepage blocks', 'uiConfig');
       }
       return;
     }
@@ -3827,9 +4709,12 @@ function initAdminEvents() {
         if (collection === 'pages') {
           activeLegalPageIndex = Math.max(0, Math.min(activeLegalPageIndex, list.length - 1));
         }
+        if (collection === 'sections') openSectionIndex = -1;
+        if (collection === 'news') openNewsIndex = -1;
+        if (collection === 'faqs') openFaqIndex = -1;
         rerenderCollection(collection);
         syncUrlQuickPickers();
-        markDirty();
+        markDirty(`Removed item from [${collection}]`);
         showToast('Item removed');
       } else if (action === 'clone') {
         const src = list[idx];
@@ -3845,18 +4730,27 @@ function initAdminEvents() {
         if (copy.slug) copy.slug = `${copy.slug}-${suffix}`;
         list.splice(idx + 1, 0, copy);
         if (collection === 'pages') activeLegalPageIndex = idx + 1;
+        if (collection === 'sections') openSectionIndex = idx + 1;
+        if (collection === 'news') openNewsIndex = idx + 1;
+        if (collection === 'faqs') openFaqIndex = idx + 1;
         rerenderCollection(collection);
         syncUrlQuickPickers();
-        markDirty();
+        markDirty(`Cloned item in [${collection}]`);
         showToast('Duplicated item cleanly!', 'success');
       } else if ((action === 'move-up' || action === 'move-left') && idx > 0) {
         [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]];
         if (collection === 'pages') activeLegalPageIndex = idx - 1;
+        if (collection === 'sections') openSectionIndex = idx - 1;
+        if (collection === 'news') openNewsIndex = idx - 1;
+        if (collection === 'faqs') openFaqIndex = idx - 1;
         rerenderCollection(collection);
         markDirty();
       } else if ((action === 'move-down' || action === 'move-right') && idx < list.length - 1) {
         [list[idx + 1], list[idx]] = [list[idx], list[idx + 1]];
         if (collection === 'pages') activeLegalPageIndex = idx + 1;
+        if (collection === 'sections') openSectionIndex = idx + 1;
+        if (collection === 'news') openNewsIndex = idx + 1;
+        if (collection === 'faqs') openFaqIndex = idx + 1;
         rerenderCollection(collection);
         markDirty();
       }
@@ -3868,10 +4762,12 @@ function initAdminEvents() {
     if (header) {
       const card = header.closest('.item-card');
       if (card) {
-        card.classList.toggle('open');
+        const willOpen = !card.classList.contains('open');
+        card.classList.toggle('open', willOpen);
         const chevron = card.querySelector('[data-card-chevron]');
         if (chevron) {
-          chevron.textContent = card.classList.contains('open') ? 'Hide ▲' : 'Edit ▼';
+          const isNews = Boolean(card.closest('#news-list'));
+          chevron.textContent = willOpen ? 'Hide ▲' : isNews ? 'Quick Edit ▼' : 'Edit ▼';
         }
       }
     }
@@ -3965,213 +4861,9 @@ function initAdminEvents() {
       !target.id?.endsWith('-search-input') &&
       !target.id?.startsWith('preview-')
     ) {
-      markDirty();
+      const modKey = inferModuleKeyFromElement(target);
+      markDirty(`Unsaved edit in [${modKey}] — click Save or Publish`, modKey);
     }
-  });
-
-  // Parse Firebase SDK Snippet or JSON Helper
-  const applyParsedFirebaseSnippet = (rawText) => {
-    const parsed = parseFirebaseConfigSnippet(rawText);
-    if (!parsed) return false;
-    setVal('fb-api-key', parsed.apiKey);
-    setVal('fb-project-id', parsed.projectId);
-    setVal('fb-auth-domain', parsed.authDomain);
-    setVal('fb-storage-bucket', parsed.storageBucket);
-    setVal('fb-messaging-sender-id', parsed.messagingSenderId);
-    setVal('fb-app-id', parsed.appId);
-    setVal('fb-database-id', parsed.databaseId || '(default)');
-    return true;
-  };
-
-  const readFirebaseFormFields = () => {
-    return normalizeFirebaseClientConfig({
-      apiKey: $('fb-api-key')?.value || '',
-      projectId: $('fb-project-id')?.value || '',
-      authDomain: $('fb-auth-domain')?.value || '',
-      storageBucket: $('fb-storage-bucket')?.value || '',
-      messagingSenderId: $('fb-messaging-sender-id')?.value || '',
-      appId: $('fb-app-id')?.value || '',
-      databaseId: $('fb-database-id')?.value || '(default)'
-    });
-  };
-
-  const showFirebaseFeedback = (ok, title, details = '') => {
-    const box = $('fb-test-feedback');
-    if (!box) return;
-    box.style.display = 'block';
-    box.innerHTML = `
-      <div style="font-weight:700; color:${ok ? '#065f46' : '#b91c1c'};">${escapeHtml(title)}</div>
-      ${details ? `<div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; line-height:1.45;">${escapeHtml(details)}</div>` : ''}
-    `;
-  };
-
-  $('btn-parse-fb-snippet')?.addEventListener('click', () => {
-    const raw = $('fb-snippet-input')?.value || '';
-    if (!raw.trim()) {
-      showToast('Paste your Firebase config snippet or JSON object first.', 'error');
-      return;
-    }
-    if (!applyParsedFirebaseSnippet(raw)) {
-      showToast('Could not detect Firebase keys. Ensure apiKey and projectId are included.', 'error');
-      return;
-    }
-    showFirebaseFeedback(
-      true,
-      '✓ Parsed All Firebase Config Fields',
-      'Click "Save & Connect Firebase" or "Test Firestore Connection" to verify live Firestore sync.'
-    );
-    showToast('Auto-filled Firebase fields from snippet!', 'success');
-  });
-
-  // Auto-parse if admin accidentally pastes full snippet/JSON into the API Key input
-  $('fb-api-key')?.addEventListener('paste', (e) => {
-    const pasted = e.clipboardData?.getData('text') || '';
-    if (pasted.includes('{') && pasted.includes('projectId')) {
-      e.preventDefault();
-      if (applyParsedFirebaseSnippet(pasted)) {
-        showToast('Detected Firebase SDK snippet and auto-filled all fields!', 'success');
-      }
-    }
-  });
-
-  // Save Firebase Runtime Keys + Test Connection + Sync Live Document
-  $('btn-save-firebase')?.addEventListener('click', async () => {
-    const rawApiKey = $('fb-api-key')?.value || '';
-    if (rawApiKey.includes('{') && rawApiKey.includes('projectId')) {
-      applyParsedFirebaseSnippet(rawApiKey);
-    }
-    const fb = readFirebaseFormFields();
-    if (!isRealFirebaseConfig(fb)) {
-      showFirebaseFeedback(
-        false,
-        'Invalid Firebase Credentials',
-        'Please provide a real FIREBASE_API_KEY (AIza...) and FIREBASE_PROJECT_ID.'
-      );
-      showToast('Valid FIREBASE_API_KEY and FIREBASE_PROJECT_ID are required.', 'error');
-      return;
-    }
-
-    const btn = $('btn-save-firebase');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Connecting...';
-    }
-
-    try {
-      saveActiveFirebaseConfig(fb);
-      const testRes = await testFirebaseConnectionRemote(fb);
-      populateAllFields();
-
-      if (testRes.success) {
-        if (testRes.cloudConfig && (testRes.cloudConfig.updatedAt || 0) > (currentConfig.updatedAt || 0)) {
-          currentConfig = mergeSiteConfig(testRes.cloudConfig, MASTER_DEFAULT_CONFIG);
-          localStorage.setItem('siteConfig_main', JSON.stringify(currentConfig));
-          populateAllFields();
-        }
-        showFirebaseFeedback(
-          true,
-          `✓ Connected & Saved: ${fb.projectId}`,
-          testRes.message || 'Live Cloud Firestore is active for Admin Studio.'
-        );
-        showToast(`Firebase connected (${fb.projectId})`, 'success');
-      } else {
-        showFirebaseFeedback(
-          false,
-          `Saved Keys for ${fb.projectId}, Connection Notice:`,
-          `${testRes.error || 'Could not reach Firestore.'} (Check Firestore Rules or verify Cloud Firestore is enabled in Firebase Console.)`
-        );
-        showToast(testRes.error || 'Firebase saved with connection warning', 'error');
-      }
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Save & Connect Firebase';
-      }
-    }
-  });
-
-  // Test Firestore Connection without overwriting saved runtime keys
-  $('btn-test-firebase')?.addEventListener('click', async () => {
-    const fb = readFirebaseFormFields();
-    const btn = $('btn-test-firebase');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Testing...';
-    }
-    try {
-      const testRes = await testFirebaseConnectionRemote(fb.apiKey && fb.projectId ? fb : null);
-      if (testRes.success) {
-        showFirebaseFeedback(
-          true,
-          `✓ Firestore Connected (${testRes.projectId})`,
-          testRes.message
-        );
-        showToast('Firestore connection verified!', 'success');
-      } else {
-        showFirebaseFeedback(
-          false,
-          'Firestore Connection Check Failed',
-          testRes.error || 'Verify your API Key, Project ID, and Firestore Security Rules.'
-        );
-        showToast(testRes.error || 'Firestore connection failed', 'error');
-      }
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Test Firestore Connection';
-      }
-    }
-  });
-
-  // Revert to .env / Server Firebase Defaults
-  $('btn-clear-firebase')?.addEventListener('click', () => {
-    clearActiveFirebaseConfig();
-    setVal('fb-snippet-input', '');
-    populateAllFields();
-    showFirebaseFeedback(
-      true,
-      'Reverted to .env / Server Defaults',
-      'Cleared browser-saved runtime Firebase override.'
-    );
-    showToast('Reverted Firebase settings to .env defaults');
-  });
-
-  // Export Master Site JSON Backup
-  $('btn-export-json')?.addEventListener('click', () => {
-    collectScalarFields();
-    const blob = new Blob([JSON.stringify(currentConfig, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${generateSlug(currentConfig.brand.name || 'master-cms')}-backup.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Exported full site JSON backup');
-  });
-
-  // Import Master Site JSON Backup
-  $('input-import-json')?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      currentConfig = mergeSiteConfig(parsed, MASTER_DEFAULT_CONFIG);
-      populateAllFields();
-      markDirty('Imported JSON snapshot — click "Publish All Changes" to compile & go live');
-      showToast('Imported JSON configuration successfully!', 'success');
-    } catch {
-      showToast('Invalid JSON backup file.', 'error');
-    }
-  });
-
-  // Reset to Master Template
-  $('btn-reset-defaults')?.addEventListener('click', async () => {
-    const fresh = await resetSiteConfigRemote();
-    currentConfig = mergeSiteConfig(fresh, MASTER_DEFAULT_CONFIG);
-    populateAllFields();
-    markClean('Reset to clean Master Template & recompiled static pages');
-    showToast('Reset to clean Master Template', 'success');
   });
 }
 
@@ -4191,26 +4883,26 @@ function renderEnvSecurityDiagnostics() {
 
   const items = [
     {
-      label: 'ADMIN_EMAIL & ADMIN_PASSWORD',
+      label: 'Admin Credentials Security',
       ok: Boolean(diag.adminEmailConfigured && diag.adminPasswordConfigured),
-      activeText: 'Custom Env Secrets Set',
-      warnText: 'Using Dev Defaults'
+      activeText: 'Server-Verified Active',
+      warnText: diag.isProduction ? 'Setup Required' : 'Local Dev Auth Active'
     },
     {
-      label: 'ADMIN_SESSION_SECRET',
+      label: 'Session Signing Key',
       ok: Boolean(diag.adminSessionSecretCustom),
-      activeText: 'Custom HMAC Secret Active',
-      warnText: 'Using Built-in Signing Secret'
+      activeText: 'HMAC-SHA256 Active',
+      warnText: 'Local Signing Secret'
     },
     {
-      label: 'VAULT_ENCRYPTION_SECRET (AES-256-GCM)',
+      label: 'AES-256-GCM URL Vault',
       ok: Boolean(diag.vaultSecretCustom),
       activeText: 'Custom Vault Key Set',
-      warnText: 'Using Server Derived Vault Key'
+      warnText: 'Derived Vault Key Active'
     },
     {
-      label: 'Cloudflare Turnstile Keys',
-      ok: Boolean(diag.turnstileSiteKeyConfigured || (sec.turnstileSiteKey && sec.turnstileSecretKey)),
+      label: 'Cloudflare Turnstile Gate',
+      ok: Boolean(diag.turnstileSiteKeyConfigured || (sec.turnstileSiteKey && sec.hasTurnstileSecretKey)),
       activeText: 'Configured',
       warnText: 'Preview Test Key Active'
     },
@@ -4218,12 +4910,12 @@ function renderEnvSecurityDiagnostics() {
       label: 'Firebase Firestore Persistence',
       ok: isRealFirebaseConfig(fb),
       activeText: `Connected (${fb.projectId})`,
-      warnText: 'Not Configured (Local Live Store)'
+      warnText: 'Add Firebase Env Vars / Keys'
     },
     {
       label: 'GitHub Fine-Grained Token Push',
-      ok: Boolean(diag.githubTokenConfigured || gh.fineGrainedToken),
-      activeText: gh.repoOwner && gh.repoName ? `Ready (${gh.repoOwner}/${gh.repoName})` : 'Token Configured',
+      ok: Boolean(diag.githubTokenConfigured || gh.hasFineGrainedToken),
+      activeText: gh.repoOwner && gh.repoName ? `Ready (${gh.repoOwner}/${gh.repoName})` : 'Token Stored Server-Side',
       warnText: 'Add Token in GitHub Card'
     }
   ];
@@ -4243,36 +4935,10 @@ function renderEnvSecurityDiagnostics() {
 }
 
 async function bootstrapAdmin() {
-  initAdminEvents();
+  initAuthEvents();
   const session = await verifyAdminSession();
   if (session && session.authenticated) {
     await unlockAdminStudio();
-    return;
-  }
-
-  const hints = session?.loginHints || {};
-  const hintTextEl = $('auth-env-hint-text');
-  const statusPillEl = $('auth-env-status-pill');
-
-  if (hints.usingDefaultDevCredentials) {
-    if (statusPillEl) statusPillEl.textContent = 'Dev Defaults';
-    if (hintTextEl) {
-      hintTextEl.innerHTML =
-        'Default dev credentials active: <code>admin@domain.com</code> / <code>admin123</code>. Set <code>ADMIN_EMAIL</code> &amp; <code>ADMIN_PASSWORD</code> in <code>.env</code> or Cloudflare Pages for production.';
-    }
-    const emailInput = $('login-email');
-    const passInput = $('login-password');
-    if (emailInput && passInput) {
-      if (!emailInput.value) emailInput.value = hints.defaultEmailHint || 'admin@domain.com';
-      if (!passInput.value) passInput.value = 'admin123';
-    }
-  } else {
-    if (statusPillEl) statusPillEl.textContent = 'Custom Secrets';
-    if (hintTextEl) {
-      hintTextEl.innerHTML = hints.requiresApiKey
-        ? 'Custom environment secrets active. Sign in with <code>ADMIN_EMAIL</code> &amp; <code>ADMIN_PASSWORD</code>, or switch to the <strong>Server API Key</strong> tab.'
-        : 'Custom environment secrets active. Sign in with your configured <code>ADMIN_EMAIL</code> &amp; <code>ADMIN_PASSWORD</code>.';
-    }
   }
 }
 

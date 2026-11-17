@@ -32,6 +32,48 @@ function wrapEditorialTables(html: string): string {
   return html.replace(/<table\b[\s\S]*?<\/table>/gi, (tbl) => `<div class="table-scroll-wrapper">${tbl}</div>`);
 }
 
+export function hasPackageSpecsData(specs: SiteConfig['packageSpecs'] | undefined): boolean {
+  if (!specs || specs.enabled === false) return false;
+  return Boolean(
+    specs.appName ||
+      specs.version ||
+      specs.fileSize ||
+      specs.operatingSystem ||
+      specs.packageFormat ||
+      specs.sha256 ||
+      specs.license ||
+      specs.lastUpdated ||
+      specs.securityStatus ||
+      (Array.isArray(specs.customRows) && specs.customRows.length > 0)
+  );
+}
+
+export function isSiteConfigured(config: SiteConfig): boolean {
+  const brandName = (config.brand?.name || '').trim();
+  const heroH1 = (config.hero?.h1 || '').trim();
+  const heroIntro = (config.hero?.introHtml || '').trim();
+  const heroBanner = config.hero?.showBanner !== false && Boolean((config.hero?.bannerImageUrl || '').trim());
+  const hasVisibleSection = Array.isArray(config.sections) && config.sections.some((s) => s.visible !== false);
+  const hasNews = Array.isArray(config.newsSection?.articles) && config.newsSection.articles.length > 0;
+  const hasFaqs = Array.isArray(config.faqsSection?.items) && config.faqsSection.items.length > 0;
+  const hasRaw = Boolean((config.content?.rawHtml || '').trim());
+  const hasPages = Array.isArray(config.pages) && config.pages.length > 0;
+  const hasSpecs = hasPackageSpecsData(config.packageSpecs);
+
+  return Boolean(
+    brandName ||
+      heroH1 ||
+      heroIntro ||
+      heroBanner ||
+      hasVisibleSection ||
+      hasNews ||
+      hasFaqs ||
+      hasRaw ||
+      hasPages ||
+      hasSpecs
+  );
+}
+
 /**
  * Pure Isomorphic HTML Renderer for Homepage (`renderHomeContentHtml`)
  */
@@ -67,8 +109,9 @@ export function renderHomeContentHtml(config: SiteConfig): string {
   }
 
   // 2b. On-Page Quick Jump Table of Contents (Boosts SEO sitelinks & reader scannability)
+  const showSpecs = hasPackageSpecsData(specs);
   const tocLinks: Array<{ href: string; label: string }> = [];
-  if (specs.enabled !== false) {
+  if (showSpecs) {
     tocLinks.push({ href: '#technical-specifications', label: 'Specifications' });
   }
   for (const sec of sections) {
@@ -105,19 +148,46 @@ export function renderHomeContentHtml(config: SiteConfig): string {
     faqs: ''
   };
 
-  // Block: Technical Package Specifications Table
-  if (specs.enabled !== false) {
-    const customRowsHtml = Array.isArray(specs.customRows)
-      ? specs.customRows
-          .map(
-            (r) => `
-            <tr>
-              <th>${escapeHtml(r.label)}</th>
-              <td>${escapeHtml(r.value)}</td>
-            </tr>`
-          )
-          .join('')
-      : '';
+  // Block: Technical Package Specifications Table (render only configured rows)
+  if (showSpecs) {
+    const specRows: string[] = [];
+    const appTitle = specs.appName || config.brand?.name || '';
+    if (appTitle) {
+      specRows.push(`<tr><th>Application Name</th><td><strong>${escapeHtml(appTitle)}</strong></td></tr>`);
+    }
+    if (specs.version) {
+      specRows.push(`<tr><th>Latest Version</th><td><code>${escapeHtml(specs.version)}</code></td></tr>`);
+    }
+    if (specs.fileSize) {
+      specRows.push(`<tr><th>Package Size</th><td>${escapeHtml(specs.fileSize)}</td></tr>`);
+    }
+    if (specs.operatingSystem) {
+      specRows.push(`<tr><th>System Requirements</th><td>${escapeHtml(specs.operatingSystem)}</td></tr>`);
+    }
+    if (specs.packageFormat) {
+      specRows.push(`<tr><th>Package Format</th><td>${escapeHtml(specs.packageFormat)}</td></tr>`);
+    }
+    if (specs.license) {
+      specRows.push(`<tr><th>License &amp; Cost</th><td>${escapeHtml(specs.license)}</td></tr>`);
+    }
+    if (specs.securityStatus) {
+      specRows.push(
+        `<tr><th>Security Scan Status</th><td><span class="spec-verified-badge">${escapeHtml(specs.securityStatus.replace(/^✓\s*/, ''))}</span></td></tr>`
+      );
+    }
+    if (specs.lastUpdated) {
+      specRows.push(`<tr><th>Last Updated</th><td>${escapeHtml(specs.lastUpdated)}</td></tr>`);
+    }
+    if (specs.sha256) {
+      specRows.push(`<tr><th>SHA-256 Checksum</th><td><div class="hash-cell-wrap"><code>${escapeHtml(specs.sha256)}</code><button type="button" class="copy-hash-btn" data-copy-text="${escapeHtml(specs.sha256)}" aria-label="Copy SHA-256 checksum">Copy</button></div></td></tr>`);
+    }
+    if (Array.isArray(specs.customRows)) {
+      for (const r of specs.customRows) {
+        if (r?.label || r?.value) {
+          specRows.push(`<tr><th>${escapeHtml(r.label)}</th><td>${escapeHtml(r.value)}</td></tr>`);
+        }
+      }
+    }
 
     blockMap.specs = `
       <section id="technical-specifications" data-meta-title="${escapeHtml(specs.metaTitle)}" data-meta-description="${escapeHtml(specs.metaDescription)}">
@@ -125,50 +195,7 @@ export function renderHomeContentHtml(config: SiteConfig): string {
         <div class="table-scroll-wrapper">
           <table>
             <tbody>
-              <tr>
-                <th>Application Name</th>
-                <td><strong>${escapeHtml(specs.appName || config.brand?.name || 'ApexMobile')}</strong></td>
-              </tr>
-              <tr>
-                <th>Latest Version</th>
-                <td><code>${escapeHtml(specs.version || 'v4.8.2')}</code></td>
-              </tr>
-              <tr>
-                <th>Package Size</th>
-                <td>${escapeHtml(specs.fileSize || '64.2 MB')}</td>
-              </tr>
-              <tr>
-                <th>System Requirements</th>
-                <td>${escapeHtml(specs.operatingSystem || 'Android 9.0+ / iOS 15.0+')}</td>
-              </tr>
-              <tr>
-                <th>Package Format</th>
-                <td>${escapeHtml(specs.packageFormat || 'Signed Package')}</td>
-              </tr>
-              <tr>
-                <th>License &amp; Cost</th>
-                <td>${escapeHtml(specs.license || 'Freeware')}</td>
-              </tr>
-              <tr>
-                <th>Security Scan Status</th>
-                <td><strong style="color:#059669;">✓ ${escapeHtml(specs.securityStatus || 'Verified Clean')}</strong></td>
-              </tr>
-              <tr>
-                <th>Last Updated</th>
-                <td>${escapeHtml(specs.lastUpdated || 'November 2026')}</td>
-              </tr>
-              <tr>
-                <th>SHA-256 Checksum</th>
-                <td>
-                  <code>${escapeHtml(specs.sha256 || '')}</code>
-                  ${
-                    specs.sha256
-                      ? `<button type="button" class="copy-hash-btn" data-copy-text="${escapeHtml(specs.sha256)}" aria-label="Copy SHA-256 checksum">Copy</button>`
-                      : ''
-                  }
-                </td>
-              </tr>
-              ${customRowsHtml}
+              ${specRows.join('\n              ')}
             </tbody>
           </table>
         </div>
@@ -244,15 +271,15 @@ export function renderHomeContentHtml(config: SiteConfig): string {
             ${coverHtml}
             <div class="news-meta-line">
               <span class="news-category-tag">${escapeHtml(art.category || 'Daily News')}</span>
-              ${art.featured ? `<span class="news-featured-tag">★ Featured</span>` : ''}
-              <span>${escapeHtml(art.date || '')}</span>
-              ${art.author ? `<span>· By ${escapeHtml(art.author)}</span>` : ''}
-              ${art.readTime ? `<span>· ${escapeHtml(art.readTime)}</span>` : ''}
+              ${art.featured ? `<span aria-hidden="true">·</span><span class="news-featured-tag">Featured</span>` : ''}
+              ${art.date ? `<span aria-hidden="true">·</span><span>${escapeHtml(art.date)}</span>` : ''}
+              ${art.author ? `<span aria-hidden="true">·</span><span>By ${escapeHtml(art.author)}</span>` : ''}
+              ${art.readTime ? `<span aria-hidden="true">·</span><span>${escapeHtml(art.readTime)}</span>` : ''}
             </div>
-            <h3 style="margin-top:4px; border-bottom:none; padding-bottom:0;">
+            <h3>
               <a href="${articleUrl}" data-spa-link class="news-title-link">${escapeHtml(art.title || '')}</a>
             </h3>
-            <p style="margin-bottom:8px;">${escapeHtml(art.summary || '')}</p>
+            <p class="news-summary-text">${escapeHtml(art.summary || '')}</p>
             <a href="${articleUrl}" data-spa-link class="news-read-more">${escapeHtml(readMoreText)}</a>
           </article>
         `;
@@ -261,8 +288,8 @@ export function renderHomeContentHtml(config: SiteConfig): string {
 
     blockMap.news = `
       <section id="latest-news" class="cv-auto-section" data-meta-title="${escapeHtml(news.metaTitle)}" data-meta-description="${escapeHtml(news.metaDescription)}">
-        <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-          <h2 id="news" style="margin-bottom:6px;">${escapeHtml(news.heading || 'Daily News & Release Updates')}</h2>
+        <div class="section-header-row">
+          <h2 id="news">${escapeHtml(news.heading || 'Daily News & Release Updates')}</h2>
           <a href="/news" data-spa-link class="news-read-more">${escapeHtml(viewAllText)} (${news.articles.length})</a>
         </div>
         ${newsItemsHtml}
@@ -295,7 +322,14 @@ export function renderHomeContentHtml(config: SiteConfig): string {
       : (['specs', 'sections', 'rawHtml', 'news', 'faqs'] as HomepageBlockKey[]);
 
   const orderedHtml = order.map((key) => blockMap[key] || '').filter(Boolean);
-  return [...introParts, ...orderedHtml].join('\n\n');
+  const combined = [...introParts, ...orderedHtml];
+  if (combined.length === 0) {
+    if ((config.hero?.h1 || '').trim() || (config.brand?.name || '').trim()) {
+      return '';
+    }
+    return `<section class="site-coming-soon"><h1>Coming Soon</h1><p>This website is currently being prepared.</p></section>`;
+  }
+  return combined.join('\n\n');
 }
 
 /**
@@ -338,15 +372,15 @@ export function renderNewsHubContentHtml(config: SiteConfig, selectedCategory = 
                 ${coverHtml}
                 <div class="news-meta-line">
                   <span class="news-category-tag">${escapeHtml(art.category || 'Daily News')}</span>
-                  ${art.featured ? `<span class="news-featured-tag">★ Featured</span>` : ''}
-                  <span>${escapeHtml(art.date || '')}</span>
-                  ${art.author ? `<span>· By ${escapeHtml(art.author)}</span>` : ''}
-                  ${art.readTime ? `<span>· ${escapeHtml(art.readTime)}</span>` : ''}
+                  ${art.featured ? `<span aria-hidden="true">·</span><span class="news-featured-tag">Featured</span>` : ''}
+                  ${art.date ? `<span aria-hidden="true">·</span><span>${escapeHtml(art.date)}</span>` : ''}
+                  ${art.author ? `<span aria-hidden="true">·</span><span>By ${escapeHtml(art.author)}</span>` : ''}
+                  ${art.readTime ? `<span aria-hidden="true">·</span><span>${escapeHtml(art.readTime)}</span>` : ''}
                 </div>
-                <h3 style="margin-top:6px; border-bottom:none; padding-bottom:0;">
+                <h3>
                   <a href="${articleUrl}" data-spa-link class="news-title-link">${escapeHtml(art.title || '')}</a>
                 </h3>
-                <p style="margin-bottom:10px;">${escapeHtml(art.summary || '')}</p>
+                <p class="news-summary-text">${escapeHtml(art.summary || '')}</p>
                 <a href="${articleUrl}" data-spa-link class="news-read-more">${escapeHtml(ui.newsReadMoreLabel || 'Read Full Article →')}</a>
               </article>
             `;
@@ -355,7 +389,7 @@ export function renderNewsHubContentHtml(config: SiteConfig, selectedCategory = 
       : `<p>No news articles found in this category.</p>`;
 
   return `
-    <p style="color:#4B5563; margin-bottom:12px;">
+    <p class="news-summary-text">
       ${escapeHtml(config.newsSection?.metaDescription || `Official daily news updates, software changelogs, and announcements from ${config.brand?.name || 'our team'}.`)}
     </p>
     <div class="news-filter-bar">${filterButtonsHtml}</div>
@@ -412,14 +446,14 @@ export function renderNewsArticleContentHtml(article: NewsArticleItem, config: S
   const internalResourcesHtml =
     config.domainConfig?.enableAutoInternalLinks !== false && visibleSections.length > 0
       ? `
-        <div class="internal-crawl-hub" style="margin-top:24px; padding:14px 16px; border:1px solid var(--border-color, #E2E8F0); border-radius:10px; background:var(--bg-page, #F8FAFC);">
-          <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#64748B; margin-bottom:8px;">Official Portal Guides &amp; Resources</div>
-          <div style="display:flex; flex-wrap:wrap; gap:8px;">
-            <a href="/" data-spa-link class="footer-link">🏠 ${escapeHtml(config.brand?.name || 'Home')} Overview</a>
+        <div class="internal-crawl-hub cms-callout-box" style="margin-top:28px;">
+          <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:10px;">Official Portal Guides &amp; Resources</div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px 16px;">
+            <a href="/" data-spa-link class="toc-jump-chip">${escapeHtml(config.brand?.name || 'Home')} Overview</a>
             ${visibleSections
               .map(
                 (sec) =>
-                  `<a href="/#${escapeHtml(generateSlug(sec.slug || sec.heading))}" data-spa-link class="footer-link">§ ${escapeHtml(sec.heading)}</a>`
+                  `<a href="/#${escapeHtml(generateSlug(sec.slug || sec.heading))}" data-spa-link class="toc-jump-chip">${escapeHtml(sec.heading)}</a>`
               )
               .join('')}
           </div>
@@ -436,11 +470,12 @@ export function renderNewsArticleContentHtml(article: NewsArticleItem, config: S
   );
 
   return `
-    <div class="news-meta-line" style="margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);">
+    <div class="news-meta-line" style="margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--border-color);">
       <span class="news-category-tag">${escapeHtml(article.category || 'Daily Update')}</span>
+      <span aria-hidden="true">·</span>
       <span>Published: <strong>${escapeHtml(article.date || 'November 2026')}</strong></span>
-      ${article.author ? `<span>· By <strong>${escapeHtml(article.author)}</strong></span>` : ''}
-      ${article.readTime ? `<span>· ${escapeHtml(article.readTime)}</span>` : ''}
+      ${article.author ? `<span aria-hidden="true">·</span><span>By <strong>${escapeHtml(article.author)}</strong></span>` : ''}
+      ${article.readTime ? `<span aria-hidden="true">·</span><span>${escapeHtml(article.readTime)}</span>` : ''}
     </div>
     ${coverHtml}
     ${enhancedArticleBody}
@@ -468,7 +503,7 @@ export function renderStandalonePageContentHtml(page: StandalonePageItem, config
   );
 
   return `
-    <p style="font-size:13.5px; color:#6B7280; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border-color, #E5E7EB);">
+    <p class="news-meta-line" style="margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid var(--border-color);">
       ${escapeHtml(subtitleText)} · Last Updated: <strong>${escapeHtml(page.lastUpdated || 'November 2026')}</strong>
     </p>
     ${bannerHtml}
@@ -484,6 +519,7 @@ export interface PartialRoutePayload {
   path: string;
   canonicalPath: string;
   viewType: 'home' | 'news-hub' | 'news-article' | 'standalone-page';
+  isConfigured: boolean;
   metaTitle: string;
   metaDescription: string;
   ogImage: string;
@@ -663,14 +699,17 @@ export function buildPartialRoutePayload(
 ): PartialRoutePayload {
   const route = resolveRouteView(pathname, config);
   const ui = config.uiConfig || MASTER_DEFAULT_CONFIG.uiConfig;
+  const configured = isSiteConfigured(config);
 
   let heroH1 = config.hero?.h1 || config.brand?.name || '';
+  const hasSecondaryCta = Boolean(config.hero?.secondaryCta?.label && config.hero?.secondaryCta?.url);
+  const hasPrimaryCta = Boolean(config.hero?.primaryCta?.label && config.hero?.primaryCta?.url);
   let showHeroSection = ui.showHeroSection !== false;
-  let showHeroCtaGrid = route.viewType === 'home' && ui.showHeroCtaButtons !== false;
+  let showHeroCtaGrid = route.viewType === 'home' && ui.showHeroCtaButtons !== false && (hasSecondaryCta || hasPrimaryCta);
   let renderedMainHtml = '';
 
   if (route.viewType === 'news-hub') {
-    heroH1 = config.newsSection?.heading || 'Daily News & Release Updates';
+    heroH1 = config.newsSection?.heading || 'Daily News & Updates';
     showHeroSection = true;
     showHeroCtaGrid = false;
     renderedMainHtml = renderNewsHubContentHtml(config, newsCategory);
@@ -686,8 +725,8 @@ export function buildPartialRoutePayload(
     renderedMainHtml = renderStandalonePageContentHtml(route.page, config);
   } else {
     heroH1 = config.hero?.h1 || config.brand?.name || '';
-    showHeroSection = ui.showHeroSection !== false;
-    showHeroCtaGrid = ui.showHeroCtaButtons !== false;
+    showHeroCtaGrid = ui.showHeroCtaButtons !== false && (hasSecondaryCta || hasPrimaryCta);
+    showHeroSection = ui.showHeroSection !== false && Boolean(heroH1 || showHeroCtaGrid);
     renderedMainHtml = renderHomeContentHtml(config);
   }
 
@@ -723,9 +762,10 @@ export function buildPartialRoutePayload(
     date: art.date || ''
   }));
 
+  const newsCount = (config.newsSection?.articles || []).length;
   const allSubpagePills = [
-    ...(config.newsSection?.enabled !== false
-      ? [{ label: `📰 ${ui.headerNewsButtonLabel || 'Daily News'}`, href: '/news' }]
+    ...(config.newsSection?.enabled !== false && (newsCount > 0 || configured)
+      ? [{ label: ui.headerNewsButtonLabel || 'News', href: '/news' }]
       : []),
     ...footerPages.map((pg) => ({
       label: pg.label,
@@ -733,14 +773,26 @@ export function buildPartialRoutePayload(
     }))
   ];
 
+  const primaryCtaUrl = config.hero?.primaryCta?.url
+    ? config.securityGate?.enabled !== false
+      ? '/moreinfo'
+      : config.hero.primaryCta.url
+    : '';
+  const floatingCtaUrl = config.hero?.floatingCta?.url
+    ? config.securityGate?.enabled !== false
+      ? '/moreinfo'
+      : config.hero.floatingCta.url
+    : '';
+
   return {
     path: pathname,
     canonicalPath: route.canonicalPath,
     viewType: route.viewType,
+    isConfigured: configured,
     metaTitle: route.metaTitle,
     metaDescription: route.metaDescription,
     ogImage: optimizeCloudinaryUrl(
-      route.ogImage || config.seo?.ogImageUrl || config.hero?.bannerImageUrl || '/assets/hero-banner.svg'
+      route.ogImage || config.seo?.ogImageUrl || config.hero?.bannerImageUrl || ''
     ),
     heroH1,
     showHeroSection,
@@ -754,11 +806,11 @@ export function buildPartialRoutePayload(
         secondaryCta: config.hero.secondaryCta,
         primaryCta: {
           ...config.hero.primaryCta,
-          url: config.securityGate?.enabled !== false ? '/moreinfo' : config.hero.primaryCta.url
+          url: primaryCtaUrl
         },
         floatingCta: {
           ...config.hero.floatingCta,
-          url: config.securityGate?.enabled !== false ? '/moreinfo' : config.hero.floatingCta.url
+          url: floatingCtaUrl
         }
       },
       packageVersion: config.packageSpecs?.version || '',
@@ -768,7 +820,7 @@ export function buildPartialRoutePayload(
       headerPages,
       footerPages,
       allSubpagePills,
-      newsCount: (config.newsSection?.articles || []).length,
+      newsCount,
       navigation: {
         footerSummary: config.navigation.footerSummary || '',
         showFooterBrandSummary: config.navigation.showFooterBrandSummary !== false,
@@ -835,7 +887,7 @@ export function renderCompleteStaticPageHtml(
 
   // 2. Replace <head> SEO tags
   const faviconHref = escapeHtml(
-    optimizeCloudinaryUrl(config.brand?.faviconUrl || config.brand?.logoUrl || '/assets/app-icon.svg')
+    optimizeCloudinaryUrl(config.brand?.faviconUrl || config.brand?.logoUrl || '')
   );
   html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${title}</title>`);
   html = html.replace(
@@ -848,7 +900,7 @@ export function renderCompleteStaticPageHtml(
   );
   html = html.replace(
     /<link\s+rel="icon"\s+href="[^"]*"\s*\/?>/i,
-    `<link rel="icon" href="${faviconHref}" />`
+    faviconHref ? `<link rel="icon" href="${faviconHref}" />` : `<link rel="icon" href="" />`
   );
   html = html.replace(
     /<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i,
@@ -880,46 +932,49 @@ export function renderCompleteStaticPageHtml(
   );
 
   // 3. Pre-render Header Brand, Hamburger Drawer, Hero H1, Main Content, and Footer directly into HTML
-  const logoSrc = escapeHtml(optimizeCloudinaryUrl(config.brand?.logoUrl || '/assets/app-icon.svg'));
-  const brandName = escapeHtml(config.brand?.name || 'ApexMobile');
+  const logoSrc = escapeHtml(optimizeCloudinaryUrl(config.brand?.logoUrl || ''));
+  const rawBrandName = (config.brand?.name || '').trim();
+  const brandName = escapeHtml(rawBrandName);
+  const logoAlt = escapeHtml(rawBrandName ? `${rawBrandName} Logo` : '');
   html = html.replace(
-    /id="navbar-logo-img"([^>]*)src="[^"]*"/i,
-    `id="navbar-logo-img"$1src="${logoSrc}"`
+    /<img\b[^>]*id="navbar-logo-img"[^>]*>/i,
+    `<img id="navbar-logo-img" class="brand-logo-img${logoSrc ? '' : ' hidden'}" src="${logoSrc}" alt="${logoAlt}" width="30" height="30" loading="eager" referrerpolicy="no-referrer" />`
   );
   html = html.replace(
     /<span id="navbar-logo-text" class="brand-logo-text">[\s\S]*?<\/span>/i,
     `<span id="navbar-logo-text" class="brand-logo-text">${brandName}</span>`
   );
 
-  // Pre-render Header Sticky Mode & News Button state
-  if (ui.stickyHeader === false) {
-    html = html.replace(
-      /<header class="sticky-header">/i,
-      `<header class="sticky-header" style="position:relative;">`
-    );
-  }
+  // Pre-render Header Sticky Mode, Unconfigured Isolation & News Button state
+  const stickyPosStyle = ui.stickyHeader === false ? ' style="position:relative;"' : '';
+  const hideEmptyHeader = !payload.isConfigured && (config.navigation?.headerLinks || []).length === 0;
+  html = html.replace(
+    /<header(?:\s+id="site-sticky-header")?\s+class="sticky-header(?:\s+hidden)?"[^>]*>/i,
+    `<header id="site-sticky-header" class="sticky-header${hideEmptyHeader ? ' hidden' : ''}"${stickyPosStyle}>`
+  );
+  const hasNewsOrConfigured = payload.shell.newsCount > 0 || payload.isConfigured;
   const newsBtnLabel = ui.showNewsCountInHeader !== false
     ? `${ui.headerNewsButtonLabel || 'News'} (${payload.shell.newsCount})`
     : `${ui.headerNewsButtonLabel || 'News'}`;
   const isNewsActive = payload.viewType === 'news-hub' || payload.viewType === 'news-article';
   html = html.replace(
-    /<a href="\/news" id="header-news-btn" class="header-news-link" data-spa-link>[\s\S]*?<\/a>/i,
+    /<a href="\/news" id="header-news-btn" class="header-news-link[^"]*" data-spa-link>[\s\S]*?<\/a>/i,
     `<a href="/news" id="header-news-btn" class="header-news-link${isNewsActive ? ' is-active' : ''}${
-      ui.showHeaderNewsButton === false ? ' hidden' : ''
-    }" data-spa-link><span class="header-news-dot"></span><span>${escapeHtml(newsBtnLabel)}</span></a>`
+      ui.showHeaderNewsButton === false || !hasNewsOrConfigured ? ' hidden' : ''
+    }" data-spa-link><span>${escapeHtml(newsBtnLabel)}</span></a>`
   );
 
   // Pre-render Rich Hamburger Navigation Drawer (`#drawer-links-list`)
   const drawerHtml = renderHamburgerDrawerHtml(payload.shell, payload.canonicalPath);
   html = html.replace(
-    /<ul class="nav-drawer-list" id="drawer-links-list"><\/ul>/i,
+    /<ul class="nav-drawer-list" id="drawer-links-list">[\s\S]*?<\/ul>/i,
     `<ul class="nav-drawer-list" id="drawer-links-list">${drawerHtml}</ul>`
   );
 
   // Pre-render Standalone Page Breadcrumb & Subpage Switcher Bar (`#standalone-back-bar`)
   const showBackBar = payload.viewType !== 'home' && ui.showBreadcrumbs !== false;
-  const backHomeLabel = escapeHtml(ui.backToHomeLabel || '← Back to Main Page');
-  const allNewsLabel = escapeHtml(ui.allNewsBreadcrumbLabel || 'All Daily News →');
+  const backHomeLabel = escapeHtml(ui.backToHomeLabel || '← Back to Home');
+  const allNewsLabel = escapeHtml(ui.allNewsBreadcrumbLabel || 'All News →');
   const showNewsBack = payload.viewType === 'news-article';
   const subpagePillsHtml =
     ui.showSubpageSwitcherPills !== false && Array.isArray(payload.shell.allSubpagePills)
@@ -944,52 +999,52 @@ export function renderCompleteStaticPageHtml(
       }">${subpagePillsHtml}</div>
     </div>`;
   html = html.replace(
-    /<div id="standalone-back-bar" class="back-home-bar hidden">[\s\S]*?<\/div>\s*<\/div>/i,
+    /<div id="standalone-back-bar" class="back-home-bar(?:\s+hidden)?">(?:<div><\/div>|[\s\S]*?<div id="subpage-switcher-pills"[^>]*>[\s\S]*?<\/div>\s*)<\/div>/i,
     backBarHtml
   );
 
   // Pre-render Hero Section visibility, H1 & CTA Grid
-  if (!payload.showHeroSection) {
-    html = html.replace(
-      /<section id="hero-section" class="hero-container">/i,
-      `<section id="hero-section" class="hero-container hidden">`
-    );
-  }
+  html = html.replace(
+    /<section id="hero-section" class="hero-container(?:\s+hidden)?">/i,
+    `<section id="hero-section" class="hero-container${payload.showHeroSection ? '' : ' hidden'}">`
+  );
   html = html.replace(
     /<h1 id="hero-heading" class="hero-title">[\s\S]*?<\/h1>/i,
     `<h1 id="hero-heading" class="hero-title">${escapeHtml(payload.heroH1)}</h1>`
   );
-  if (!payload.showHeroCtaGrid) {
-    html = html.replace(
-      /<div id="hero-cta-grid" class="hero-action-grid">/i,
-      `<div id="hero-cta-grid" class="hero-action-grid hidden">`
-    );
-  } else {
-    const secCta = payload.shell.heroCtas?.secondaryCta;
-    const priCta = payload.shell.heroCtas?.primaryCta;
-    html = html.replace(
-      /<a id="hero-cta-secondary" class="btn-secondary" href="[^"]*">[\s\S]*?<\/a>/i,
-      `<a id="hero-cta-secondary" class="btn-secondary" href="${escapeHtml(secCta?.url || '#')}"${
-        secCta?.relSponsored ? ' rel="sponsored noopener"' : ''
-      } data-spa-link>${escapeHtml(secCta?.label || 'Installation Guide')}</a>`
-    );
-    const primaryHref = priCta?.url || '#';
-    const primaryRel =
-      primaryHref === '/moreinfo' || primaryHref === '/download'
-        ? ' rel="nofollow noopener"'
-        : priCta?.relSponsored
-        ? ' rel="sponsored noopener"'
-        : '';
-    html = html.replace(
-      /<a id="hero-cta-primary" class="btn-primary" href="[^"]*"[^>]*>[\s\S]*?<\/a>/i,
-      `<a id="hero-cta-primary" class="btn-primary" href="${escapeHtml(primaryHref)}"${primaryRel} data-spa-link>${escapeHtml(priCta?.label || 'Download Official Package')}</a>`
-    );
-  }
+  html = html.replace(
+    /<div id="hero-cta-grid" class="hero-action-grid(?:\s+hidden)?">/i,
+    `<div id="hero-cta-grid" class="hero-action-grid${payload.showHeroCtaGrid ? '' : ' hidden'}">`
+  );
+  const secCta = payload.shell.heroCtas?.secondaryCta;
+  const priCta = payload.shell.heroCtas?.primaryCta;
+  const hasSecCta = Boolean(secCta?.label && secCta?.url);
+  const hasPriCta = Boolean(priCta?.label && priCta?.url);
+
+  html = html.replace(
+    /<a id="hero-cta-secondary"[^>]*>[\s\S]*?<\/a>/i,
+    `<a id="hero-cta-secondary" class="btn-secondary${hasSecCta ? '' : ' hidden'}" href="${escapeHtml(secCta?.url || '#')}"${
+      secCta?.relSponsored ? ' rel="sponsored noopener"' : ''
+    }${hasSecCta ? ' data-spa-link' : ''}>${escapeHtml(secCta?.label || '')}</a>`
+  );
+  const primaryHref = priCta?.url || '#';
+  const primaryRel =
+    primaryHref === '/moreinfo' || primaryHref === '/download'
+      ? ' rel="nofollow noopener"'
+      : priCta?.relSponsored
+      ? ' rel="sponsored noopener"'
+      : '';
+  html = html.replace(
+    /<a id="hero-cta-primary"[^>]*>[\s\S]*?<\/a>/i,
+    `<a id="hero-cta-primary" class="btn-primary${hasPriCta ? '' : ' hidden'}" href="${escapeHtml(primaryHref)}"${primaryRel}${
+      hasPriCta ? ' data-spa-link' : ''
+    }>${escapeHtml(priCta?.label || '')}</a>`
+  );
 
   // Pre-render <main id="dynamic-content"> with exact route HTML so initial load has zero height jump
   html = html.replace(
-    /<main id="dynamic-content" class="content-container prose-container"><\/main>/i,
-    `<main id="dynamic-content" class="content-container prose-container" data-ssr-path="${escapeHtml(payload.canonicalPath)}">${payload.renderedMainHtml}</main>`
+    /<main id="dynamic-content" class="content-container prose-container"[^>]*>[\s\S]*?<\/main>/i,
+    `<main id="dynamic-content" class="content-container prose-container" tabindex="-1" data-ssr-path="${escapeHtml(payload.canonicalPath)}">${payload.renderedMainHtml}</main>`
   );
 
   // Pre-render Footer links (Quick Links + Legal Pages) & text
@@ -1008,66 +1063,81 @@ export function renderCompleteStaticPageHtml(
     .join('');
 
   const footerLinksHtml = [quickLinksHtml, legalLinksHtml].filter(Boolean).join('');
+  const footerSummaryText = config.navigation?.footerSummary || config.brand?.tagline || '';
+  const contactEmailText = (config.brand?.contactEmail || '').trim();
+  const hasBrandSummaryContent = Boolean(rawBrandName || footerSummaryText || contactEmailText);
 
-  if (config.navigation?.showFooterBrandSummary === false) {
-    html = html.replace(
-      /<div id="footer-brand-summary-block" class="footer-brand-summary-box">/i,
-      `<div id="footer-brand-summary-block" class="footer-brand-summary-box hidden">`
-    );
-  }
+  html = html.replace(
+    /<div id="footer-brand-summary-block" class="footer-brand-summary-box(?:\s+hidden)?">/i,
+    `<div id="footer-brand-summary-block" class="footer-brand-summary-box${
+      config.navigation?.showFooterBrandSummary === false || !hasBrandSummaryContent ? ' hidden' : ''
+    }">`
+  );
   html = html.replace(
     /<div id="footer-brand-title" class="footer-brand-title">[\s\S]*?<\/div>/i,
     `<div id="footer-brand-title" class="footer-brand-title">${brandName}</div>`
   );
   html = html.replace(
     /<p id="footer-summary-text" class="footer-summary-text">[\s\S]*?<\/p>/i,
-    `<p id="footer-summary-text" class="footer-summary-text">${escapeHtml(config.navigation?.footerSummary || config.brand?.tagline || '')}</p>`
+    `<p id="footer-summary-text" class="footer-summary-text">${escapeHtml(footerSummaryText)}</p>`
   );
-  if (config.navigation?.showFooterContactEmail === false || !config.brand?.contactEmail) {
-    html = html.replace(
-      /<a id="footer-contact-email-link" class="footer-contact-pill"/i,
-      `<a id="footer-contact-email-link" class="footer-contact-pill hidden"`
-    );
-  } else {
-    html = html.replace(
-      /<a id="footer-contact-email-link" class="footer-contact-pill" href="[^"]*">[\s\S]*?<\/a>/i,
-      `<a id="footer-contact-email-link" class="footer-contact-pill" href="mailto:${escapeHtml(config.brand.contactEmail)}">${escapeHtml(config.brand.contactEmail)}</a>`
-    );
-  }
+  const showContactEmail = config.navigation?.showFooterContactEmail !== false && Boolean(contactEmailText);
+  html = html.replace(
+    /<a id="footer-contact-email-link" class="footer-contact-pill(?:\s+hidden)?"[^>]*>[\s\S]*?<\/a>/i,
+    showContactEmail
+      ? `<a id="footer-contact-email-link" class="footer-contact-pill" href="mailto:${escapeHtml(contactEmailText)}">${escapeHtml(contactEmailText)}</a>`
+      : `<a id="footer-contact-email-link" class="footer-contact-pill hidden" href="#"></a>`
+  );
 
-  if (ui.showFooterDisclaimer === false) {
-    html = html.replace(
-      /<div id="footer-disclaimer-block">/i,
-      `<div id="footer-disclaimer-block" class="hidden">`
-    );
-  }
+  const disclaimerText = (config.navigation?.disclaimer || '').trim();
+  const showDisclaimerBlock = ui.showFooterDisclaimer !== false && Boolean(disclaimerText);
+  html = html.replace(
+    /<div id="footer-disclaimer-block"(?:\s+class="hidden")?>/i,
+    `<div id="footer-disclaimer-block"${showDisclaimerBlock ? '' : ' class="hidden"'}>`
+  );
   html = html.replace(
     /<div id="footer-disclaimer-heading" class="footer-heading">[\s\S]*?<\/div>/i,
-    `<div id="footer-disclaimer-heading" class="footer-heading">${escapeHtml(config.navigation?.disclaimerHeading || 'Legal & Trademark Disclaimer')}</div>`
+    `<div id="footer-disclaimer-heading" class="footer-heading">${escapeHtml(config.navigation?.disclaimerHeading || '')}</div>`
   );
   html = html.replace(
     /<p id="footer-disclaimer" class="footer-disclaimer-text">[\s\S]*?<\/p>/i,
-    `<p id="footer-disclaimer" class="footer-disclaimer-text">${escapeHtml(config.navigation?.disclaimer || '')}</p>`
+    `<p id="footer-disclaimer" class="footer-disclaimer-text">${escapeHtml(disclaimerText)}</p>`
   );
+  const showLinksHeading = ui.showFooterLinksHeading !== false && Boolean(footerLinksHtml && config.navigation?.siteLinksHeading);
   html = html.replace(
-    /<div id="footer-links-heading" class="footer-heading">[\s\S]*?<\/div>/i,
-    `<div id="footer-links-heading" class="footer-heading${ui.showFooterLinksHeading === false ? ' hidden' : ''}">${escapeHtml(config.navigation?.siteLinksHeading || 'Official Legal & Support Pages')}</div>`
+    /<div id="footer-links-heading" class="footer-heading(?:\s+hidden)?">[\s\S]*?<\/div>/i,
+    `<div id="footer-links-heading" class="footer-heading${showLinksHeading ? '' : ' hidden'}">${escapeHtml(config.navigation?.siteLinksHeading || '')}</div>`
   );
   html = html.replace(
     /<div id="footer-links-list" class="footer-links-stack">[\s\S]*?<\/div>/i,
     `<div id="footer-links-list" class="footer-links-stack">${footerLinksHtml}</div>`
   );
+  const copyrightText = (config.navigation?.copyright || '').trim();
+  const hasFooterContent = Boolean(
+    (config.navigation?.showFooterBrandSummary !== false && hasBrandSummaryContent) ||
+      showDisclaimerBlock ||
+      footerLinksHtml ||
+      copyrightText
+  );
+  html = html.replace(
+    /<footer(?:\s+id="site-footer")?\s+class="site-footer(?:\s+hidden)?">/i,
+    `<footer id="site-footer" class="site-footer${hasFooterContent ? '' : ' hidden'}">`
+  );
+  html = html.replace(
+    /<hr id="footer-divider" class="footer-divider(?:\s+hidden)?"\s*\/?>/i,
+    `<hr id="footer-divider" class="footer-divider${hasFooterContent ? '' : ' hidden'}" />`
+  );
   html = html.replace(
     /<p id="footer-copyright" class="footer-copyright-text">[\s\S]*?<\/p>/i,
-    `<p id="footer-copyright" class="footer-copyright-text">${escapeHtml(config.navigation?.copyright || '')}</p>`
+    `<p id="footer-copyright" class="footer-copyright-text">${escapeHtml(copyrightText)}</p>`
   );
 
   // Pre-render Floating Bottom Pill CTA (`#floating-bottom-cta` + `#floating-cta-btn`)
   const fl = payload.shell.heroCtas?.floatingCta;
-  const showFloating = Boolean(fl?.enabled && payload.viewType === 'home');
-  const flHref = fl?.url || '/moreinfo';
+  const showFloating = Boolean(fl?.enabled && fl?.label && fl?.url && payload.viewType === 'home');
+  const flHref = fl?.url || '#';
   const flRel = flHref === '/moreinfo' || flHref === '/download' ? ' rel="nofollow noopener"' : '';
-  const flLabel = escapeHtml(fl?.label || 'Download');
+  const flLabel = escapeHtml(fl?.label || '');
   html = html.replace(
     /<div id="floating-bottom-cta" class="floating-cta-wrapper[^"]*">[\s\S]*?<\/div>/i,
     `<div id="floating-bottom-cta" class="floating-cta-wrapper${showFloating ? '' : ' hidden'}">\n      <a id="floating-cta-btn" class="floating-cta-button" href="${escapeHtml(flHref)}"${flRel}>${flLabel}</a>\n    </div>`
@@ -1077,17 +1147,24 @@ export function renderCompleteStaticPageHtml(
   const extraHeadTags: string[] = [];
   const themeColor = escapeHtml(config.brand?.themeColor || config.brand?.accentColor || '#EF4444');
   const appleIconHref = escapeHtml(
-    optimizeCloudinaryUrl(config.brand?.appleTouchIconUrl || config.brand?.searchLogoUrl || config.brand?.logoUrl || '/assets/app-icon.svg')
+    optimizeCloudinaryUrl(config.brand?.appleTouchIconUrl || config.brand?.searchLogoUrl || config.brand?.logoUrl || '')
   );
 
+  extraHeadTags.push(`<meta name="robots" content="${payload.isConfigured ? 'index, follow' : 'noindex, nofollow'}" />`);
   extraHeadTags.push(`<meta name="theme-color" content="${themeColor}" />`);
-  extraHeadTags.push(`<meta name="application-name" content="${brandName}" />`);
-  extraHeadTags.push(`<meta property="og:site_name" content="${brandName}" />`);
+  if (brandName) {
+    extraHeadTags.push(`<meta name="application-name" content="${brandName}" />`);
+    extraHeadTags.push(`<meta property="og:site_name" content="${brandName}" />`);
+  }
   extraHeadTags.push(`<meta property="og:locale" content="en_US" />`);
   extraHeadTags.push(`<meta property="og:image:width" content="1200" />`);
   extraHeadTags.push(`<meta property="og:image:height" content="630" />`);
-  extraHeadTags.push(`<meta name="apple-mobile-web-app-title" content="${escapeHtml(config.brand?.shortName || config.brand?.name || 'ApexMobile')}" />`);
-  extraHeadTags.push(`<link rel="apple-touch-icon" sizes="180x180" href="${appleIconHref}" />`);
+  if (config.brand?.shortName || rawBrandName) {
+    extraHeadTags.push(`<meta name="apple-mobile-web-app-title" content="${escapeHtml(config.brand?.shortName || rawBrandName)}" />`);
+  }
+  if (appleIconHref) {
+    extraHeadTags.push(`<link rel="apple-touch-icon" sizes="180x180" href="${appleIconHref}" />`);
+  }
 
   if (config.domainConfig?.enableWebManifest !== false) {
     extraHeadTags.push(`<link rel="manifest" href="/manifest.webmanifest" />`);
@@ -1114,9 +1191,17 @@ export function renderCompleteStaticPageHtml(
       `<meta name="msvalidate.01" content="${escapeHtml(config.domainConfig.bingSiteVerification)}" />`
     );
   }
-  if (config.domainConfig?.enableRssFeed !== false) {
+  if (config.domainConfig?.enableRssFeed !== false && brandName) {
     extraHeadTags.push(
       `<link rel="alternate" type="application/rss+xml" title="${brandName} News RSS" href="/feed.xml" />`
+    );
+  }
+
+  const gaRaw = (config.domainConfig?.googleAnalyticsId || '').trim();
+  if (/^(G|GT|AW|DC)-[A-Z0-9]{4,24}$/i.test(gaRaw) || /^UA-\d{4,12}-\d{1,4}$/i.test(gaRaw)) {
+    const safeGa = escapeHtml(gaRaw);
+    extraHeadTags.push(
+      `<script async src="https://www.googletagmanager.com/gtag/js?id=${safeGa}"></script>\n  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${safeGa}');</script>`
     );
   }
 
@@ -1151,13 +1236,17 @@ export function renderGatewayPageHtml(
   const specs = config.packageSpecs || MASTER_DEFAULT_CONFIG.packageSpecs;
   const sec = config.securityGate || MASTER_DEFAULT_CONFIG.securityGate;
 
-  const displayTitle = sec.customHeading || specs.appName || brand.name || 'ApexMobile';
+  const rawBrandName = (brand.name || '').trim();
+  const displayTitle = (sec.customHeading || specs.appName || rawBrandName || '').trim();
+  const logoUrlClean = optimizeCloudinaryUrl(brand.logoUrl || '');
+  const faviconUrlClean = optimizeCloudinaryUrl(brand.faviconUrl || brand.logoUrl || '');
+
   const publicGatewayMeta = {
-    brandName: brand.name || 'ApexMobile',
-    logoUrl: optimizeCloudinaryUrl(brand.logoUrl || '/assets/app-icon.svg'),
+    brandName: rawBrandName,
+    logoUrl: logoUrlClean,
     accentColor: brand.accentColor || '#EF4444',
-    appSlug: sec.appSlug || generateSlug(brand.shortName || brand.name || 'apexmobile') || 'apexmobile',
-    appSerialId: sec.appSerialId || 'APM-482',
+    appSlug: sec.appSlug || generateSlug(brand.shortName || rawBrandName || 'package') || 'package',
+    appSerialId: sec.appSerialId || 'PKG-001',
     proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
     unavailableMessage: sec.unavailableMessage || '',
     helplineWhatsapp: sec.helplineWhatsapp || '',
@@ -1166,41 +1255,37 @@ export function renderGatewayPageHtml(
     customNoteHtml: sec.customNoteHtml || '',
     showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
     appName: displayTitle,
-    version: specs.version || 'v4.8.2',
-    fileSize: specs.fileSize || '64.2 MB',
-    operatingSystem: specs.operatingSystem || 'Android 9.0+ / iOS 15.0+',
-    securityStatus: specs.securityStatus || 'Verified Clean',
+    version: specs.version || '',
+    fileSize: specs.fileSize || '',
+    operatingSystem: specs.operatingSystem || '',
+    securityStatus: specs.securityStatus || '',
     sha256: specs.sha256 || ''
   };
 
   let html = moreinfoHtmlTemplate;
-  const faviconHref = escapeHtml(
-    optimizeCloudinaryUrl(brand.faviconUrl || brand.logoUrl || '/assets/app-icon.svg')
-  );
-  const logoHref = escapeHtml(
-    optimizeCloudinaryUrl(brand.logoUrl || '/assets/app-icon.svg')
-  );
+  const faviconHref = escapeHtml(faviconUrlClean);
+  const logoHref = escapeHtml(logoUrlClean);
   html = html.replace(
     /<link\s+rel="icon"\s+id="gateway-favicon"\s+href="[^"]*"\s*\/?>/i,
     `<link rel="icon" id="gateway-favicon" href="${faviconHref}" />`
   );
   html = html.replace(
     /<title>[\s\S]*?<\/title>/i,
-    `<title>${escapeHtml(displayTitle)}</title>`
+    `<title>${escapeHtml(displayTitle || 'Verification')}</title>`
   );
 
   // SSR Pre-fill Header Brand, Logo, and Title
   html = html.replace(
     /<span\s+id="gw-brand-name">[\s\S]*?<\/span>/i,
-    `<span id="gw-brand-name">${escapeHtml(brand.name || 'ApexMobile')}</span>`
+    `<span id="gw-brand-name">${escapeHtml(rawBrandName)}</span>`
   );
   html = html.replace(
-    /id="gw-brand-logo"([^>]*)src="[^"]*"/i,
-    `id="gw-brand-logo"$1src="${logoHref}"`
+    /<img\b[^>]*id="gw-brand-logo"[^>]*>/i,
+    `<img id="gw-brand-logo" class="gateway-brand-logo${logoHref ? '' : ' hidden'}" src="${logoHref}" alt="${escapeHtml(rawBrandName ? `${rawBrandName} Logo` : '')}" width="30" height="30" />`
   );
   html = html.replace(
-    /id="gw-app-icon"([^>]*)src="[^"]*"/i,
-    `id="gw-app-icon"$1src="${logoHref}"`
+    /<img\b[^>]*id="gw-app-icon"[^>]*>/i,
+    `<img id="gw-app-icon" class="app-summary-icon${logoHref ? '' : ' hidden'}" src="${logoHref}" alt="${escapeHtml(displayTitle)}" width="64" height="64" />`
   );
   html = html.replace(
     /<h1\s+class="app-summary-title"\s+id="gw-app-title">[\s\S]*?<\/h1>/i,
@@ -1208,15 +1293,19 @@ export function renderGatewayPageHtml(
   );
   html = html.replace(
     /<span\s+id="gw-app-version">[\s\S]*?<\/span>/i,
-    `<span id="gw-app-version">${escapeHtml(specs.version || 'v4.8.2')}</span>`
+    `<span id="gw-app-version">${escapeHtml(specs.version || '')}</span>`
+  );
+  html = html.replace(
+    /<span\s+id="gw-app-meta-dot"[^>]*>[\s\S]*?<\/span>/i,
+    `<span id="gw-app-meta-dot"${specs.version && specs.fileSize ? '' : ' class="hidden"'}>·</span>`
   );
   html = html.replace(
     /<span\s+id="gw-app-size">[\s\S]*?<\/span>/i,
-    `<span id="gw-app-size">${escapeHtml(specs.fileSize || '64.2 MB')}</span>`
+    `<span id="gw-app-size">${escapeHtml(specs.fileSize || '')}</span>`
   );
   html = html.replace(
     /<span\s+id="gw-footer-copyright">[\s\S]*?<\/span>/i,
-    `<span id="gw-footer-copyright">© ${new Date().getFullYear()} ${escapeHtml(brand.name || 'ApexMobile')}. All rights reserved.</span>`
+    `<span id="gw-footer-copyright">${rawBrandName ? `© ${new Date().getFullYear()} ${escapeHtml(rawBrandName)}. All rights reserved.` : ''}</span>`
   );
 
   // Pre-render custom note if provided by admin
@@ -1236,15 +1325,15 @@ export function renderGatewayPageHtml(
     );
     html = html.replace(
       /<td\s+id="gw-spec-name">[\s\S]*?<\/td>/i,
-      `<td id="gw-spec-name">${escapeHtml(displayTitle)}</td>`
+      `<td id="gw-spec-name">${escapeHtml(displayTitle || '—')}</td>`
     );
     html = html.replace(
       /<td\s+id="gw-spec-ver-size">[\s\S]*?<\/td>/i,
-      `<td id="gw-spec-ver-size">${escapeHtml(specs.version || 'v4.8.2')} · ${escapeHtml(specs.fileSize || '64.2 MB')}</td>`
+      `<td id="gw-spec-ver-size">${escapeHtml([specs.version, specs.fileSize].filter(Boolean).join(' · ') || '—')}</td>`
     );
     html = html.replace(
       /<td\s+id="gw-spec-os">[\s\S]*?<\/td>/i,
-      `<td id="gw-spec-os">${escapeHtml(specs.operatingSystem || 'Android 9.0+ / iOS 15.0+')}</td>`
+      `<td id="gw-spec-os">${escapeHtml(specs.operatingSystem || '—')}</td>`
     );
     html = html.replace(
       /<code\s+id="gw-spec-sha256">[\s\S]*?<\/code>/i,

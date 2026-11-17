@@ -11,8 +11,6 @@ import {
   buildPartialRoutePayload,
   renderHamburgerDrawerHtml,
   renderCompleteStaticPageHtml,
-  routePathToStaticJsonName,
-  compileStaticSiteBundle,
   extractFaqsFromRawHtml,
   generateSmartLegalHtml,
   generateSitemapXml,
@@ -27,8 +25,23 @@ import {
   evaluateGateG1,
   handleSessionInit,
   handleSessionClearance,
-  TOKEN_V
+  TOKEN_V,
+  EMPTY_ADMIN_CONFIG,
+  SECRET_MASK,
+  sanitizeConfigForClient,
+  preserveSecretsOnSave,
+  applyModulePatch,
+  applyMultiModulePatch,
+  extractConfigModule,
+  appendSyncLogEntry,
+  resolveAdminSecurityPolicy,
+  validateAdminSessionClaims
 } from './cms-engine';
+import { routePathToStaticJsonName, compileStaticSiteBundle } from './static-compiler';
+import { computeGitBlobSha1, diffGitTrees } from './github-publisher';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 test('optimizeCloudinaryUrl injects f_auto,q_auto into Cloudinary URLs', () => {
   const input = 'https://res.cloudinary.com/demo/image/upload/v1234/banner.png';
@@ -531,3 +544,596 @@ test('UI showTocJumpBar, hero CTA relSponsored, SEO priceCurrency, and rawJsonLd
   assert.ok(renderedHtml.includes('id="hero-cta-secondary" class="btn-secondary" href="https://guide.example.com" rel="sponsored noopener"'));
   assert.ok(renderedHtml.includes('id="hero-cta-primary" class="btn-primary" href="https://partner.example.com/pkg" rel="sponsored noopener"'));
 });
+
+test('EMPTY_ADMIN_CONFIG has zero static demo articles, sections, FAQs, or pages', () => {
+  assert.equal(EMPTY_ADMIN_CONFIG.brand.name, '');
+  assert.equal(EMPTY_ADMIN_CONFIG.hero.h1, '');
+  assert.equal(EMPTY_ADMIN_CONFIG.sections.length, 0);
+  assert.equal(EMPTY_ADMIN_CONFIG.newsSection.articles.length, 0);
+  assert.equal(EMPTY_ADMIN_CONFIG.faqsSection.items.length, 0);
+  assert.equal(EMPTY_ADMIN_CONFIG.pages.length, 0);
+  assert.equal(EMPTY_ADMIN_CONFIG.githubConfig.fineGrainedToken, '');
+  assert.equal(EMPTY_ADMIN_CONFIG.securityGate.turnstileSecretKey, '');
+});
+
+test('sanitizeConfigForClient strips write-only secrets and sets boolean availability flags', () => {
+  const raw = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+  raw.githubConfig.fineGrainedToken = 'github_pat_11ABCDEF_SECRET_VALUE';
+  raw.securityGate.turnstileSecretKey = '0x4AAAAAA_REAL_TS_SECRET';
+
+  const sanitized = sanitizeConfigForClient(raw);
+  assert.equal(sanitized.githubConfig.fineGrainedToken, '');
+  assert.equal(sanitized.githubConfig.hasFineGrainedToken, true);
+  assert.equal(sanitized.securityGate.turnstileSecretKey, '');
+  assert.equal(sanitized.securityGate.hasTurnstileSecretKey, true);
+
+  // Environment fallback flags also surface boolean availability without revealing secrets
+  const envOnly = sanitizeConfigForClient(EMPTY_ADMIN_CONFIG, {
+    hasEnvGithubToken: true,
+    hasEnvTurnstileSecret: true
+  });
+  assert.equal(envOnly.githubConfig.fineGrainedToken, '');
+  assert.equal(envOnly.githubConfig.hasFineGrainedToken, true);
+  assert.equal(envOnly.securityGate.turnstileSecretKey, '');
+  assert.equal(envOnly.securityGate.hasTurnstileSecretKey, true);
+});
+
+test('preserveSecretsOnSave preserves stored secrets on empty/SECRET_MASK input and clears only when requested', () => {
+  const existing = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+  existing.githubConfig.fineGrainedToken = 'github_pat_EXISTING';
+  existing.securityGate.turnstileSecretKey = 'ts_EXISTING';
+
+  // 1. Blank or SECRET_MASK preserves stored values
+  const kept = preserveSecretsOnSave(
+    {
+      githubConfig: { ...existing.githubConfig, fineGrainedToken: SECRET_MASK },
+      securityGate: { ...existing.securityGate, turnstileSecretKey: '' }
+    },
+    existing
+  );
+  assert.equal(kept.githubConfig.fineGrainedToken, 'github_pat_EXISTING');
+  assert.equal(kept.githubConfig.hasFineGrainedToken, true);
+  assert.equal(kept.securityGate.turnstileSecretKey, 'ts_EXISTING');
+  assert.equal(kept.securityGate.hasTurnstileSecretKey, true);
+
+  // 2. Explicit overwrite updates secret
+  const updated = preserveSecretsOnSave(
+    {
+      githubConfig: { ...existing.githubConfig, fineGrainedToken: 'github_pat_NEW_VALUE' },
+      securityGate: { ...existing.securityGate, turnstileSecretKey: 'ts_NEW' }
+    },
+    existing
+  );
+  assert.equal(updated.githubConfig.fineGrainedToken, 'github_pat_NEW_VALUE');
+  assert.equal(updated.securityGate.turnstileSecretKey, 'ts_NEW');
+
+  // 3. Explicit clear wipes stored secrets
+  const cleared = preserveSecretsOnSave(
+    {
+      githubConfig: { ...existing.githubConfig, fineGrainedToken: '', clearFineGrainedToken: true },
+      securityGate: { ...existing.securityGate, turnstileSecretKey: '', clearTurnstileSecretKey: true }
+    },
+    existing
+  );
+  assert.equal(cleared.githubConfig.fineGrainedToken, '');
+  assert.equal(cleared.githubConfig.hasFineGrainedToken, false);
+  assert.equal(cleared.securityGate.turnstileSecretKey, '');
+  assert.equal(cleared.securityGate.hasTurnstileSecretKey, false);
+});
+
+test('applyModulePatch mutates only targeted module, preserves sibling modules & secrets, and tracks dirtyModulesSinceSync', () => {
+  const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+  base.brand.name = 'InitialBrand';
+  base.githubConfig.fineGrainedToken = 'github_pat_KEEP_ME';
+  base.faqsSection = {
+    enabled: true,
+    heading: 'Old FAQs',
+    items: [{ id: 'faq-1', question: 'Old Q?', answerHtml: '<p>Old A</p>' }]
+  };
+
+  const patched = applyModulePatch(
+    base,
+    'faqsSection',
+    {
+      enabled: true,
+      heading: 'Updated FAQs',
+      items: [
+        { id: 'faq-1', question: 'Old Q?', answerHtml: '<p>Old A</p>' },
+        { id: 'faq-2', question: 'New Q?', answerHtml: '<p>New A</p>' }
+      ]
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  assert.equal(patched.savedModule, 'faqsSection');
+  assert.equal(patched.config.brand.name, 'InitialBrand');
+  assert.equal(patched.config.githubConfig.fineGrainedToken, 'github_pat_KEEP_ME');
+  assert.equal(patched.config.faqsSection.heading, 'Updated FAQs');
+  assert.equal(patched.config.faqsSection.items.length, 2);
+  assert.ok(patched.dirtyModulesSinceSync.includes('faqsSection'));
+
+  const extracted = extractConfigModule(patched.config, 'faqsSection');
+  assert.equal(extracted.items.length, 2);
+});
+
+test('appendSyncLogEntry records structured push telemetry and clears dirtyModulesSinceSync on success', () => {
+  const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+  base.dirtyModulesSinceSync = ['brand', 'faqsSection'];
+
+  // Failed push keeps dirtyModulesSinceSync intact
+  const afterError = appendSyncLogEntry(base, {
+    trigger: 'manual-push',
+    status: 'error',
+    modulesChanged: ['brand', 'faqsSection'],
+    filesCount: 12,
+    changedPaths: ['index.html'],
+    branch: 'main',
+    repo: 'owner/repo',
+    durationMs: 120,
+    message: 'Push failed: 401',
+    errorDetail: 'Bad credentials'
+  });
+  assert.equal(afterError.syncLogs?.length, 1);
+  assert.equal(afterError.dirtyModulesSinceSync?.length, 2);
+
+  // Successful push clears dirtyModulesSinceSync and mirrors deployHistory
+  const afterSuccess = appendSyncLogEntry(afterError, {
+    trigger: 'manual-push',
+    status: 'success',
+    modulesChanged: ['brand', 'faqsSection'],
+    filesCount: 16,
+    changedPaths: ['index.html', 'static-routes/index.json'],
+    branch: 'main',
+    repo: 'owner/repo',
+    commitSha: 'abc1234567890',
+    commitUrl: 'https://github.com/owner/repo/commit/abc1234567890',
+    durationMs: 420,
+    steps: ['Compiled static bundle', 'Pushed commit'],
+    message: 'Synced 16 static files'
+  });
+  assert.equal(afterSuccess.syncLogs?.length, 2);
+  assert.equal(afterSuccess.syncLogs?.[0].commitSha, 'abc1234567890');
+  assert.equal(afterSuccess.dirtyModulesSinceSync?.length, 0);
+  assert.equal(afterSuccess.githubConfig.lastCommitSha, 'abc1234567890');
+  assert.equal(afterSuccess.githubConfig.deployHistory?.length, 2);
+});
+
+test('resolveAdminSecurityPolicy enforces zero hardcoded credentials and fails closed everywhere until configured', () => {
+  // Missing env vars FAILS CLOSED even on localhost (zero hardcoded defaults)
+  const localUnset = resolveAdminSecurityPolicy({}, 'localhost:3000');
+  assert.equal(localUnset.isProduction, false);
+  assert.equal(localUnset.allowDefaultDevCreds, false);
+  assert.equal(localUnset.credentialsReady, false);
+  assert.ok(localUnset.setupError);
+
+  // Production with missing secrets FAILS CLOSED
+  const prodMissing = resolveAdminSecurityPolicy({ NODE_ENV: 'production' }, 'cms.example.com');
+  assert.equal(prodMissing.isProduction, true);
+  assert.equal(prodMissing.allowDefaultDevCreds, false);
+  assert.equal(prodMissing.credentialsReady, false);
+  assert.ok(prodMissing.setupError);
+
+  // Placeholder / short secrets FAIL CLOSED
+  const weakCreds = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL: 'owner@example.com',
+      ADMIN_PASSWORD: 'replace-with-password',
+      ADMIN_SESSION_SECRET: 'short'
+    },
+    'cms.example.com'
+  );
+  assert.equal(weakCreds.credentialsReady, false);
+
+  // Strong Email + Password + Session Secret SUCCEEDS
+  const prodStrong = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL: 'owner@example.com',
+      ADMIN_PASSWORD: 'Strong!Unique#Password2026',
+      ADMIN_SESSION_SECRET: 'super-long-production-hmac-secret-999'
+    },
+    'cms.example.com'
+  );
+  assert.equal(prodStrong.credentialsReady, true);
+  assert.equal(prodStrong.allowDefaultDevCreds, false);
+  assert.equal(prodStrong.setupError, null);
+
+  // Strong ADMIN_API_KEY + Session Secret SUCCEEDS without email/password
+  const apiKeyOnly = resolveAdminSecurityPolicy(
+    {
+      ADMIN_API_KEY: 'live-api-key-9876543210abcdef',
+      ADMIN_SESSION_SECRET: 'super-long-production-hmac-secret-999'
+    },
+    'localhost:3000'
+  );
+  assert.equal(apiKeyOnly.credentialsReady, true);
+  assert.equal(apiKeyOnly.hasApiKey, true);
+});
+
+test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non-optional exp claims', () => {
+  const now = Date.now();
+  assert.equal(validateAdminSessionClaims(null, now).valid, false);
+  assert.equal(
+    validateAdminSessionClaims({ email: 'a@b.com', jti: '1234567890abcdef', exp: now + 60000 }, now).valid,
+    false
+  );
+  // Token missing exp must fail closed
+  assert.equal(
+    validateAdminSessionClaims(
+      { iss: 'master-cms-admin', typ: 'admin-session', email: 'a@b.com', jti: '1234567890abcdef', iat: now },
+      now
+    ).valid,
+    false
+  );
+  // Valid claim set passes
+  const ok = validateAdminSessionClaims(
+    {
+      iss: 'master-cms-admin',
+      typ: 'admin-session',
+      email: 'owner@example.com',
+      jti: '1234567890abcdef',
+      iat: now,
+      exp: now + 60000
+    },
+    now
+  );
+  assert.equal(ok.valid, true);
+  assert.equal(ok.claims?.email, 'owner@example.com');
+});
+
+test('Public static bundle outputs zero Firebase SDKs, zero Admin files, and zero Admin secrets', () => {
+  const secretCfg = mergeSiteConfig({
+    githubConfig: {
+      ...MASTER_DEFAULT_CONFIG.githubConfig,
+      fineGrainedToken: 'github_pat_MUST_NEVER_LEAK_TO_PUBLIC'
+    },
+    securityGate: {
+      ...MASTER_DEFAULT_CONFIG.securityGate,
+      primaryDownloadUrl: 'https://private-origin.example.com/signed.apk',
+      turnstileSecretKey: '0x4AAAAAA_MUST_NEVER_LEAK'
+    }
+  });
+  const bundle = compileStaticSiteBundle(secretCfg);
+  for (const file of bundle.files) {
+    assert.ok(!file.path.startsWith('admin'), `Unexpected admin file in bundle: ${file.path}`);
+    assert.ok(!file.content.includes('github_pat_MUST_NEVER_LEAK_TO_PUBLIC'), `GitHub token leaked in ${file.path}`);
+    assert.ok(!file.content.includes('0x4AAAAAA_MUST_NEVER_LEAK'), `Turnstile secret leaked in ${file.path}`);
+    assert.ok(!file.content.includes('private-origin.example.com/signed.apk'), `Primary download URL leaked in ${file.path}`);
+    assert.ok(!file.content.includes('firebase-app.js'), `Firebase SDK leaked in ${file.path}`);
+    assert.ok(!file.content.includes('firebase-firestore.js'), `Firebase Firestore leaked in ${file.path}`);
+  }
+});
+
+test('applyMultiModulePatch updates multiple modules atomically and preserves untouched secrets & modules', () => {
+  const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+  base.brand.name = 'InitialBrand';
+  base.githubConfig.fineGrainedToken = 'github_pat_KEEP_ATOMIC';
+  base.securityGate.turnstileSecretKey = '0x4KEEP_TS';
+  base.faqsSection = { enabled: true, heading: 'Existing FAQs', items: [] };
+
+  const res = applyMultiModulePatch(
+    base,
+    {
+      brand: { ...base.brand, name: 'UpdatedBrand', shortName: 'UB' },
+      hero: { ...base.hero, h1: 'UpdatedBrand Hero Headline' }
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  assert.deepEqual(res.savedModules.sort(), ['brand', 'hero']);
+  assert.equal(res.config.brand.name, 'UpdatedBrand');
+  assert.equal(res.config.hero.h1, 'UpdatedBrand Hero Headline');
+  assert.equal(res.config.githubConfig.fineGrainedToken, 'github_pat_KEEP_ATOMIC');
+  assert.equal(res.config.securityGate.turnstileSecretKey, '0x4KEEP_TS');
+  assert.equal(res.config.faqsSection.heading, 'Existing FAQs');
+  assert.ok(res.dirtyModulesSinceSync.includes('brand'));
+  assert.ok(res.dirtyModulesSinceSync.includes('hero'));
+});
+
+test('computeGitBlobSha1 & diffGitTrees match Git blob SHA-1, detect zero changes, and prune only orphaned CMS routes', () => {
+  const sampleText = 'hello static cms\n';
+  const expectedGitSha = createHash('sha1')
+    .update(`blob ${Buffer.byteLength(sampleText, 'utf-8')}\0${sampleText}`, 'utf-8')
+    .digest('hex');
+  assert.equal(computeGitBlobSha1(sampleText, 'utf-8'), expectedGitSha);
+
+  const b64Bytes = Buffer.from([1, 2, 3, 4, 5]);
+  const expectedBinSha = createHash('sha1')
+    .update(Buffer.concat([Buffer.from(`blob ${b64Bytes.length}\0`), b64Bytes]))
+    .digest('hex');
+  assert.equal(computeGitBlobSha1(b64Bytes.toString('base64'), 'base64'), expectedBinSha);
+
+  const localFiles = [
+    { path: 'index.html', content: '<html>v2</html>', description: 'Home', encoding: 'utf-8' as const },
+    { path: 'news/index.html', content: '<html>news</html>', description: 'News Hub', encoding: 'utf-8' as const },
+    { path: 'news/keep-post/index.html', content: '<html>keep</html>', description: 'Post', encoding: 'utf-8' as const },
+    { path: 'privacy-policy/index.html', content: '<html>privacy</html>', description: 'Privacy', encoding: 'utf-8' as const },
+    { path: 'static-routes/index.json', content: '{}', description: 'Home JSON', encoding: 'utf-8' as const },
+    { path: 'static-routes/privacy-policy.json', content: '{}', description: 'Privacy JSON', encoding: 'utf-8' as const }
+  ];
+
+  // 1. Identical remote tree yields zero changes
+  const identicalTree = localFiles.map((f) => ({
+    path: `dist-public/${f.path}`,
+    sha: computeGitBlobSha1(f.content, f.encoding),
+    type: 'blob'
+  }));
+  const zeroDiff = diffGitTrees(localFiles, identicalTree, 'dist-public');
+  assert.equal(zeroDiff.changedPaths.length, 0);
+  assert.equal(zeroDiff.added.length, 0);
+  assert.equal(zeroDiff.updated.length, 0);
+  assert.equal(zeroDiff.deletedPaths.length, 0);
+  assert.equal(zeroDiff.unchanged.length, localFiles.length);
+
+  // 2. Modified, added, orphaned CMS routes vs protected custom repo files
+  const staleTree = [
+    { path: 'dist-public/index.html', sha: '0000000000000000000000000000000000000000', type: 'blob' },
+    { path: 'dist-public/privacy-policy/index.html', sha: computeGitBlobSha1('<html>privacy</html>', 'utf-8'), type: 'blob' },
+    { path: 'dist-public/static-routes/index.json', sha: computeGitBlobSha1('{}', 'utf-8'), type: 'blob' },
+    // Orphaned CMS route & news article that should be pruned
+    { path: 'dist-public/static-routes/old-removed-page.json', sha: '1111', type: 'blob' },
+    { path: 'dist-public/old-removed-page/index.html', sha: '2222', type: 'blob' },
+    { path: 'dist-public/news/deleted-post/index.html', sha: '3333', type: 'blob' },
+    // Non-CMS repo files inside or outside targetDir MUST NOT be pruned
+    { path: 'dist-public/README.md', sha: '4444', type: 'blob' },
+    { path: 'dist-public/custom/handcrafted.html', sha: '5555', type: 'blob' },
+    { path: 'dist-public/package.json', sha: '6666', type: 'blob' },
+    { path: 'functions/api/config.js', sha: '7777', type: 'blob' }
+  ];
+
+  const diff = diffGitTrees(localFiles, staleTree, 'dist-public');
+  assert.ok(diff.changedPaths.length > 0);
+  assert.equal(diff.updated.length, 1);
+  assert.equal(diff.updated[0].path, 'index.html');
+  assert.equal(diff.added.length, 3); // news/index.html, news/keep-post/index.html, static-routes/privacy-policy.json
+  assert.ok(diff.deletedPaths.includes('dist-public/static-routes/old-removed-page.json'));
+  assert.ok(diff.deletedPaths.includes('dist-public/old-removed-page/index.html'));
+  assert.ok(diff.deletedPaths.includes('dist-public/news/deleted-post/index.html'));
+  assert.ok(!diff.deletedPaths.includes('dist-public/README.md'));
+  assert.ok(!diff.deletedPaths.includes('dist-public/custom/handcrafted.html'));
+  assert.ok(!diff.deletedPaths.includes('dist-public/package.json'));
+  assert.ok(!diff.deletedPaths.includes('functions/api/config.js'));
+});
+
+test('compileStaticSiteBundle bundles public SVG/media assets and validates Google Analytics ID safely', () => {
+  const validGaCfg = mergeSiteConfig({
+    ...MASTER_DEFAULT_CONFIG,
+    domainConfig: {
+      ...MASTER_DEFAULT_CONFIG.domainConfig,
+      googleAnalyticsId: 'G-TEST123456'
+    }
+  });
+  const bundle = compileStaticSiteBundle(validGaCfg);
+  const indexFile = bundle.files.find((f) => f.path === 'index.html');
+  assert.ok(indexFile);
+  assert.ok(indexFile.content.includes('https://www.googletagmanager.com/gtag/js?id=G-TEST123456'));
+  assert.ok(bundle.files.some((f) => f.path === 'assets/app-icon.svg'));
+
+  // Reject unsafe script injection in googleAnalyticsId
+  const unsafeGaCfg = mergeSiteConfig({
+    ...MASTER_DEFAULT_CONFIG,
+    domainConfig: {
+      ...MASTER_DEFAULT_CONFIG.domainConfig,
+      googleAnalyticsId: 'G-123"><script>alert(1)</script>'
+    }
+  });
+  const unsafeBundle = compileStaticSiteBundle(unsafeGaCfg);
+  const unsafeIndex = unsafeBundle.files.find((f) => f.path === 'index.html');
+  assert.ok(unsafeIndex);
+  assert.ok(!unsafeIndex.content.includes('alert(1)'));
+});
+
+test('Edge static compiler and GitHub diff helpers stay in parity with Node engine', async () => {
+  const edgeCompiler = await import('../../functions/_shared/static-compiler.js');
+  const edgeGh = await import('../../functions/_shared/github.js');
+
+  const cfg = mergeSiteConfig({
+    ...MASTER_DEFAULT_CONFIG,
+    domainConfig: {
+      ...MASTER_DEFAULT_CONFIG.domainConfig,
+      googleAnalyticsId: 'G-EDGE998877'
+    }
+  });
+  const edgeFiles = edgeCompiler.compileEdgeStaticSiteBundle(cfg);
+  assert.ok(Array.isArray(edgeFiles) && edgeFiles.length >= 12);
+  const edgeIndex = edgeFiles.find((f: any) => f.path === 'index.html');
+  assert.ok(edgeIndex);
+  assert.ok(edgeIndex.content.includes('G-EDGE998877'));
+  assert.ok(!edgeIndex.content.includes('firebase-app.js'));
+  assert.ok(edgeFiles.some((f: any) => f.path === 'sitemap.xml'));
+  assert.ok(edgeFiles.some((f: any) => f.path === 'robots.txt'));
+  assert.ok(edgeFiles.some((f: any) => f.path === 'manifest.webmanifest'));
+
+  const edgeSha = await edgeGh.computeGitBlobSha1Edge('hello edge\n', 'utf-8');
+  assert.equal(edgeSha, computeGitBlobSha1('hello edge\n', 'utf-8'));
+
+  const edgeTree = edgeFiles.map((f: any) => ({
+    path: `dist-public/${f.path}`,
+    sha: edgeSha,
+    type: 'blob'
+  }));
+  // Mismatched SHAs mean updates
+  const edgeDiff = await edgeGh.diffEdgeGitTrees(edgeFiles, edgeTree, 'dist-public');
+  assert.ok(edgeDiff.changedPaths.length > 0);
+});
+
+test('Admin UI, client Firebase module, and server contain zero starter-template demo endpoints', () => {
+  const filesToCheck = ['admin.html', 'admin.js', 'firebase-config.js', 'server.ts'];
+  for (const rel of filesToCheck) {
+    const content = fs.readFileSync(path.join(process.cwd(), rel), 'utf-8');
+    assert.ok(!content.includes('starter-template'), `Unexpected starter-template reference in ${rel}`);
+    assert.ok(!content.includes('loadStarterTemplate'), `Unexpected loadStarterTemplate reference in ${rel}`);
+  }
+});
+
+test('Raw /admin.html contains zero internal workspace markup and zero environment variable names while authenticated workspace shell provides full DOM', async () => {
+  const rawAdminHtml = fs.readFileSync(path.join(process.cwd(), 'admin.html'), 'utf-8');
+  assert.ok(rawAdminHtml.includes('id="auth-overlay"'));
+  assert.ok(rawAdminHtml.includes('<div id="cms-shell" class="cms-shell" hidden></div>'));
+  assert.ok(!rawAdminHtml.includes('id="panel-overview"'));
+  assert.ok(!rawAdminHtml.includes('id="panel-domain"'));
+  assert.ok(!rawAdminHtml.includes('ADMIN_EMAIL'));
+  assert.ok(!rawAdminHtml.includes('ADMIN_PASSWORD'));
+  assert.ok(!rawAdminHtml.includes('ADMIN_API_KEY'));
+  assert.ok(!rawAdminHtml.includes('ADMIN_SESSION_SECRET'));
+  assert.ok(!rawAdminHtml.includes('FIREBASE_API_KEY'));
+
+  const { getAdminWorkspaceShellHtml } = await import('./admin-workspace-html');
+  const workspaceHtml = getAdminWorkspaceShellHtml();
+  assert.ok(workspaceHtml.includes('id="panel-overview"'));
+  assert.ok(workspaceHtml.includes('id="panel-domain"'));
+  assert.ok(workspaceHtml.includes('id="btn-clear-sync-logs"'));
+  assert.ok(workspaceHtml.includes('id="btn-quick-add-news"'));
+  assert.ok(workspaceHtml.includes('class="mobile-quick-tabs"'));
+});
+
+test('sanitizeFirebaseConfigForClient strips apiKey and sets hasEnvApiKey boolean flag, and appendSyncLogEntry preserves diff counts', async () => {
+  const { sanitizeFirebaseConfigForClient } = await import('./cms-engine');
+  const sanitizedFb = sanitizeFirebaseConfigForClient({
+    apiKey: 'AIzaSySecretEnvKey1234567890',
+    projectId: 'live-prod-cms',
+    authDomain: 'live-prod-cms.firebaseapp.com',
+    databaseId: '(default)'
+  });
+  assert.ok(sanitizedFb);
+  assert.equal(sanitizedFb.apiKey, '');
+  assert.equal(sanitizedFb.projectId, 'live-prod-cms');
+  assert.equal(sanitizedFb.hasEnvApiKey, true);
+
+  const withDiff = appendSyncLogEntry(EMPTY_ADMIN_CONFIG, {
+    trigger: 'manual-push',
+    status: 'success',
+    modulesChanged: ['newsSection'],
+    filesCount: 3,
+    addedCount: 1,
+    updatedCount: 2,
+    deletedCount: 0,
+    unchangedCount: 14,
+    skipped: false,
+    changedPaths: ['index.html', 'news/index.html', 'news/new-post/index.html'],
+    branch: 'main',
+    repo: 'acme/portal',
+    durationMs: 310,
+    steps: ['Step 1: Compiled 17 files', 'Step 2: Pushed 3 changed blobs'],
+    message: 'Synced 3 changed files (+1 added, ~2 updated, =14 unchanged)'
+  });
+  const latestLog = withDiff.syncLogs?.[0];
+  assert.ok(latestLog);
+  assert.equal(latestLog.addedCount, 1);
+  assert.equal(latestLog.updatedCount, 2);
+  assert.equal(latestLog.deletedCount, 0);
+  assert.equal(latestLog.unchangedCount, 14);
+  assert.equal(latestLog.steps?.length, 2);
+
+  // Verify on-disk site-config.json has zero static demo content
+  const diskConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'site-config.json'), 'utf-8'));
+  assert.equal(diskConfig.brand.name, '');
+  assert.equal(diskConfig.sections.length, 0);
+  assert.equal(diskConfig.newsSection.articles.length, 0);
+  assert.equal(diskConfig.faqsSection.items.length, 0);
+  assert.equal(diskConfig.pages.length, 0);
+});
+
+test('Master clone isolation: empty EMPTY_ADMIN_CONFIG compiled against real index.html contains zero dummy/admin copy, sets noindex, and omits unreferenced demo assets', async () => {
+  const realIndexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
+  const realMoreinfoHtml = fs.readFileSync(path.join(process.cwd(), 'moreinfo.html'), 'utf-8');
+  const emptyBundle = compileStaticSiteBundle(EMPTY_ADMIN_CONFIG, realIndexHtml, {
+    moreinfoHtmlTemplate: realMoreinfoHtml
+  });
+
+  const homeHtml = emptyBundle.files.find((f) => f.path === 'index.html')?.content || '';
+  assert.ok(homeHtml.length > 0);
+  assert.ok(homeHtml.includes('<meta name="robots" content="noindex, nofollow" />'));
+  assert.ok(homeHtml.includes('class="site-coming-soon"'));
+  for (const forbidden of ['Admin Studio', 'ready to publish', 'ApexMobile', 'Official Portal', 'support@your-domain.com', 'app-icon.svg', 'hero-banner.svg']) {
+    assert.ok(!homeHtml.includes(forbidden), `Forbidden dummy/admin string "${forbidden}" leaked into empty public index.html`);
+  }
+
+  // Must not bundle unreferenced demo SVGs when config does not reference them
+  assert.ok(!emptyBundle.files.some((f) => f.path === 'assets/app-icon.svg'));
+  assert.ok(!emptyBundle.files.some((f) => f.path === 'assets/hero-banner.svg'));
+
+  // Manifest on empty config has zero dummy name or icon URLs
+  const emptyManifestFile = emptyBundle.files.find((f) => f.path === 'manifest.webmanifest');
+  assert.ok(emptyManifestFile);
+  const emptyManifest = JSON.parse(emptyManifestFile.content);
+  assert.deepEqual(emptyManifest.icons, []);
+  assert.ok(!JSON.stringify(emptyManifest).includes('Official Portal'));
+  assert.ok(!JSON.stringify(emptyManifest).includes('app-icon.svg'));
+
+  // Moreinfo HTML on empty config must also contain zero ApexMobile / dummy specs
+  const emptyMoreinfo = emptyBundle.files.find((f) => f.path === 'moreinfo.html')?.content || '';
+  assert.ok(!emptyMoreinfo.includes('ApexMobile'));
+  assert.ok(!emptyMoreinfo.includes('app-icon.svg'));
+
+  // Edge compiler stays in strict parity on EMPTY_ADMIN_CONFIG
+  const edgeCompiler = await import('../../functions/_shared/static-compiler.js');
+  const edgeEmptyFiles = edgeCompiler.compileEdgeStaticSiteBundle(EMPTY_ADMIN_CONFIG);
+  const edgeHome = edgeEmptyFiles.find((f: any) => f.path === 'index.html')?.content || '';
+  assert.ok(edgeHome.includes('noindex, nofollow'));
+  assert.ok(!edgeHome.includes('Official Portal'));
+  assert.ok(!edgeHome.includes('app-icon.svg'));
+  const edgeManifest = JSON.parse(edgeEmptyFiles.find((f: any) => f.path === 'manifest.webmanifest')?.content || '{}');
+  assert.deepEqual(edgeManifest.icons, []);
+});
+
+test('Real index.html SSR injects configured content cleanly, unhides email/logo/CTAs when configured, and emits complete webmanifest icons', () => {
+  const realIndexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
+  const customCfg = mergeSiteConfig({
+    brand: {
+      name: 'KestrelEdge',
+      shortName: 'Kestrel',
+      tagline: 'Edge Utility Suite',
+      logoUrl: 'https://cdn.example.org/kestrel-logo.png',
+      faviconUrl: 'https://cdn.example.org/kestrel-favicon.png',
+      searchLogoUrl: 'https://cdn.example.org/kestrel-512.png',
+      appleTouchIconUrl: 'https://cdn.example.org/kestrel-180.png',
+      contactEmail: 'hello@kestreledge.example',
+      accentColor: '#2563EB',
+      themeColor: '#2563EB'
+    },
+    hero: {
+      h1: 'KestrelEdge v2.0 Stable',
+      secondaryCta: { label: 'Read Docs', url: '#overview', relSponsored: false },
+      primaryCta: { label: 'Get Package', url: '/moreinfo', relSponsored: false },
+      introHtml: '<p>Verified static distribution for KestrelEdge.</p>',
+      showBanner: false
+    },
+    navigation: {
+      footerBrandSummary: 'Official KestrelEdge release hub.',
+      showFooterBrandSummary: true,
+      showFooterContactEmail: true
+    },
+    sections: [
+      {
+        id: 'sec-overview',
+        heading: 'Core Architecture',
+        slug: 'overview',
+        visible: true,
+        badgeText: 'Overview',
+        htmlContent: '<p>Built for pure static edge speed.</p>'
+      }
+    ]
+  }, EMPTY_ADMIN_CONFIG);
+
+  const rendered = renderCompleteStaticPageHtml(realIndexHtml, customCfg, '/');
+  assert.ok(rendered.includes('<meta name="robots" content="index, follow" />'));
+  assert.ok(rendered.includes('<title>KestrelEdge — KestrelEdge v2.0 Stable</title>') || rendered.includes('KestrelEdge'));
+  assert.ok(rendered.includes('src="https://cdn.example.org/kestrel-logo.png"'));
+  assert.ok(rendered.includes('href="mailto:hello@kestreledge.example"'));
+  assert.ok(!rendered.includes('id="footer-contact-email-link" class="footer-contact-pill hidden"'));
+  assert.ok(rendered.includes('Core Architecture'));
+  assert.ok(rendered.includes('Read Docs'));
+  assert.ok(rendered.includes('Get Package'));
+
+  const manifest = JSON.parse(generateWebManifestJson(customCfg));
+  assert.equal(manifest.name, 'KestrelEdge — Edge Utility Suite');
+  assert.equal(manifest.short_name, 'Kestrel');
+  assert.ok(manifest.icons.length >= 2);
+  assert.ok(manifest.icons.some((ic: any) => ic.src === 'https://cdn.example.org/kestrel-512.png'));
+});
+
+
+
+

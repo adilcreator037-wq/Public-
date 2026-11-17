@@ -10,6 +10,7 @@
  * ============================================================================
  */
 
+import crypto from 'crypto';
 import { GitHubDeployConfig } from './cms-types';
 import { CompiledStaticFile } from './static-compiler';
 
@@ -27,14 +28,135 @@ export interface GitHubVerifyResponse {
   message: string;
 }
 
+export interface RemoteGitTreeEntry {
+  path: string;
+  sha: string;
+  type: 'blob' | 'tree' | string;
+}
+
+export interface GitTreeDiffResult {
+  added: CompiledStaticFile[];
+  updated: CompiledStaticFile[];
+  unchanged: CompiledStaticFile[];
+  deletedPaths: string[];
+  changedPaths: string[];
+}
+
 export interface GitHubPushResponse {
   ok: boolean;
   status: 'success' | 'error';
+  skipped?: boolean;
   commitSha?: string;
   commitUrl?: string;
   branch: string;
   filesPushed: number;
+  addedCount?: number;
+  updatedCount?: number;
+  deletedCount?: number;
+  unchangedCount?: number;
+  changedPaths?: string[];
   message: string;
+}
+
+/**
+ * Compute Git's exact blob SHA-1 hash: sha1("blob " + byteLength + "\0" + rawBytes)
+ * matching `git hash-object` and GitHub's Git Tree API.
+ */
+export function computeGitBlobSha1(
+  content: string,
+  encoding: 'utf-8' | 'base64' = 'utf-8'
+): string {
+  const buf = encoding === 'base64' ? Buffer.from(content || '', 'base64') : Buffer.from(content || '', 'utf-8');
+  const header = Buffer.from(`blob ${buf.byteLength}\0`, 'utf-8');
+  return crypto.createHash('sha1').update(header).update(buf).digest('hex');
+}
+
+/**
+ * Deterministically compare compiled CMS files against the remote Git tree:
+ * - Classifies Added, Updated, and Unchanged files using Git SHA-1 hashes.
+ * - Safely detects orphaned CMS-generated routes (deleted articles, legal pages,
+ *   stale static-routes/*.json, or disabled SEO files) within `targetDir`, while
+ *   strictly preserving non-CMS repository files (`README.md`, `package.json`, `.github/`, `src/`, etc.).
+ */
+export function diffGitTrees(
+  files: CompiledStaticFile[],
+  remoteTreeEntries: RemoteGitTreeEntry[],
+  targetDir = ''
+): GitTreeDiffResult {
+  const cleanTarget = (targetDir || '').trim().replace(/^\/+|\/+$/g, '');
+  const prefix = cleanTarget ? `${cleanTarget}/` : '';
+
+  const remoteBlobMap = new Map<string, string>();
+  const remoteKnownHtmlFromJson = new Set<string>();
+
+  for (const entry of remoteTreeEntries || []) {
+    if (entry.type !== 'blob' || !entry.path) continue;
+    remoteBlobMap.set(entry.path, entry.sha);
+
+    if (!prefix || entry.path.startsWith(prefix)) {
+      const rel = prefix ? entry.path.slice(prefix.length) : entry.path;
+      const matchJson = rel.match(/^static-routes\/(.+)\.json$/);
+      if (matchJson && matchJson[1] && matchJson[1] !== 'index') {
+        const pageRoute = matchJson[1].replace(/--/g, '/');
+        remoteKnownHtmlFromJson.add(`${pageRoute}/index.html`);
+      }
+    }
+  }
+
+  const desiredFullPaths = new Set<string>();
+  const added: CompiledStaticFile[] = [];
+  const updated: CompiledStaticFile[] = [];
+  const unchanged: CompiledStaticFile[] = [];
+
+  for (const file of files) {
+    const cleanRel = file.path.replace(/^\/+/, '');
+    const fullPath = prefix ? `${prefix}${cleanRel}` : cleanRel;
+    desiredFullPaths.add(fullPath);
+
+    const existingSha = remoteBlobMap.get(fullPath);
+    if (!existingSha) {
+      added.push(file);
+    } else {
+      const nextSha = computeGitBlobSha1(file.content, file.encoding || 'utf-8');
+      if (existingSha === nextSha) {
+        unchanged.push(file);
+      } else {
+        updated.push(file);
+      }
+    }
+  }
+
+  const OPTIONAL_SEO_OR_GATE_PATHS = new Set([
+    'sitemap.xml',
+    'feed.xml',
+    'manifest.webmanifest',
+    'moreinfo/index.html',
+    'download/index.html'
+  ]);
+
+  const deletedPaths: string[] = [];
+  for (const [remotePath] of remoteBlobMap.entries()) {
+    if (prefix && !remotePath.startsWith(prefix)) continue;
+    if (desiredFullPaths.has(remotePath)) continue;
+
+    const rel = prefix ? remotePath.slice(prefix.length) : remotePath;
+    const isOrphanedStaticJson = /^static-routes\/[^/]+\.json$/.test(rel);
+    const isOrphanedNewsPage = /^news\/[^/]+\/index\.html$/.test(rel);
+    const isOrphanedKnownRouteHtml = remoteKnownHtmlFromJson.has(rel);
+    const isDisabledManagedFile = OPTIONAL_SEO_OR_GATE_PATHS.has(rel);
+
+    if (isOrphanedStaticJson || isOrphanedNewsPage || isOrphanedKnownRouteHtml || isDisabledManagedFile) {
+      deletedPaths.push(remotePath);
+    }
+  }
+
+  const changedPaths = [
+    ...added.map((f) => (prefix ? `${prefix}${f.path.replace(/^\/+/, '')}` : f.path.replace(/^\/+/, ''))),
+    ...updated.map((f) => (prefix ? `${prefix}${f.path.replace(/^\/+/, '')}` : f.path.replace(/^\/+/, ''))),
+    ...deletedPaths
+  ];
+
+  return { added, updated, unchanged, deletedPaths, changedPaths };
 }
 
 function buildGitHubHeaders(token: string): Record<string, string> {
@@ -43,7 +165,7 @@ function buildGitHubHeaders(token: string): Record<string, string> {
     Authorization: `Bearer ${token.trim()}`,
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
-    'User-Agent': 'Master-CMS-Static-Publisher/2.0'
+    'User-Agent': 'Master-CMS-Static-Publisher/3.0'
   };
 }
 
@@ -107,21 +229,20 @@ export async function verifyGitHubRepoAccess(
   }
 }
 
-/**
- * Bootstrap an empty GitHub repository (0 commits) by creating an initial README.md
- * via the Contents API (`PUT /repos/:owner/:repo/contents/README.md`) so the Git Data API
- * (`git/trees` & `git/commits`) can operate immediately afterwards.
- */
+function encodeUtf8ToBase64(text: string): string {
+  return Buffer.from(text || '', 'utf-8').toString('base64');
+}
+
 async function bootstrapEmptyGitHubRepoIfNeeded(
   baseUrl: string,
   headers: Record<string, string>,
   branch: string,
-  repoOwner: string,
+  _repoOwner: string,
   repoName: string
 ): Promise<{ bootstrapped: boolean; commitSha?: string; error?: string }> {
   try {
-    const readmeContent = `# ${repoName}\n\nStatic public website bundle published via Master CMS Studio.\n`;
-    const base64Content = Buffer.from(readmeContent, 'utf-8').toString('base64');
+    const readmeContent = `# ${repoName}\n\nStatic public website bundle published via Admin Studio.\n`;
+    const base64Content = encodeUtf8ToBase64(readmeContent);
 
     const putRes = await fetch(`${baseUrl}/contents/README.md`, {
       method: 'PUT',
@@ -154,9 +275,30 @@ async function bootstrapEmptyGitHubRepoIfNeeded(
   }
 }
 
+async function createGitHubBinaryBlob(
+  baseUrl: string,
+  headers: Record<string, string>,
+  base64Content: string
+): Promise<string> {
+  const blobRes = await fetch(`${baseUrl}/git/blobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      content: base64Content,
+      encoding: 'base64'
+    })
+  });
+  if (!blobRes.ok) {
+    const err: any = await blobRes.json().catch(() => ({}));
+    throw new Error(`Failed uploading binary blob: ${err?.message || `HTTP ${blobRes.status}`}`);
+  }
+  const blobData: any = await blobRes.json();
+  return blobData.sha;
+}
+
 /**
- * Push all compiled static public files to GitHub in a single atomic commit
- * using GitHub's Git Data API (Ref -> Commit -> Tree -> New Commit -> Update Ref)
+ * Push only changed/added static files (+ remove orphaned CMS routes) to GitHub
+ * in a single atomic commit using GitHub's Git Data API.
  */
 export async function pushStaticFilesToGitHub(
   ghConfig: GitHubDeployConfig,
@@ -193,7 +335,6 @@ export async function pushStaticFilesToGitHub(
     let baseTreeSha = '';
 
     if (refRes.status === 409 || refRes.status === 404) {
-      // Check if repository is completely empty (409) or if branch doesn't exist yet (404)
       const repoInfoRes = await fetch(baseUrl, { method: 'GET', headers });
       if (!repoInfoRes.ok) {
         const repoErr: any = await repoInfoRes.json().catch(() => ({}));
@@ -208,7 +349,6 @@ export async function pushStaticFilesToGitHub(
       const repoInfo: any = await repoInfoRes.json();
       const defaultBranch = repoInfo.default_branch || 'main';
 
-      // Try fetching default branch ref if target branch differed
       if (refRes.status === 404 && branch !== defaultBranch) {
         const defaultRefRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, {
           method: 'GET',
@@ -218,7 +358,6 @@ export async function pushStaticFilesToGitHub(
           const defaultRefData: any = await defaultRefRes.json();
           const defaultHeadSha = defaultRefData?.object?.sha || '';
           if (defaultHeadSha) {
-            // Create the new target branch ref pointing to defaultHeadSha
             const createRefRes = await fetch(`${baseUrl}/git/refs`, {
               method: 'POST',
               headers,
@@ -234,7 +373,6 @@ export async function pushStaticFilesToGitHub(
         }
       }
 
-      // If still no commit SHA, repository is empty — auto-bootstrap with initial README.md
       if (!latestCommitSha) {
         const boot = await bootstrapEmptyGitHubRepoIfNeeded(baseUrl, headers, branch, owner, repo);
         if (!boot.bootstrapped) {
@@ -269,17 +407,75 @@ export async function pushStaticFilesToGitHub(
       }
     }
 
-    // 2. Build Tree Entries for all compiled static files
-    const treeEntries = files.map((file) => {
+    // 2. Fetch Remote Tree Recursively & Compute Smart SHA-1 Diff
+    let remoteEntries: RemoteGitTreeEntry[] = [];
+    if (baseTreeSha) {
+      const remoteTreeRes = await fetch(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, {
+        method: 'GET',
+        headers
+      });
+      if (remoteTreeRes.ok) {
+        const remoteTreeData: any = await remoteTreeRes.json();
+        if (Array.isArray(remoteTreeData?.tree) && !remoteTreeData.truncated) {
+          remoteEntries = remoteTreeData.tree;
+        }
+      }
+    }
+
+    const diff = diffGitTrees(files, remoteEntries, targetDir);
+    const totalChanged = diff.added.length + diff.updated.length + diff.deletedPaths.length;
+
+    if (baseTreeSha && remoteEntries.length > 0 && totalChanged === 0) {
+      return {
+        ok: true,
+        status: 'success',
+        skipped: true,
+        commitSha: latestCommitSha,
+        commitUrl: latestCommitSha ? `https://github.com/${owner}/${repo}/commit/${latestCommitSha}` : undefined,
+        branch,
+        filesPushed: 0,
+        addedCount: 0,
+        updatedCount: 0,
+        deletedCount: 0,
+        unchangedCount: diff.unchanged.length,
+        changedPaths: [],
+        message: `Repository ${owner}/${repo}@${branch} is already up to date (${diff.unchanged.length} static files unchanged — skipped empty commit).`
+      };
+    }
+
+    // 3. Build Delta Tree Entries (Only Added/Updated Files + Orphan Deletions)
+    const filesToUpload = remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : files;
+    const treeEntries: Array<Record<string, any>> = [];
+
+    for (const file of filesToUpload) {
       const cleanPath = file.path.replace(/^\/+/, '');
       const fullPath = targetDir ? `${targetDir}/${cleanPath}` : cleanPath;
-      return {
-        path: fullPath,
+      if (file.encoding === 'base64') {
+        const blobSha = await createGitHubBinaryBlob(baseUrl, headers, file.content);
+        treeEntries.push({
+          path: fullPath,
+          mode: '100644',
+          type: 'blob',
+          sha: blobSha
+        });
+      } else {
+        treeEntries.push({
+          path: fullPath,
+          mode: '100644',
+          type: 'blob',
+          content: file.content
+        });
+      }
+    }
+
+    for (const delPath of diff.deletedPaths) {
+      treeEntries.push({
+        path: delPath,
         mode: '100644',
         type: 'blob',
-        content: file.content
-      };
-    });
+        sha: null
+      });
+    }
 
     const createTreeBody: Record<string, any> = {
       tree: treeEntries
@@ -308,10 +504,10 @@ export async function pushStaticFilesToGitHub(
     const treeData: any = await treeRes.json();
     const newTreeSha = treeData.sha;
 
-    // 3. Create Atomic Commit
+    // 4. Create Atomic Commit
     const commitMsg =
       (customCommitMessage || ghConfig.commitMessageTemplate || 'chore(cms): publish static public site update').trim() +
-      ` [${new Date().toISOString()}]`;
+      ` (+${diff.added.length}/~${diff.updated.length}/-${diff.deletedPaths.length})`;
 
     const createCommitBody: Record<string, any> = {
       message: commitMsg,
@@ -341,7 +537,7 @@ export async function pushStaticFilesToGitHub(
     const newCommitData: any = await newCommitRes.json();
     const newCommitSha = newCommitData.sha;
 
-    // 4. Update or Create Branch Reference to point to newCommitSha
+    // 5. Update or Create Branch Reference to point to newCommitSha
     if (latestCommitSha) {
       const updateRefRes = await fetch(`${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}`, {
         method: 'PATCH',
@@ -386,11 +582,17 @@ export async function pushStaticFilesToGitHub(
     return {
       ok: true,
       status: 'success',
+      skipped: false,
       commitSha: newCommitSha,
       commitUrl,
       branch,
-      filesPushed: files.length,
-      message: `Published ${files.length} static public files to ${owner}/${repo}@${branch} (${newCommitSha.slice(0, 7)}).`
+      filesPushed: filesToUpload.length + diff.deletedPaths.length,
+      addedCount: diff.added.length,
+      updatedCount: diff.updated.length,
+      deletedCount: diff.deletedPaths.length,
+      unchangedCount: diff.unchanged.length,
+      changedPaths: diff.changedPaths.slice(0, 32),
+      message: `Published to ${owner}/${repo}@${branch} (${newCommitSha.slice(0, 7)}): +${diff.added.length} added, ~${diff.updated.length} updated, -${diff.deletedPaths.length} pruned (${diff.unchanged.length} unchanged skipped).`
     };
   } catch (err: any) {
     return {

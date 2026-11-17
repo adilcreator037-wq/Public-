@@ -30,8 +30,10 @@ import {
 export interface CompiledStaticFile {
   /** Relative path inside the static public output bundle, e.g. `index.html` or `news/index.html` */
   path: string;
-  /** UTF-8 file content */
+  /** UTF-8 string or Base64 string (when encoding === 'base64') */
   content: string;
+  /** Content encoding (`utf-8` default for HTML/JSON/XML/SVG/JS; `base64` for binary raster assets) */
+  encoding?: 'utf-8' | 'base64';
   /** Description of the generated static artifact */
   description: string;
 }
@@ -41,6 +43,15 @@ export interface StaticBundleCompilationResult {
   totalFiles: number;
   routesCompiled: string[];
   files: CompiledStaticFile[];
+}
+
+const BINARY_ASSET_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.avif', '.woff', '.woff2', '.ttf', '.eot', '.pdf', '.zip', '.apk'
+]);
+
+function isBinaryAssetPath(filePath: string): boolean {
+  const ext = path.extname(filePath || '').toLowerCase();
+  return BINARY_ASSET_EXTENSIONS.has(ext);
 }
 
 /**
@@ -54,6 +65,64 @@ export function routePathToStaticJsonName(pathname: string): string {
 }
 
 /**
+ * Collect local `/assets/*` files and any `/uploads/*` files referenced inside `config`
+ * so exported GitHub static bundles never suffer 404 images or broken favicons.
+ */
+function collectPublicAssetFiles(config: SiteConfig): CompiledStaticFile[] {
+  const out: CompiledStaticFile[] = [];
+  const seenPaths = new Set<string>();
+  const cwd = process.cwd();
+
+  const tryReadAsset = (relUrlPath: string, description: string) => {
+    const cleanRel = String(relUrlPath || '').replace(/^\/+/, '').replace(/\.\./g, '');
+    if (!cleanRel || seenPaths.has(cleanRel)) return;
+    const candidates = [
+      path.join(cwd, 'public', cleanRel),
+      path.join(cwd, cleanRel)
+    ];
+    for (const fullPath of candidates) {
+      if (fs.existsSync(fullPath)) {
+        try {
+          const stat = fs.statSync(fullPath);
+          if (!stat.isFile()) continue;
+          const binary = isBinaryAssetPath(fullPath);
+          const content = binary
+            ? fs.readFileSync(fullPath).toString('base64')
+            : fs.readFileSync(fullPath, 'utf-8');
+          seenPaths.add(cleanRel);
+          out.push({
+            path: cleanRel,
+            content,
+            encoding: binary ? 'base64' : 'utf-8',
+            description
+          });
+          return;
+        } catch {
+          // Skip unreadable files
+        }
+      }
+    }
+  };
+
+  // 1. Package /assets/* and /uploads/* media files explicitly referenced in active SiteConfig
+  try {
+    const serialized = JSON.stringify(config || {});
+    const assetMatches = serialized.match(/\/assets\/[a-zA-Z0-9._-]+/g) || [];
+    for (const match of assetMatches) {
+      tryReadAsset(match.slice(1), `Referenced brand/UI asset (${match})`);
+    }
+    const uploadMatches = serialized.match(/\/uploads\/[a-zA-Z0-9._-]+/g) || [];
+    for (const match of uploadMatches) {
+      tryReadAsset(match.slice(1), `Referenced uploaded media (${match})`);
+    }
+  } catch {
+    // ignore
+  }
+
+  return out;
+}
+
+/**
  * Compile the entire public website into an in-memory array of static files
  * and optionally write them to `distPublicDir` and `publicStaticRoutesDir`.
  */
@@ -61,7 +130,8 @@ const DEFAULT_STATIC_HTML_TEMPLATE = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Default Title</title>
+    <meta name="robots" content="index, follow" />
+    <title></title>
     <meta name="description" id="meta-description" content="" />
     <link rel="canonical" id="canonical-link" href="" />
     <meta property="og:title" id="og-title" content="" />
@@ -71,27 +141,27 @@ const DEFAULT_STATIC_HTML_TEMPLATE = `<!doctype html>
     <meta name="twitter:title" id="twitter-title" content="" />
     <meta name="twitter:description" id="twitter-description" content="" />
     <meta name="twitter:image" id="twitter-image" content="" />
-    <link rel="icon" id="dynamic-favicon" href="/assets/app-icon.svg" />
+    <link rel="icon" id="dynamic-favicon" href="" />
     <script type="application/ld+json" id="schema-json-ld">{}</script>
   </head>
   <body>
-    <img id="header-logo" src="/assets/app-icon.svg" alt="Logo" />
-    <span id="header-brand-name"></span>
-    <a id="header-news-quicklink" href="/news"><span id="header-news-label">News</span></a>
+    <img id="navbar-logo-img" src="" alt="" hidden />
+    <span id="navbar-logo-text"></span>
+    <a id="header-news-btn" href="/news"><span id="header-news-label">News</span></a>
     <ul id="drawer-links-list"></ul>
-    <section class="hero-section">
+    <section id="hero-section" class="hero-section">
       <h1 id="hero-h1"></h1>
-      <div id="hero-cta-grid"><a id="cta-secondary" href="#"></a><a id="cta-primary" href="#"></a></div>
+      <div id="hero-cta-grid"><a id="hero-cta-secondary" href="#" hidden></a><a id="hero-cta-primary" href="#" hidden></a></div>
       <div id="hero-intro"></div>
       <div id="hero-banner-wrapper"><img id="hero-banner-img" src="" alt="" /></div>
     </section>
-    <main id="article-body"></main>
+    <main id="dynamic-content"></main>
     <div id="footer-disclaimer-heading"></div>
     <p id="footer-disclaimer"></p>
     <div id="footer-links-heading"></div>
     <nav id="footer-links-list"></nav>
     <p id="footer-copyright"></p>
-    <a id="floating-cta" href="#"><span id="floating-cta-text"></span></a>
+    <a id="floating-bottom-cta" href="#" hidden><span id="floating-cta-text"></span></a>
   </body>
 </html>`;
 
@@ -105,6 +175,7 @@ export function compileStaticSiteBundle(
     appJsContent?: string;
     moreinfoHtmlTemplate?: string;
     moreinfoJsContent?: string;
+    includeAssets?: boolean;
   }
 ): StaticBundleCompilationResult {
   const files: CompiledStaticFile[] = [];
@@ -118,6 +189,7 @@ export function compileStaticSiteBundle(
     files.push({
       path: htmlOutputPath,
       content: fullHtml,
+      encoding: 'utf-8',
       description: `Static HTML page for ${label} (${routePath})`
     });
 
@@ -127,6 +199,7 @@ export function compileStaticSiteBundle(
     files.push({
       path: `static-routes/${jsonFileName}`,
       content: JSON.stringify(payload, null, 2),
+      encoding: 'utf-8',
       description: `Static route payload for ${routePath}`
     });
   };
@@ -160,11 +233,13 @@ export function compileStaticSiteBundle(
     files.push({
       path: 'moreinfo/index.html',
       content: gatewayHtml,
+      encoding: 'utf-8',
       description: 'Isolated v12 7-Gate Security & Download Gateway (/moreinfo)'
     });
     files.push({
       path: 'download/index.html',
       content: gatewayHtml,
+      encoding: 'utf-8',
       description: 'Isolated v12 7-Gate Security & Download Gateway Alias (/download)'
     });
   }
@@ -172,6 +247,7 @@ export function compileStaticSiteBundle(
     files.push({
       path: 'moreinfo.js',
       content: options.moreinfoJsContent,
+      encoding: 'utf-8',
       description: 'Client-side 7-Gate hardware probe & Turnstile clearance engine'
     });
   }
@@ -194,14 +270,16 @@ export function compileStaticSiteBundle(
   files.push({
     path: '_headers',
     content: `${cloudflareHeaders}\n`,
+    encoding: 'utf-8',
     description: 'Cloudflare Pages edge headers isolating /moreinfo & /download from crawlers'
   });
 
-  // 7. Technical SEO Artifacts (`sitemap.xml`, `robots.txt`, `feed.xml`)
+  // 7. Technical SEO Artifacts (`sitemap.xml`, `robots.txt`, `feed.xml`, `manifest.webmanifest`)
   if (config.domainConfig?.enableSitemapXml !== false) {
     files.push({
       path: 'sitemap.xml',
       content: generateSitemapXml(config),
+      encoding: 'utf-8',
       description: 'Search Engine XML Sitemap'
     });
   }
@@ -209,6 +287,7 @@ export function compileStaticSiteBundle(
   files.push({
     path: 'robots.txt',
     content: generateRobotsTxt(config),
+    encoding: 'utf-8',
     description: 'Crawler directives & Sitemap pointer'
   });
 
@@ -216,6 +295,7 @@ export function compileStaticSiteBundle(
     files.push({
       path: 'feed.xml',
       content: generateRssFeedXml(config),
+      encoding: 'utf-8',
       description: 'RSS 2.0 Syndication Feed'
     });
   }
@@ -224,6 +304,7 @@ export function compileStaticSiteBundle(
     files.push({
       path: 'manifest.webmanifest',
       content: generateWebManifestJson(config),
+      encoding: 'utf-8',
       description: 'W3C Web App Manifest for Google Search Result Logo & PWA'
     });
   }
@@ -233,11 +314,20 @@ export function compileStaticSiteBundle(
     files.push({
       path: 'app.js',
       content: options.appJsContent,
+      encoding: 'utf-8',
       description: 'Zero-Firebase static public router script'
     });
   }
 
-  // 9. Include Cloudflare Pages Functions (/functions) in the bundle
+  // 9. Include public static assets (/assets/* & referenced /uploads/*)
+  if (options?.includeAssets !== false) {
+    const assetFiles = collectPublicAssetFiles(config);
+    for (const af of assetFiles) {
+      files.push(af);
+    }
+  }
+
+  // 10. Include Cloudflare Pages Functions (/functions) in the bundle
   const functionsDir = path.resolve(process.cwd(), 'functions');
   if (fs.existsSync(functionsDir)) {
     const collectFuncs = (baseDir: string, relSub: string = ''): Array<{ rel: string; full: string }> => {
@@ -264,6 +354,7 @@ export function compileStaticSiteBundle(
         files.push({
           path: `functions/${item.rel}`,
           content,
+          encoding: 'utf-8',
           description: `Cloudflare Pages Edge Function (${item.rel})`
         });
       } catch {
@@ -276,9 +367,22 @@ export function compileStaticSiteBundle(
   // strictly excluded from the compiled public static website bundle so the public portal and
   // the Admin CMS remain 100% isolated in separate worlds with zero interconnection.
 
-  // 7. Write to disk if requested (populates `/public/static-routes` and `/dist-public`)
+  // 11. Write to disk if requested (populates `/public/static-routes` and `/dist-public`)
   if (options?.writeToDisk) {
     if (options.publicStaticRoutesDir) {
+      // Remove stale static-route JSON files first so deleted pages/articles don't linger locally
+      if (fs.existsSync(options.publicStaticRoutesDir)) {
+        try {
+          const existingJson = fs.readdirSync(options.publicStaticRoutesDir);
+          for (const fname of existingJson) {
+            if (fname.endsWith('.json')) {
+              fs.unlinkSync(path.join(options.publicStaticRoutesDir, fname));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
       fs.mkdirSync(options.publicStaticRoutesDir, { recursive: true });
       for (const file of files) {
         if (file.path.startsWith('static-routes/')) {
@@ -292,21 +396,25 @@ export function compileStaticSiteBundle(
     }
 
     if (options.distPublicDir) {
-      fs.mkdirSync(options.distPublicDir, { recursive: true });
-      for (const legacyAdminPath of ['admin.html', 'admin.js', 'admin.css', 'firebase-config.js', 'admin/index.html']) {
-        const staleFull = path.join(options.distPublicDir, legacyAdminPath);
-        if (fs.existsSync(staleFull)) {
-          try {
-            fs.unlinkSync(staleFull);
-          } catch {
-            // ignore
+      if (fs.existsSync(options.distPublicDir)) {
+        try {
+          const existingEntries = fs.readdirSync(options.distPublicDir);
+          for (const entry of existingEntries) {
+            fs.rmSync(path.join(options.distPublicDir, entry), { recursive: true, force: true });
           }
+        } catch {
+          // ignore cleanup failure
         }
       }
+      fs.mkdirSync(options.distPublicDir, { recursive: true });
       for (const file of files) {
         const destPath = path.join(options.distPublicDir, file.path);
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
-        fs.writeFileSync(destPath, file.content, 'utf-8');
+        if (file.encoding === 'base64') {
+          fs.writeFileSync(destPath, Buffer.from(file.content, 'base64'));
+        } else {
+          fs.writeFileSync(destPath, file.content, 'utf-8');
+        }
       }
     }
   }

@@ -10,8 +10,8 @@ import {
 const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
 let gatewayConfig = {
-  appSlug: 'apexmobile',
-  appSerialId: 'APM-482',
+  appSlug: 'official-package',
+  appSerialId: 'PKG-001',
   devicePolicyMode: 'universal_human',
   proceedButtonLabel: 'PROCEED',
   turnstileSiteKey: '1x00000000000000000000AA'
@@ -143,6 +143,7 @@ function applyGatewayMetadata(meta) {
   const appTitleEl = document.getElementById('gw-app-title');
   const appVerEl = document.getElementById('gw-app-version');
   const appSizeEl = document.getElementById('gw-app-size');
+  const appMetaDotEl = document.getElementById('gw-app-meta-dot');
   const customNoteEl = document.getElementById('gw-custom-note');
   const specsCard = document.getElementById('gw-specs-card');
   const specName = document.getElementById('gw-spec-name');
@@ -151,13 +152,32 @@ function applyGatewayMetadata(meta) {
   const specSha = document.getElementById('gw-spec-sha256');
   const footerCopy = document.getElementById('gw-footer-copyright');
 
-  const displayTitle = meta.customHeading || meta.appName || meta.brandName || 'ApexMobile';
-  if (brandNameEl && meta.brandName) brandNameEl.textContent = meta.brandName;
-  if (brandLogoEl && meta.logoUrl) brandLogoEl.src = meta.logoUrl;
-  if (appIconEl && meta.logoUrl) appIconEl.src = meta.logoUrl;
+  const displayTitle = meta.customHeading || meta.appName || meta.brandName || '';
+  if (brandNameEl) brandNameEl.textContent = meta.brandName || '';
+  if (brandLogoEl) {
+    if (meta.logoUrl) {
+      brandLogoEl.src = meta.logoUrl;
+      brandLogoEl.alt = meta.brandName ? `${meta.brandName} Logo` : 'Logo';
+      brandLogoEl.classList.remove('hidden');
+    } else {
+      brandLogoEl.src = '';
+      brandLogoEl.classList.add('hidden');
+    }
+  }
+  if (appIconEl) {
+    if (meta.logoUrl) {
+      appIconEl.src = meta.logoUrl;
+      appIconEl.alt = displayTitle || 'Icon';
+      appIconEl.classList.remove('hidden');
+    } else {
+      appIconEl.src = '';
+      appIconEl.classList.add('hidden');
+    }
+  }
   if (appTitleEl) appTitleEl.textContent = displayTitle;
-  if (appVerEl && meta.version) appVerEl.textContent = meta.version;
-  if (appSizeEl && meta.fileSize) appSizeEl.textContent = meta.fileSize;
+  if (appVerEl) appVerEl.textContent = meta.version || '';
+  if (appSizeEl) appSizeEl.textContent = meta.fileSize || '';
+  if (appMetaDotEl) appMetaDotEl.classList.toggle('hidden', !(meta.version && meta.fileSize));
 
   if (customNoteEl) {
     const note = (meta.customNoteHtml || '').trim();
@@ -173,14 +193,16 @@ function applyGatewayMetadata(meta) {
   if (specsCard) {
     specsCard.classList.toggle('hidden', !meta.showSpecsOnGateway);
   }
-  if (specName) specName.textContent = displayTitle;
+  if (specName) specName.textContent = displayTitle || '—';
   if (specVerSize) {
-    specVerSize.textContent = `${meta.version || 'v4.8.2'} · ${meta.fileSize || '64.2 MB'}`;
+    specVerSize.textContent = [meta.version, meta.fileSize].filter(Boolean).join(' · ') || '—';
   }
-  if (specOs && meta.operatingSystem) specOs.textContent = meta.operatingSystem;
-  if (specSha && meta.sha256) specSha.textContent = meta.sha256;
-  if (footerCopy && meta.brandName) {
-    footerCopy.textContent = `© 2026 ${meta.brandName}. All rights reserved.`;
+  if (specOs) specOs.textContent = meta.operatingSystem || '—';
+  if (specSha) specSha.textContent = meta.sha256 || '';
+  if (footerCopy) {
+    footerCopy.textContent = meta.brandName
+      ? `© ${new Date().getFullYear()} ${meta.brandName}. All rights reserved.`
+      : '';
   }
 }
 
@@ -343,8 +365,7 @@ function resolveNavigationProof(appSlug) {
   try {
     if (
       sessionStorage.getItem(`rd_nav_${appSlug}`) === '1' ||
-      sessionStorage.getItem('rd_nav_default') === '1' ||
-      sessionStorage.getItem('rd_nav_apexmobile') === '1'
+      sessionStorage.getItem('rd_nav_default') === '1'
     ) {
       hasNav = true;
     }
@@ -391,7 +412,7 @@ async function handleClearanceSubmit(e) {
   try {
     const policyMode = gatewayConfig.devicePolicyMode || 'universal_human';
     const env = envCache || (await collectEnv(policyMode));
-    const appId = gatewayConfig.appSlug || 'apexmobile';
+    const appId = gatewayConfig.appSlug || 'official-package';
     const nv = resolveNavigationProof(appId);
 
     let evStr = touchData.ev.join(',');
@@ -517,7 +538,7 @@ async function initGatewaySession() {
       return;
     }
 
-    const appId = gatewayConfig.appSlug || 'apexmobile';
+    const appId = gatewayConfig.appSlug || 'official-package';
     const res = await fetch('/api/v1/app/session-init', {
       method: 'POST',
       credentials: 'include',

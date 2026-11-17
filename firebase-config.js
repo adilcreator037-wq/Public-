@@ -1,824 +1,514 @@
 /**
  * ============================================================================
- * ADMIN LIVE FIREBASE v10+ & GITHUB STATIC PUBLISHER CLIENT (firebase-config.js)
- * Exclusively used by the Admin Studio (`/admin.js`).
- * Public Website (`/app.js`) does NOT import this file and runs 100% on static data!
+ * ADMIN STUDIO LIVE FIREBASE & BACKEND API BRIDGE (firebase-config.js)
  *
- * Features:
- * - Live Dynamic State from Firebase Cloud Firestore (`siteConfig/main`) + Server API
- * - GitHub Fine-Grained Token Verification (`verifyGitHubRepoRemote`)
- * - 1-Click Static Public Website Compilation & GitHub Push (`publishStaticSiteToGitHubRemote`)
- * - Device Image Upload Helper (`uploadImageRemote`)
+ * Strictly loaded ONLY by `/admin.html` (Never imported by public `/index.html`).
+ * Priority Order for Firebase Connection:
+ * 1. Custom Firebase Credentials saved in Admin Studio (`localStorage` override)
+ * 2. Server Environment Variables (`FIREBASE_*` via `/api/config` — API key remains
+ *    server-side only (`hasEnvApiKey: true`), zero secret leak to client!)
+ * 3. Client Vite Environment Variables (`VITE_FIREBASE_*` if explicitly set)
  * ============================================================================
  */
 
-import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore,
-  doc,
-  getDoc,
-  setDoc,
-  onSnapshot
-} from 'firebase/firestore';
-import {
-  MASTER_DEFAULT_CONFIG,
+  EMPTY_ADMIN_CONFIG,
   mergeSiteConfig,
-  buildPartialRoutePayload,
-  parseFirebaseConfigSnippet,
+  cleanFirebaseEnvString,
   normalizeFirebaseClientConfig,
-  isValidFirebaseClientConfig
-} from './src/utils/cms-engine';
+  isValidFirebaseClientConfig,
+  parseFirebaseConfigSnippet
+} from './src/utils/cms-engine.ts';
 
-export const DEFAULT_SITE_CONFIG = MASTER_DEFAULT_CONFIG;
-export { parseFirebaseConfigSnippet, normalizeFirebaseClientConfig, isValidFirebaseClientConfig };
+export const FIREBASE_OVERRIDE_STORAGE_KEY = 'cms_firebase_custom_config_v3';
 
-let serverInjectedFirebaseConfig =
-  typeof window !== 'undefined' && window.__SERVER_FIREBASE_CONFIG__
-    ? window.__SERVER_FIREBASE_CONFIG__
-    : null;
+export {
+  cleanFirebaseEnvString,
+  normalizeFirebaseClientConfig,
+  isValidFirebaseClientConfig,
+  parseFirebaseConfigSnippet
+};
+
+const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
+
+let rawEnvJson = {};
+const jsonEnvStr = cleanFirebaseEnvString(env.VITE_FIREBASE_CONFIG_JSON);
+if (jsonEnvStr) {
+  const parsed = parseFirebaseConfigSnippet(jsonEnvStr);
+  if (parsed) rawEnvJson = parsed;
+}
+
+export const defaultEnvFirebaseConfig = normalizeFirebaseClientConfig({
+  apiKey: rawEnvJson.apiKey || env.VITE_FIREBASE_API_KEY,
+  authDomain: rawEnvJson.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: rawEnvJson.projectId || env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: rawEnvJson.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: rawEnvJson.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: rawEnvJson.appId || env.VITE_FIREBASE_APP_ID,
+  databaseId: rawEnvJson.databaseId || env.VITE_FIREBASE_DATABASE_ID || '(default)'
+});
+
+let runtimeServerFirebaseConfig = null;
 let lastEnvDiagnostics = null;
-let firestoreDb = null;
-let firestoreDbKey = '';
+let inMemoryCachedConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
 
 export function getLastEnvDiagnostics() {
   return lastEnvDiagnostics;
 }
 
+export function getCachedSiteConfigSync() {
+  return inMemoryCachedConfig;
+}
+
 /**
- * Safe response JSON parser that never throws raw "Unexpected end of JSON input"
+ * Hydrate runtime Firebase config fetched from authenticated `/api/config`.
+ * Note: Server environment variables mask `apiKey` (`hasEnvApiKey: true`) so
+ * raw `FIREBASE_API_KEY` never leaks to the browser.
  */
-async function safeReadJsonResponse(res) {
-  const text = await res.text().catch(() => '');
-  if (!text || !text.trim()) {
-    return { ok: false, data: null, rawText: '' };
-  }
-  try {
-    return { ok: true, data: JSON.parse(text), rawText: text };
-  } catch {
-    return { ok: false, data: null, rawText: text };
+export function setServerEnvFirebaseConfig(serverConfig) {
+  if (serverConfig && typeof serverConfig === 'object' && serverConfig.projectId) {
+    const normalized = normalizeFirebaseClientConfig(serverConfig);
+    runtimeServerFirebaseConfig = {
+      ...normalized,
+      hasEnvApiKey: Boolean(serverConfig.hasEnvApiKey || normalized.apiKey)
+    };
   }
 }
 
 /**
- * Resolve active Firebase configuration from:
- * 1. Admin custom override in localStorage (`firebase_custom_config`)
- * 2. Authenticated server/edge .env variables (`serverInjectedFirebaseConfig`)
- * 3. Vite client environment variables (`import.meta.env.VITE_FIREBASE_*`)
+ * Check if a Firebase config object is ready for live Firestore persistence
+ * (either via explicit client API key OR server-side `hasEnvApiKey: true`).
  */
-export function getActiveFirebaseConfig(overrideConfig = null) {
-  if (overrideConfig && typeof overrideConfig === 'object') {
-    const normalized = normalizeFirebaseClientConfig(overrideConfig);
-    return { ...normalized, source: 'candidate' };
-  }
+export function isRealFirebaseConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return false;
+  const target = cfg.config && typeof cfg.config === 'object' ? cfg.config : cfg;
+  if (!target.projectId || target.projectId.includes('replace-with')) return false;
+  if (target.hasEnvApiKey) return true;
+  return isValidFirebaseClientConfig(target);
+}
 
+/**
+ * Retrieve active Firebase configuration object for Admin Studio
+ */
+export function getActiveFirebaseConfig() {
   try {
-    const saved = localStorage.getItem('firebase_custom_config');
+    const saved = localStorage.getItem(FIREBASE_OVERRIDE_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      const normalized = normalizeFirebaseClientConfig(parsed);
-      if (normalized.apiKey && normalized.projectId) {
+      const merged = normalizeFirebaseClientConfig({
+        ...defaultEnvFirebaseConfig,
+        ...(runtimeServerFirebaseConfig || {}),
+        ...parsed
+      });
+      if (isValidFirebaseClientConfig(merged)) {
         return {
-          ...normalized,
-          source: 'admin-override'
+          ...merged,
+          hasEnvApiKey: Boolean(runtimeServerFirebaseConfig?.hasEnvApiKey),
+          source: 'localStorage'
         };
       }
     }
-  } catch (e) {
-    console.warn('Could not read firebase_custom_config from localStorage:', e);
+  } catch {
+    // Ignore storage read errors
   }
 
-  const srvCfg =
-    serverInjectedFirebaseConfig ||
-    (typeof window !== 'undefined' ? window.__SERVER_FIREBASE_CONFIG__ : null);
-
-  if (srvCfg && srvCfg.apiKey && srvCfg.projectId) {
+  if (runtimeServerFirebaseConfig && runtimeServerFirebaseConfig.projectId) {
     return {
-      ...normalizeFirebaseClientConfig(srvCfg),
-      source: 'server-env'
-    };
-  }
-
-  const viteApiKey = (import.meta.env?.VITE_FIREBASE_API_KEY || '').trim();
-  const viteProjectId = (import.meta.env?.VITE_FIREBASE_PROJECT_ID || '').trim();
-  if (viteApiKey && viteProjectId) {
-    return {
-      ...normalizeFirebaseClientConfig({
-        apiKey: viteApiKey,
-        authDomain: import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || '',
-        projectId: viteProjectId,
-        storageBucket: import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET || '',
-        messagingSenderId: import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-        appId: import.meta.env?.VITE_FIREBASE_APP_ID || '',
-        databaseId: import.meta.env?.VITE_FIREBASE_DATABASE_ID || '(default)'
-      }),
-      source: 'vite-env'
+      ...runtimeServerFirebaseConfig,
+      source: 'env'
     };
   }
 
   return {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    storageBucket: '',
-    messagingSenderId: '',
-    appId: '',
-    databaseId: '(default)',
-    source: 'unconfigured'
+    ...defaultEnvFirebaseConfig,
+    hasEnvApiKey: false,
+    source: 'env'
   };
 }
 
-export function isRealFirebaseConfig(config = getActiveFirebaseConfig()) {
-  return isValidFirebaseClientConfig(config);
-}
-
-export function saveActiveFirebaseConfig(config) {
-  try {
-    if (!config || (!config.apiKey && !config.projectId)) {
-      localStorage.removeItem('firebase_custom_config');
-    } else {
-      const normalized = normalizeFirebaseClientConfig(config);
-      localStorage.setItem('firebase_custom_config', JSON.stringify(normalized));
+export function saveActiveFirebaseConfig(newConfig) {
+  const cleaned = normalizeFirebaseClientConfig(newConfig);
+  if (cleaned.apiKey && cleaned.apiKey !== '__SECRET_CONFIGURED__') {
+    try {
+      localStorage.setItem(FIREBASE_OVERRIDE_STORAGE_KEY, JSON.stringify(cleaned));
+    } catch {
+      // Ignore storage write errors
     }
-    firestoreDb = null;
-    firestoreDbKey = '';
-    return true;
-  } catch (e) {
-    console.error('Failed saving custom Firebase config:', e);
-    return false;
   }
+  if (cleaned.projectId) {
+    runtimeServerFirebaseConfig = {
+      ...cleaned,
+      hasEnvApiKey: Boolean(newConfig?.hasEnvApiKey || runtimeServerFirebaseConfig?.hasEnvApiKey || cleaned.apiKey)
+    };
+  }
+  return cleaned;
 }
 
 export function clearActiveFirebaseConfig() {
   try {
-    localStorage.removeItem('firebase_custom_config');
-    firestoreDb = null;
-    firestoreDbKey = '';
-    return true;
+    localStorage.removeItem(FIREBASE_OVERRIDE_STORAGE_KEY);
   } catch {
-    return false;
+    // Ignore storage errors
   }
 }
 
-/**
- * Initialize or retrieve Firestore instance for the active (or candidate) config.
- * Uses named Firebase apps keyed by project + database + apiKey suffix so changing
- * Firebase keys in Admin Studio immediately switches to the new Firebase project.
- */
-export function getFirestoreInstance(candidateConfig = null) {
-  const active = getActiveFirebaseConfig(candidateConfig);
-  if (!isRealFirebaseConfig(active)) return null;
-
-  const targetKey = `cms-${active.projectId}-${active.databaseId || 'default'}-${active.apiKey.slice(-6)}`;
-  if (!candidateConfig && firestoreDb && firestoreDbKey === targetKey) {
-    return firestoreDb;
-  }
-
-  try {
-    const existingApp = getApps().find((a) => a.name === targetKey);
-    const appInstance =
-      existingApp ||
-      initializeApp(
-        {
-          apiKey: active.apiKey,
-          authDomain: active.authDomain,
-          projectId: active.projectId,
-          storageBucket: active.storageBucket,
-          messagingSenderId: active.messagingSenderId,
-          appId: active.appId
-        },
-        targetKey
-      );
-
-    const db =
-      active.databaseId && active.databaseId !== '(default)'
-        ? getFirestore(appInstance, active.databaseId)
-        : getFirestore(appInstance);
-
-    if (!candidateConfig) {
-      firestoreDb = db;
-      firestoreDbKey = targetKey;
-    }
-    return db;
-  } catch (err) {
-    console.warn('Firestore initialization notice:', err.message);
-    return null;
-  }
-}
+export const saveCustomFirebaseConfig = saveActiveFirebaseConfig;
+export const clearCustomFirebaseConfig = clearActiveFirebaseConfig;
 
 /**
- * Test Firebase Firestore connectivity via both Browser SDK (`getDoc`) & Server REST (`/api/firebase/test`)
+ * Test live Firestore connectivity via authenticated server endpoint `/api/firebase/test`
  */
-export async function testFirebaseConnectionRemote(candidateConfig = null) {
-  const active = getActiveFirebaseConfig(candidateConfig);
-  if (!isRealFirebaseConfig(active)) {
-    return {
-      success: false,
-      code: 'unconfigured',
-      error: 'Valid Firebase API Key (AIza...) and Project ID are required before testing.'
-    };
-  }
-
-  const db = getFirestoreInstance(candidateConfig);
-  let sdkError = null;
-  if (db) {
-    try {
-      const configRef = doc(db, 'siteConfig', 'main');
-      const snap = await getDoc(configRef);
-      return {
-        success: true,
-        via: 'firebase-sdk',
-        documentExists: snap.exists(),
-        cloudConfig: snap.exists() ? mergeSiteConfig(snap.data(), MASTER_DEFAULT_CONFIG) : null,
-        projectId: active.projectId,
-        databaseId: active.databaseId,
-        message: snap.exists()
-          ? `Connected to Firebase Firestore (${active.projectId}) — live siteConfig/main document synced.`
-          : `Connected to Firebase Firestore (${active.projectId}). Document siteConfig/main will be created when you publish.`
-      };
-    } catch (err) {
-      sdkError = err;
-    }
-  }
-
-  // Fallback / diagnostic verification via server REST endpoint
-  const token = getAdminAuthToken();
+export async function testFirebaseConnectionRemote(customConfig = null) {
   try {
     const res = await fetch('/api/firebase/test', {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        'X-Admin-CSRF': '1'
       },
-      body: JSON.stringify({ firebaseConfig: active })
+      body: JSON.stringify(customConfig ? { firebaseConfig: customConfig } : {})
     });
-    const parsed = await safeReadJsonResponse(res);
-    if (res.ok && parsed.data?.success) {
-      return {
-        ...parsed.data,
-        via: 'rest-diagnostic'
-      };
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.success) {
+      if (data.firebaseConfig) setServerEnvFirebaseConfig(data.firebaseConfig);
+      return data;
     }
     return {
       success: false,
-      code: parsed.data?.code || sdkError?.code || 'connection-failed',
-      error: parsed.data?.error || sdkError?.message || `Firestore check returned HTTP ${res.status}`
+      error: data?.error || `Firestore connection test failed (HTTP ${res.status}).`
     };
   } catch (err) {
     return {
       success: false,
-      code: sdkError?.code || 'network-error',
-      error: sdkError?.message || err.message || 'Could not reach Firebase Firestore.'
+      error: err?.message || 'Network error testing Firebase connection.'
     };
   }
 }
 
-const partialRouteMemoryCache = new Map();
-
-export function getInitialPartialRouteSync(pathname = '/', newsCategory = 'ALL') {
-  const cleanPath = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
-  const cacheKey = `${cleanPath}::${newsCategory}`;
-
-  if (partialRouteMemoryCache.has(cacheKey)) {
-    return partialRouteMemoryCache.get(cacheKey);
-  }
-
-  try {
-    const raw = localStorage.getItem('siteConfig_main');
-    if (raw) {
-      const cfg = mergeSiteConfig(JSON.parse(raw), MASTER_DEFAULT_CONFIG);
-      const computed = buildPartialRoutePayload(cleanPath, cfg, newsCategory);
-      partialRouteMemoryCache.set(cacheKey, computed);
-      return computed;
-    }
-  } catch {
-    // Ignore
-  }
-
-  return null;
-}
-
-export function clearPartialRouteCache() {
-  partialRouteMemoryCache.clear();
-}
-
-export function getCachedSiteConfigSync() {
-  try {
-    const raw = localStorage.getItem('siteConfig_main');
-    if (raw) {
-      return mergeSiteConfig(JSON.parse(raw), MASTER_DEFAULT_CONFIG);
-    }
-  } catch {
-    // Ignore parse error
-  }
-  return mergeSiteConfig(null, MASTER_DEFAULT_CONFIG);
-}
-
 /**
- * Fetch LIVE site configuration for Admin Studio directly from Firebase Cloud Firestore
- * (`siteConfig/main`) and Live Backend API (`/api/config`).
+ * Fetch live site configuration from authenticated `/api/config`
+ * (Server reads directly from Firebase Firestore when configured; zero static demo fallback!)
  */
 export async function getSiteConfigRemote() {
-  let latestConfig = null;
-  const token = getAdminAuthToken();
-
-  // 1. Fetch from Protected Live Backend API (/api/config with cache: 'no-store')
   try {
-    const response = await fetch('/api/config', {
-      cache: 'no-store',
+    const res = await fetch('/api/config', {
+      method: 'GET',
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        'Cache-Control': 'no-cache'
       }
     });
-    if (response.ok) {
-      const parsed = await safeReadJsonResponse(response);
-      const data = parsed.data;
-      if (data?.firebaseEnv?.isConfigured && data.firebaseEnv.config) {
-        serverInjectedFirebaseConfig = data.firebaseEnv.config;
-      }
-      if (data?.envDiagnostics) {
-        lastEnvDiagnostics = data.envDiagnostics;
-      }
-      if (data?.config) {
-        latestConfig = mergeSiteConfig(data.config, MASTER_DEFAULT_CONFIG);
-      }
-    }
-  } catch (err) {
-    console.warn('Server API fetch fallback:', err.message);
-  }
+    if (!res.ok) return inMemoryCachedConfig;
+    const data = await res.json().catch(() => null);
+    if (!data) return inMemoryCachedConfig;
 
-  // 2. If Firebase Firestore is configured, fetch live 'siteConfig/main' from Firestore
-  const db = getFirestoreInstance();
-  if (db) {
-    try {
-      const configRef = doc(db, 'siteConfig', 'main');
-      const snap = await getDoc(configRef);
-      if (snap.exists()) {
-        const cloudData = mergeSiteConfig(snap.data(), MASTER_DEFAULT_CONFIG);
-        if (!latestConfig || (cloudData.updatedAt || 0) >= (latestConfig.updatedAt || 0)) {
-          latestConfig = cloudData;
-        }
-      }
-    } catch (err) {
-      console.warn('Firestore read notice:', err.message);
+    const fbCfg = data.firebaseEnv?.config || data.firebaseConfig || data._firebaseConfig;
+    if (fbCfg) {
+      setServerEnvFirebaseConfig(fbCfg);
     }
-  }
-
-  if (latestConfig) {
-    try {
-      localStorage.setItem('siteConfig_main', JSON.stringify(latestConfig));
-      clearPartialRouteCache();
-    } catch {
-      // Ignore storage quota warning
+    const envDiag = data.envDiagnostics || data._envDiagnostics;
+    if (envDiag) {
+      lastEnvDiagnostics = envDiag;
     }
-    return latestConfig;
-  }
 
-  return getCachedSiteConfigSync();
+    const rawCfg = data.config && typeof data.config === 'object' ? data.config : data;
+    inMemoryCachedConfig = mergeSiteConfig(rawCfg, EMPTY_ADMIN_CONFIG);
+    return inMemoryCachedConfig;
+  } catch {
+    return inMemoryCachedConfig;
+  }
 }
 
 /**
- * Save Live Admin Configuration to Firebase Cloud Firestore (`siteConfig/main`)
- * and Server Live Storage (`PUT /api/config`), which also re-compiles the local
- * static public bundle (`/dist-public` & `/public/static-routes`).
- * If `githubConfig.autoPushOnPublish` is enabled and a Fine-Grained Token is set,
- * automatically pushes the compiled static files to GitHub as well!
+ * Save full configuration to live Firebase & compile static public routes
  */
-export async function saveSiteConfigRemote(configData) {
-  const normalized = mergeSiteConfig(configData, MASTER_DEFAULT_CONFIG);
-  normalized.updatedAt = Date.now();
-  clearPartialRouteCache();
-
-  try {
-    localStorage.setItem('siteConfig_main', JSON.stringify(normalized));
-  } catch (e) {
-    console.warn('LocalStorage write warning:', e);
-  }
-
-  let serverSaved = false;
-  let firestoreSaved = false;
-  let githubPushResult = null;
-  let savedServerConfig = null;
-  let serverError = null;
-  let firestoreError = null;
-
-  // 1. Save to Firebase Cloud Firestore (`siteConfig/main`) first if configured
-  const db = getFirestoreInstance();
-  if (db) {
-    try {
-      const configRef = doc(db, 'siteConfig', 'main');
-      await setDoc(configRef, normalized, { merge: true });
-      firestoreSaved = true;
-    } catch (err) {
-      firestoreError = err.message;
-    }
-  }
-
-  // 2. Save to Backend Server API (which also compiles static public HTML/JSON files)
-  const token = getAdminAuthToken();
-  try {
-    const res = await fetch('/api/config', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ config: normalized })
-    });
-    if (res.ok) {
-      const resData = await res.json();
-      serverSaved = true;
-      if (resData.githubPush) {
-        githubPushResult = resData.githubPush;
-      }
-      if (resData.config) {
-        savedServerConfig = resData.config;
-        localStorage.setItem('siteConfig_main', JSON.stringify(resData.config));
-      }
-    } else {
-      const errBody = await res.json().catch(() => ({}));
-      serverError = errBody.error || `HTTP ${res.status}`;
-    }
-  } catch (err) {
-    serverError = err.message;
-  }
-
-  const githubSuffix =
-    githubPushResult && githubPushResult.status === 'success'
-      ? ` + Pushed ${githubPushResult.filesPushed} static files to GitHub (${githubPushResult.commitSha?.slice(0, 7)})!`
-      : '';
-
-  if (serverSaved && firestoreSaved) {
+export async function saveSiteConfigRemote(config, editedModules = []) {
+  const payload = {
+    ...config,
+    _editedModules: Array.isArray(editedModules) ? editedModules : []
+  };
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Admin-CSRF': '1'
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) {
     return {
-      success: true,
-      mode: 'server+firestore',
-      config: savedServerConfig || normalized,
-      githubPush: githubPushResult,
-      message: `Saved to Live Firebase Firestore & Compiled Static Public Website${githubSuffix}`
+      success: false,
+      error: data?.error || `Failed to save configuration (HTTP ${res.status}).`
     };
   }
+  if (data.config) {
+    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+  }
+  return data;
+}
 
-  if (serverSaved) {
+/**
+ * Save a single isolated module (`PATCH /api/config/module`) to live Firebase
+ */
+export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
+  const res = await fetch('/api/config/module', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Admin-CSRF': '1'
+    },
+    body: JSON.stringify({
+      moduleKey,
+      module: moduleKey,
+      data: dataPayload
+    })
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) {
     return {
-      success: true,
-      mode: 'server',
-      config: savedServerConfig || normalized,
-      githubPush: githubPushResult,
-      message: firestoreError
-        ? `Saved & Compiled Static Public Files! (Firestore notice: ${firestoreError})`
-        : `Saved Live Admin State & Compiled Static Public Website!${githubSuffix}`
+      success: false,
+      error: data?.error || `Failed to save module [${moduleKey}] (HTTP ${res.status}).`
     };
   }
-
-  if (firestoreSaved) {
-    return {
-      success: true,
-      mode: 'firestore',
-      config: normalized,
-      message: 'Saved to Live Firebase Cloud Firestore!'
-    };
+  if (data.config) {
+    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
   }
-
   return {
-    success: false,
-    mode: 'local-only',
-    error: serverError || firestoreError || 'Could not reach server storage.'
+    ...data,
+    message: data.message || `Saved module [${moduleKey}]`
   };
 }
 
 /**
- * Verify GitHub Fine-Grained Personal Access Token & Repository Write Permissions
+ * Save multiple edited modules atomically (`PATCH /api/config/modules`) to live Firebase
  */
-export async function verifyGitHubRepoRemote(githubConfig) {
-  const token = getAdminAuthToken();
-  try {
-    const res = await fetch('/api/github/verify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ githubConfig })
-    });
-    const data = await res.json();
-    const isOk = Boolean(data.ok || data.success);
+export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules = []) {
+  const res = await fetch('/api/config/modules', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Admin-CSRF': '1'
+    },
+    body: JSON.stringify({
+      modules: modulesMap,
+      editedModules
+    })
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) {
     return {
-      ...data,
-      ok: isOk,
-      success: isOk,
-      fullName: data.repoFullName || data.fullName || '',
-      defaultBranch: data.defaultBranch || 'main',
-      private: Boolean(data.privateRepo ?? data.private),
-      canPush: Boolean(isOk && (data.permissions?.push ?? true)),
-      error: isOk ? null : data.message || data.error || 'Repository verification failed.'
-    };
-  } catch (err) {
-    return {
-      ok: false,
       success: false,
-      message: `Could not reach GitHub verification endpoint: ${err.message}`,
-      error: `Could not reach GitHub verification endpoint: ${err.message}`
+      error: data?.error || `Failed to save modules batch (HTTP ${res.status}).`
     };
   }
+  if (data.config) {
+    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+  }
+  return data;
 }
 
 /**
- * Compile 100% Static Public Website Bundle & Push Atomic Commit to GitHub
- * via Fine-Grained Token (`POST /api/github/publish`).
- * Supports calling as `(githubConfig, siteConfig)` or `(siteConfig, customCommitMessage)`.
+ * Reset Admin Studio & Live Firebase to clean EMPTY_ADMIN_CONFIG (Zero static demo data)
  */
-export async function publishStaticSiteToGitHubRemote(firstArg, secondArg = '') {
-  const token = getAdminAuthToken();
-  let configData = firstArg;
-  let customCommitMessage = typeof secondArg === 'string' ? secondArg : '';
-
-  if (
-    secondArg &&
-    typeof secondArg === 'object' &&
-    firstArg &&
-    typeof firstArg === 'object' &&
-    ('repoOwner' in firstArg || 'fineGrainedToken' in firstArg)
-  ) {
-    configData = {
-      ...secondArg,
-      githubConfig: {
-        ...(secondArg.githubConfig || {}),
-        ...firstArg
-      }
-    };
-    customCommitMessage = firstArg.commitMessage || secondArg.githubConfig?.commitMessage || '';
+export async function resetSiteConfigRemote() {
+  const res = await fetch('/api/config/reset', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Admin-CSRF': '1'
+    },
+    body: JSON.stringify({})
+  });
+  const data = await res.json().catch(() => null);
+  if (res.ok && data?.config) {
+    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+    return inMemoryCachedConfig;
   }
-
-  const normalized = mergeSiteConfig(configData, MASTER_DEFAULT_CONFIG);
-
-  // Also sync latest config to Firebase Firestore if active
-  const db = getFirestoreInstance();
-  if (db) {
-    try {
-      const configRef = doc(db, 'siteConfig', 'main');
-      await setDoc(configRef, normalized, { merge: true });
-    } catch {
-      // Non-fatal
-    }
-  }
-
-  try {
-    const res = await fetch('/api/github/publish', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({
-        config: normalized,
-        commitMessage: customCommitMessage
-      })
-    });
-    const data = await res.json();
-    if (data.config) {
-      localStorage.setItem('siteConfig_main', JSON.stringify(data.config));
-    }
-    const pub = data.publishResult || {};
-    const isOk = Boolean(data.success && (pub.ok ?? true));
-    return {
-      ...data,
-      success: isOk,
-      ok: isOk,
-      filesCount: pub.filesPushed || data.compiledBundle?.totalFiles || 0,
-      compiledLocalFiles: data.compiledBundle?.totalFiles || 0,
-      commitSha: pub.commitSha || '',
-      commitUrl: pub.commitUrl || '',
-      error: isOk ? null : pub.message || data.error || 'GitHub publish failed.'
-    };
-  } catch (err) {
-    return {
-      success: false,
-      ok: false,
-      error: `Failed to publish static site to GitHub: ${err.message}`
-    };
-  }
+  inMemoryCachedConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
+  return inMemoryCachedConfig;
 }
 
 /**
- * Upload an image file from the Admin's device to `/api/upload-image`
+ * Upload an image file from smartphone/desktop via `/api/upload-image`
  */
 export async function uploadImageRemote(file) {
-  if (!file) return { success: false, error: 'No file selected.' };
-  const token = getAdminAuthToken();
-
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Could not read image file.'));
-    reader.readAsDataURL(file);
-  });
-
   try {
+    const reader = new FileReader();
+    const dataUrl = await new Promise((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read image file'));
+      reader.readAsDataURL(file);
+    });
+
     const res = await fetch('/api/upload-image', {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
       },
       body: JSON.stringify({
-        fileName: file.name || 'upload.png',
+        fileName: file.name || `upload-${Date.now()}.png`,
+        contentType: file.type || 'image/png',
         dataUrl
       })
     });
-    const data = await res.json();
-    if (res.ok && data.success && data.url) {
-      return { success: true, url: data.url, fileName: data.fileName };
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.success && data?.url) {
+      return { success: true, url: data.url };
     }
-    return { success: false, error: data.error || 'Image upload failed.' };
+    return { success: false, error: data?.error || 'Image upload failed.' };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err?.message || 'Image upload error.' };
   }
 }
 
 /**
- * Reset configuration to Master Default Template
+ * Verify GitHub repository & Fine-Grained Token access (`POST /api/github/verify`)
  */
-export async function resetSiteConfigRemote() {
-  const token = getAdminAuthToken();
-  clearPartialRouteCache();
+export async function verifyGitHubRepoRemote(ghPayload) {
   try {
-    const res = await fetch('/api/config/reset', {
+    const res = await fetch('/api/github/verify', {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
+      },
+      body: JSON.stringify(ghPayload || {})
     });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.config) {
-        localStorage.setItem('siteConfig_main', JSON.stringify(data.config));
-        return data.config;
-      }
-    }
+    const data = await res.json().catch(() => null);
+    return data || { success: false, error: `HTTP ${res.status}` };
   } catch (err) {
-    console.warn('Server reset fallback:', err);
+    return { success: false, error: err?.message || 'Network error verifying GitHub access.' };
   }
-  const fresh = mergeSiteConfig(null, MASTER_DEFAULT_CONFIG);
-  localStorage.setItem('siteConfig_main', JSON.stringify(fresh));
-  return fresh;
 }
 
 /**
- * Subscribe to real-time updates in Admin Studio (Firestore snapshot + storage sync)
+ * Compile static public website & push changed blobs to GitHub (`POST /api/github/publish`)
  */
-export function subscribeToSiteConfig(onUpdate) {
-  const unsubscribers = [];
-
-  const storageHandler = (e) => {
-    if (e.key === 'siteConfig_main' && e.newValue) {
-      try {
-        clearPartialRouteCache();
-        onUpdate(mergeSiteConfig(JSON.parse(e.newValue), MASTER_DEFAULT_CONFIG));
-      } catch {
-        // Ignore
-      }
-    }
-  };
-  window.addEventListener('storage', storageHandler);
-  unsubscribers.push(() => window.removeEventListener('storage', storageHandler));
-
-  const db = getFirestoreInstance();
-  if (db) {
-    try {
-      const configRef = doc(db, 'siteConfig', 'main');
-      const unsubFirestore = onSnapshot(
-        configRef,
-        (docSnap) => {
-          if (docSnap.exists()) {
-            clearPartialRouteCache();
-            const merged = mergeSiteConfig(docSnap.data(), MASTER_DEFAULT_CONFIG);
-            localStorage.setItem('siteConfig_main', JSON.stringify(merged));
-            onUpdate(merged);
-          }
-        },
-        (err) => {
-          console.warn('Firestore listener notice:', err.message);
-        }
-      );
-      unsubscribers.push(unsubFirestore);
-    } catch {
-      // Ignore
-    }
-  }
-
-  return () => {
-    unsubscribers.forEach((fn) => fn());
-  };
-}
-
-/**
- * Server-Backed Admin Authentication Helpers
- */
-const ADMIN_TOKEN_KEY = 'cms_admin_bearer_token';
-const ADMIN_USER_KEY = 'cms_admin_user_info';
-
-export function getAdminAuthToken() {
+export async function publishStaticSiteToGitHubRemote(payload) {
   try {
-    return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
-  } catch {
-    return '';
+    const res = await fetch('/api/github/publish', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
+      },
+      body: JSON.stringify(payload || {})
+    });
+    const data = await res.json().catch(() => null);
+    if (data?.config) {
+      inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+    }
+    return data || { success: false, error: `HTTP ${res.status}` };
+  } catch (err) {
+    return { success: false, error: err?.message || 'Network error pushing to GitHub.' };
   }
 }
 
-export async function loginAdminUser(email, password, apiKey = '') {
+/**
+ * Authenticate Admin User (`POST /api/admin/login`)
+ * Supports both `loginAdminUser(email, password, apiKey)` and `loginAdminUser({ email, password, apiKey })`.
+ */
+export async function loginAdminUser(emailOrObj, password = '', apiKey = '') {
+  const payload =
+    emailOrObj && typeof emailOrObj === 'object'
+      ? emailOrObj
+      : {
+          email: String(emailOrObj || ''),
+          password: String(password || ''),
+          apiKey: String(apiKey || '')
+        };
+
   try {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'application/json'
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
       },
-      body: JSON.stringify({ email, password, apiKey })
+      body: JSON.stringify(payload)
     });
-
-    const contentType = res.headers.get('content-type') || '';
-    const parsed = await safeReadJsonResponse(res);
-    const data = parsed.data;
-
-    if (!parsed.ok || !data) {
-      if (res.status === 404) {
-        return {
-          success: false,
-          error:
-            'Admin login endpoint returned HTTP 404. Ensure the "functions" directory is deployed on Cloudflare Pages.'
-        };
-      }
-      return {
-        success: false,
-        error: `Authentication endpoint returned HTTP ${res.status} (${contentType || 'empty response'}). Check deployment logs.`
-      };
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.success) {
+      const fbCfg = data.firebaseEnv?.config || data.firebaseConfig;
+      if (fbCfg) setServerEnvFirebaseConfig(fbCfg);
+      if (data.envDiagnostics) lastEnvDiagnostics = data.envDiagnostics;
+      return { success: true, user: data.user };
     }
-
-    if (!res.ok || !data.success) {
-      return {
-        success: false,
-        error:
-          data.error ||
-          'Invalid credentials. Check ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.'
-      };
-    }
-
-    localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
-    localStorage.setItem(ADMIN_USER_KEY, JSON.stringify(data.user));
-    if (data.envDiagnostics) {
-      lastEnvDiagnostics = data.envDiagnostics;
-      if (data.envDiagnostics.firebaseConfig) {
-        serverInjectedFirebaseConfig = data.envDiagnostics.firebaseConfig;
-      }
-    }
-    return {
-      success: true,
-      user: data.user,
-      envDiagnostics: data.envDiagnostics
-    };
-  } catch (err) {
     return {
       success: false,
-      error: `Authentication request failed: ${err.message}`
+      error: data?.error || 'Invalid credentials or access key.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Network error connecting to authentication service.'
     };
   }
 }
 
+/**
+ * Verify active HttpOnly Admin Session (`GET /api/admin/verify`)
+ */
 export async function verifyAdminSession() {
-  const token = getAdminAuthToken();
   try {
     const res = await fetch('/api/admin/verify', {
-      cache: 'no-store',
+      method: 'GET',
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        'Cache-Control': 'no-cache'
       }
     });
-
-    const parsed = await safeReadJsonResponse(res);
-    if (res.ok && parsed.ok && parsed.data) {
-      const data = parsed.data;
-      if (data.envDiagnostics) {
-        lastEnvDiagnostics = data.envDiagnostics;
-        if (data.envDiagnostics.firebaseConfig) {
-          serverInjectedFirebaseConfig = data.envDiagnostics.firebaseConfig;
-        }
-      }
-      return data;
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.authenticated) {
+      if (data.firebaseConfig) setServerEnvFirebaseConfig(data.firebaseConfig);
+      if (data.envDiagnostics) lastEnvDiagnostics = data.envDiagnostics;
+      return { authenticated: true, user: data.user };
     }
-  } catch (err) {
-    console.warn('Verify session warning:', err.message);
+    return { authenticated: false, user: null };
+  } catch {
+    return { authenticated: false, user: null };
   }
-  return { authenticated: false, user: null, loginHints: {}, envDiagnostics: {} };
 }
 
+/**
+ * Logout Admin User & Revoke Session JTI (`POST /api/admin/logout`)
+ */
 export async function logoutAdminUser() {
   try {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-    localStorage.removeItem(ADMIN_USER_KEY);
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
+      }
+    });
   } catch {
-    // Ignore
+    // Ignore logout network error
   }
+  inMemoryCachedConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
+  return { success: true };
 }
