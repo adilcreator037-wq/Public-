@@ -67,13 +67,17 @@ function getAdminAuthEnv(reqHost = '') {
 
   const email =
     cleanEnvVal(process.env.ADMIN_EMAIL) ||
+    cleanEnvVal(process.env.ADMIN_EMAIL_ID) ||
+    cleanEnvVal(process.env.ADMIN_ID) ||
     cleanEnvVal(process.env.ADMIN_USER) ||
     cleanEnvVal(process.env.ADMIN_USERNAME) ||
-    cleanEnvVal(process.env.CMS_ADMIN_EMAIL);
+    cleanEnvVal(process.env.CMS_ADMIN_EMAIL) ||
+    cleanEnvVal(process.env.CMS_ADMIN_EMAIL_ID);
 
   const password =
     cleanEnvVal(process.env.ADMIN_PASSWORD) ||
     cleanEnvVal(process.env.ADMIN_PASS) ||
+    cleanEnvVal(process.env.ADMIN_PWD) ||
     cleanEnvVal(process.env.CMS_ADMIN_PASSWORD);
 
   const apiKey =

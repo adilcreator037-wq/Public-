@@ -570,22 +570,6 @@ export function appendSyncLogEntry(
 }
 
 const PLACEHOLDER_PREFIX_RE = /^(replace-with-|your[-_]|changeme|example[-_])/i;
-const COMMON_WEAK_PASSWORDS = new Set([
-  'password',
-  'password1',
-  'password123',
-  '12345678',
-  '123456789',
-  '1234567890',
-  'admin123',
-  'admin1234',
-  'administrator',
-  'qwerty123',
-  'qwertyui',
-  'letmein1',
-  'welcome1',
-  'passw0rd'
-]);
 
 export function cleanAuthEnvValue(v: unknown): string {
   return v
@@ -597,13 +581,13 @@ export function cleanAuthEnvValue(v: unknown): string {
     : '';
 }
 
-function isWeakSecretOrPassword(val: string, email = '', minLen = 8): boolean {
-  if (!val || val.length < minLen) return true;
+function isPlaceholderCredentialValue(val: string): boolean {
+  if (!val) return true;
   if (PLACEHOLDER_PREFIX_RE.test(val)) return true;
   const lowered = val.toLowerCase();
-  if (COMMON_WEAK_PASSWORDS.has(lowered)) return true;
-  if (email && lowered === email.toLowerCase()) return true;
-  if (new Set(val).size < 4) return true;
+  if (lowered === 'replace-with-password' || lowered === 'replace-with-secret' || lowered === 'changeme') {
+    return true;
+  }
   return false;
 }
 
@@ -662,9 +646,9 @@ export function validateAdminSessionClaims(
  * Determine if the current runtime is local vs deployed and strictly enforce
  * fail-closed Admin credentials in ALL environments.
  * Zero default credentials or hardcoded signing secrets ever exist.
- * When ADMIN_EMAIL + ADMIN_PASSWORD (or ADMIN_API_KEY) are set securely without
- * an explicit ADMIN_SESSION_SECRET, runtimes derive a domain-separated session
- * signing key via HMAC-SHA256 / SHA-256 from configured server secrets.
+ * Accepts any valid email + non-placeholder password configured in environment
+ * secrets (including 6-char passwords) and stretches optional custom session
+ * secrets cleanly via HMAC-SHA256.
  */
 export function resolveAdminSecurityPolicy(
   env: Record<string, any> = {},
@@ -682,12 +666,16 @@ export function resolveAdminSecurityPolicy(
 } {
   const rawEmail =
     cleanAuthEnvValue(env.ADMIN_EMAIL) ||
+    cleanAuthEnvValue(env.ADMIN_EMAIL_ID) ||
+    cleanAuthEnvValue(env.ADMIN_ID) ||
     cleanAuthEnvValue(env.ADMIN_USER) ||
     cleanAuthEnvValue(env.ADMIN_USERNAME) ||
-    cleanAuthEnvValue(env.CMS_ADMIN_EMAIL);
+    cleanAuthEnvValue(env.CMS_ADMIN_EMAIL) ||
+    cleanAuthEnvValue(env.CMS_ADMIN_EMAIL_ID);
   const rawPass =
     cleanAuthEnvValue(env.ADMIN_PASSWORD) ||
     cleanAuthEnvValue(env.ADMIN_PASS) ||
+    cleanAuthEnvValue(env.ADMIN_PWD) ||
     cleanAuthEnvValue(env.CMS_ADMIN_PASSWORD);
   const rawSecret =
     cleanAuthEnvValue(env.ADMIN_SESSION_SECRET) ||
@@ -701,26 +689,26 @@ export function resolveAdminSecurityPolicy(
   const isCloudflarePages = Boolean(cleanAuthEnvValue(env.CF_PAGES) || cleanAuthEnvValue(env.CF_PAGES_URL));
   const isProduction = nodeEnvProd || (isCloudflarePages && !isLocalHost) || (!isLocalHost && Boolean(hostOnly));
 
-  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !PLACEHOLDER_PREFIX_RE.test(rawEmail));
-  const hasValidPassword = !isWeakSecretOrPassword(rawPass, rawEmail, 8);
-  const hasExplicitSecret = !isWeakSecretOrPassword(rawSecret, rawEmail, 16);
-  const hasExplicitWeakSecret = Boolean(rawSecret) && !hasExplicitSecret;
-  const hasValidApiKey = !isWeakSecretOrPassword(rawApiKey, rawEmail, 16);
+  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !isPlaceholderCredentialValue(rawEmail));
+  const hasValidPassword = Boolean(rawPass && rawPass.length >= 1 && !isPlaceholderCredentialValue(rawPass));
+  const hasExplicitSecret = Boolean(rawSecret && rawSecret.length >= 1 && !isPlaceholderCredentialValue(rawSecret));
+  const hasExplicitPlaceholderSecret = Boolean(rawSecret) && !hasExplicitSecret;
+  const hasValidApiKey = Boolean(rawApiKey && rawApiKey.length >= 8 && !isPlaceholderCredentialValue(rawApiKey));
 
   const hasCustomEmail = hasValidEmail;
   const hasCustomPassword = hasValidPassword;
   const hasApiKey = hasValidApiKey;
   const hasValidAuthMethod = (hasValidEmail && hasValidPassword) || hasValidApiKey;
-  const hasDerivedSecret = Boolean(!rawSecret && hasValidAuthMethod);
+  const hasDerivedSecret = Boolean(!hasExplicitSecret && hasValidAuthMethod);
   const hasCustomSecret = hasExplicitSecret || hasDerivedSecret;
 
-  if (!hasValidAuthMethod || hasExplicitWeakSecret) {
+  if (!hasValidAuthMethod || hasExplicitPlaceholderSecret) {
     const missingParts: string[] = [];
     if (!hasValidAuthMethod) {
-      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD (min 8 strong chars)');
+      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD');
     }
-    if (hasExplicitWeakSecret) {
-      missingParts.push('valid ADMIN_SESSION_SECRET (min 16 strong chars)');
+    if (hasExplicitPlaceholderSecret) {
+      missingParts.push('non-placeholder ADMIN_SESSION_SECRET');
     }
     return {
       isProduction,

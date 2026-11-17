@@ -224,43 +224,31 @@ export function isCmsModuleKey(value) {
 }
 
 const PLACEHOLDER_PREFIX_RE = /^(replace-with-|your[-_]|changeme|example[-_])/i;
-const COMMON_WEAK_PASSWORDS_EDGE = new Set([
-  'password',
-  'password1',
-  'password123',
-  '12345678',
-  '123456789',
-  '1234567890',
-  'admin123',
-  'admin1234',
-  'administrator',
-  'qwerty123',
-  'qwertyui',
-  'letmein1',
-  'welcome1',
-  'passw0rd'
-]);
 
-function isWeakSecretOrPasswordEdge(val, email = '', minLen = 8) {
-  if (!val || val.length < minLen) return true;
+function isPlaceholderCredentialValueEdge(val) {
+  if (!val) return true;
   if (PLACEHOLDER_PREFIX_RE.test(val)) return true;
   const lowered = val.toLowerCase();
-  if (COMMON_WEAK_PASSWORDS_EDGE.has(lowered)) return true;
-  if (email && lowered === email.toLowerCase()) return true;
-  if (new Set(val).size < 4) return true;
+  if (lowered === 'replace-with-password' || lowered === 'replace-with-secret' || lowered === 'changeme') {
+    return true;
+  }
   return false;
 }
 
 export function resolveAdminSecurityPolicyEdge(env = {}, reqHost = '') {
   const rawEmail =
     cleanEnvVal(env.ADMIN_EMAIL) ||
+    cleanEnvVal(env.ADMIN_EMAIL_ID) ||
+    cleanEnvVal(env.ADMIN_ID) ||
     cleanEnvVal(env.ADMIN_USER) ||
     cleanEnvVal(env.ADMIN_USERNAME) ||
-    cleanEnvVal(env.CMS_ADMIN_EMAIL);
+    cleanEnvVal(env.CMS_ADMIN_EMAIL) ||
+    cleanEnvVal(env.CMS_ADMIN_EMAIL_ID);
 
   const rawPass =
     cleanEnvVal(env.ADMIN_PASSWORD) ||
     cleanEnvVal(env.ADMIN_PASS) ||
+    cleanEnvVal(env.ADMIN_PWD) ||
     cleanEnvVal(env.CMS_ADMIN_PASSWORD);
 
   const rawSecret =
@@ -276,23 +264,23 @@ export function resolveAdminSecurityPolicyEdge(env = {}, reqHost = '') {
   const isCfPages = Boolean(cleanEnvVal(env.CF_PAGES) || cleanEnvVal(env.CF_PAGES_URL));
   const isProduction = nodeEnvProd || (isCfPages && !isLocalHost) || (!isLocalHost && Boolean(hostOnly));
 
-  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !PLACEHOLDER_PREFIX_RE.test(rawEmail));
-  const hasValidPassword = !isWeakSecretOrPasswordEdge(rawPass, rawEmail, 8);
-  const hasExplicitSecret = !isWeakSecretOrPasswordEdge(rawSecret, rawEmail, 16);
-  const hasExplicitWeakSecret = Boolean(rawSecret) && !hasExplicitSecret;
-  const hasValidApiKey = !isWeakSecretOrPasswordEdge(rawApiKey, rawEmail, 16);
+  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !isPlaceholderCredentialValueEdge(rawEmail));
+  const hasValidPassword = Boolean(rawPass && rawPass.length >= 1 && !isPlaceholderCredentialValueEdge(rawPass));
+  const hasExplicitSecret = Boolean(rawSecret && rawSecret.length >= 1 && !isPlaceholderCredentialValueEdge(rawSecret));
+  const hasExplicitPlaceholderSecret = Boolean(rawSecret) && !hasExplicitSecret;
+  const hasValidApiKey = Boolean(rawApiKey && rawApiKey.length >= 8 && !isPlaceholderCredentialValueEdge(rawApiKey));
 
   const hasValidAuthMethod = (hasValidEmail && hasValidPassword) || hasValidApiKey;
-  const hasDerivedSecret = Boolean(!rawSecret && hasValidAuthMethod);
+  const hasDerivedSecret = Boolean(!hasExplicitSecret && hasValidAuthMethod);
   const hasCustomSecret = hasExplicitSecret || hasDerivedSecret;
 
-  if (!hasValidAuthMethod || hasExplicitWeakSecret) {
+  if (!hasValidAuthMethod || hasExplicitPlaceholderSecret) {
     const missingParts = [];
     if (!hasValidAuthMethod) {
-      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD (min 8 strong chars)');
+      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD');
     }
-    if (hasExplicitWeakSecret) {
-      missingParts.push('valid ADMIN_SESSION_SECRET (min 16 strong chars)');
+    if (hasExplicitPlaceholderSecret) {
+      missingParts.push('non-placeholder ADMIN_SESSION_SECRET');
     }
     return {
       isProduction,
@@ -325,13 +313,17 @@ export function getAdminCredentials(env = {}, reqHost = '') {
 
   const email =
     cleanEnvVal(env.ADMIN_EMAIL) ||
+    cleanEnvVal(env.ADMIN_EMAIL_ID) ||
+    cleanEnvVal(env.ADMIN_ID) ||
     cleanEnvVal(env.ADMIN_USER) ||
     cleanEnvVal(env.ADMIN_USERNAME) ||
-    cleanEnvVal(env.CMS_ADMIN_EMAIL);
+    cleanEnvVal(env.CMS_ADMIN_EMAIL) ||
+    cleanEnvVal(env.CMS_ADMIN_EMAIL_ID);
 
   const password =
     cleanEnvVal(env.ADMIN_PASSWORD) ||
     cleanEnvVal(env.ADMIN_PASS) ||
+    cleanEnvVal(env.ADMIN_PWD) ||
     cleanEnvVal(env.CMS_ADMIN_PASSWORD);
 
   const apiKey =

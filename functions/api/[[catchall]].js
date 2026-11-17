@@ -68,6 +68,196 @@ export async function onRequest(context) {
     ? params.catchall.join('/')
     : params.catchall || '';
 
+  // 0a. Authenticated Admin Studio Workspace HTML Loader (`GET /api/admin/workspace`)
+  if (path === 'admin/workspace' && request.method === 'GET') {
+    const { verification } = await verifyAdminRequest(request, env);
+    if (!verification.valid) {
+      return jsonResponse(
+        {
+          success: false,
+          error: verification.policyError
+            ? 'Administrator sign-in is currently unavailable on this server.'
+            : 'Unauthorized. Admin authentication required.'
+        },
+        verification.policyError ? 503 : 401,
+        {},
+        request,
+        true
+      );
+    }
+    return jsonResponse(
+      {
+        success: true,
+        html: getAdminWorkspaceShellHtml()
+      },
+      200,
+      {},
+      request,
+      true
+    );
+  }
+
+  // 0b. Clear Sync & Activity Logs (`POST /api/admin/clear-logs`)
+  if (path === 'admin/clear-logs' && request.method === 'POST') {
+    const { verification } = await verifyAdminRequest(request, env);
+    if (!verification.valid) {
+      return jsonResponse({ success: false, error: 'Unauthorized.' }, 401, {}, request, true);
+    }
+    const csrf = verifyCsrfEdge(request, env);
+    if (!csrf.ok) return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
+
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    const existing = fbEnv.isConfigured
+      ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
+      : JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+
+    existing.syncLogs = [];
+    if (existing.githubConfig) {
+      existing.githubConfig.deployHistory = [];
+    }
+    existing.updatedAt = Date.now();
+    const sanitized = sanitizeConfigForClientEdge(existing, env);
+
+    let firestoreSaved = false;
+    if (fbEnv.isConfigured) {
+      const batchRes = await writeBatchToFirestoreRest(
+        fbEnv.config,
+        {
+          syncLogs: [],
+          githubConfig: sanitized.githubConfig
+        },
+        { updatedAt: existing.updatedAt, dirtyModulesSinceSync: existing.dirtyModulesSinceSync || [] }
+      );
+      firestoreSaved = batchRes.ok;
+    }
+
+    return jsonResponse(
+      {
+        success: true,
+        firestoreSaved,
+        config: sanitized
+      },
+      200,
+      {},
+      request,
+      true
+    );
+  }
+
+  // 0c. Connect or Revert Runtime Firebase Connection (`POST /api/firebase/connect`)
+  if (path === 'firebase/connect' && request.method === 'POST') {
+    const { verification } = await verifyAdminRequest(request, env);
+    if (!verification.valid) {
+      return jsonResponse({ success: false, error: 'Unauthorized.' }, 401, {}, request, true);
+    }
+    const csrf = verifyCsrfEdge(request, env);
+    if (!csrf.ok) return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
+
+    const body = await readJsonBodySafe(request);
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    if (body?.clear) {
+      return jsonResponse(
+        {
+          success: true,
+          cleared: true,
+          isConfigured: fbEnv.isConfigured,
+          config: sanitizeFirebaseConfigForClientEdge(fbEnv.config)
+        },
+        200,
+        {},
+        request,
+        true
+      );
+    }
+
+    const raw = body?.firebaseConfig || body || {};
+    const projectId = cleanEnvVal(raw.projectId) || fbEnv.config?.projectId || '';
+    const apiKey =
+      raw.apiKey && raw.apiKey !== '__SECRET_CONFIGURED__'
+        ? cleanEnvVal(raw.apiKey)
+        : fbEnv.config?.apiKey || '';
+    const databaseId = cleanEnvVal(raw.databaseId) || fbEnv.config?.databaseId || '(default)';
+
+    if (!apiKey || !projectId) {
+      return jsonResponse(
+        { success: false, error: 'Valid Firebase API Key and Project ID are required.' },
+        400,
+        {},
+        request,
+        true
+      );
+    }
+
+    const candidateConfig = {
+      apiKey,
+      projectId,
+      authDomain: cleanEnvVal(raw.authDomain) || `${projectId}.firebaseapp.com`,
+      storageBucket: cleanEnvVal(raw.storageBucket) || `${projectId}.appspot.com`,
+      messagingSenderId: cleanEnvVal(raw.messagingSenderId),
+      appId: cleanEnvVal(raw.appId),
+      databaseId
+    };
+
+    const cloudConfig = await readSiteConfigFromFirestoreRest(candidateConfig);
+    return jsonResponse(
+      {
+        success: true,
+        isConfigured: true,
+        config: sanitizeFirebaseConfigForClientEdge(candidateConfig),
+        siteConfig: cloudConfig ? sanitizeConfigForClientEdge(cloudConfig, env) : null
+      },
+      200,
+      {},
+      request,
+      true
+    );
+  }
+
+  // 0d. Device Image Upload Fallback on Stateless Edge (`POST /api/upload-image`)
+  if (path === 'upload-image' && request.method === 'POST') {
+    const { verification } = await verifyAdminRequest(request, env);
+    if (!verification.valid) {
+      return jsonResponse({ success: false, error: 'Unauthorized.' }, 401, {}, request, true);
+    }
+    const csrf = verifyCsrfEdge(request, env);
+    if (!csrf.ok) return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
+
+    const body = await readJsonBodySafe(request);
+    const { fileName = 'image.png', dataUrl = '' } = body || {};
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      return jsonResponse({ success: false, error: 'Valid image dataUrl is required.' }, 400, {}, request, true);
+    }
+    const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return jsonResponse({ success: false, error: 'Invalid base64 image format.' }, 400, {}, request, true);
+    }
+    if (dataUrl.length > 1_600_000) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Image exceeds 1.2 MB edge upload limit. Compress the image or paste an external CDN/SVG URL.'
+        },
+        413,
+        {},
+        request,
+        true
+      );
+    }
+    return jsonResponse(
+      {
+        success: true,
+        url: dataUrl,
+        fileName: String(fileName || 'image.png'),
+        sizeBytes: Math.floor((matches[2].length * 3) / 4),
+        storageMode: 'inline-data-url'
+      },
+      200,
+      {},
+      request,
+      true
+    );
+  }
+
   // 1. Admin 1-Click AES-256-GCM URL Encryption (`POST /api/admin/encrypt-url`)
   if (path === 'admin/encrypt-url' && request.method === 'POST') {
     const { verification } = await verifyAdminRequest(request, env);

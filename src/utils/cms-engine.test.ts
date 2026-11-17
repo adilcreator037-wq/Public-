@@ -757,9 +757,9 @@ test('resolveAdminSecurityPolicy enforces zero hardcoded credentials, accepts st
   assert.equal(prodMissing.credentialsReady, false);
   assert.ok(prodMissing.setupError);
 
-  // Placeholder / common weak passwords FAIL CLOSED
-  for (const badPass of ['replace-with-password', 'password123', '12345678', 'admin123', 'short']) {
-    const weakCreds = resolveAdminSecurityPolicy(
+  // Untouched template placeholder passwords FAIL CLOSED
+  for (const badPass of ['replace-with-password', 'your_password', 'your-password', 'changeme', 'example_pass']) {
+    const placeholderCreds = resolveAdminSecurityPolicy(
       {
         NODE_ENV: 'production',
         ADMIN_EMAIL: 'owner@example.com',
@@ -767,8 +767,32 @@ test('resolveAdminSecurityPolicy enforces zero hardcoded credentials, accepts st
       },
       'cms.example.com'
     );
-    assert.equal(weakCreds.credentialsReady, false, `Expected password "${badPass}" to fail closed`);
+    assert.equal(placeholderCreds.credentialsReady, false, `Expected placeholder "${badPass}" to fail closed`);
   }
+
+  // Real configured 6-character password SUCCEEDS (no unexpected 503 lockout for owners)
+  const sixCharCreds = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL: 'login@officialdaman.com',
+      ADMIN_PASSWORD: 'Dm9x!2'
+    },
+    'officialdaman.com'
+  );
+  assert.equal(sixCharCreds.credentialsReady, true);
+  assert.equal(sixCharCreds.hasDerivedSecret, true);
+  assert.equal(sixCharCreds.setupError, null);
+
+  // Common email/password env aliases (ADMIN_EMAIL_ID + ADMIN_PWD) SUCCEED cleanly
+  const aliasCreds = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL_ID: 'owner@example.com',
+      ADMIN_PWD: '123456'
+    },
+    'cms.example.com'
+  );
+  assert.equal(aliasCreds.credentialsReady, true);
 
   // Invalid email format FAILS CLOSED
   const badEmail = resolveAdminSecurityPolicy(
@@ -796,17 +820,30 @@ test('resolveAdminSecurityPolicy enforces zero hardcoded credentials, accepts st
   assert.equal(emailPassOnly.allowDefaultDevCreds, false);
   assert.equal(emailPassOnly.setupError, null);
 
-  // Strong Email + Password with explicitly weak ADMIN_SESSION_SECRET FAILS CLOSED
-  const weakExplicitSecret = resolveAdminSecurityPolicy(
+  // Custom non-placeholder ADMIN_SESSION_SECRET (even short) stretches via HMAC-SHA256 cleanly
+  const customShortSecret = resolveAdminSecurityPolicy(
     {
       NODE_ENV: 'production',
       ADMIN_EMAIL: 'owner@example.com',
       ADMIN_PASSWORD: 'Strong!Unique#Password2026',
-      ADMIN_SESSION_SECRET: 'short'
+      ADMIN_SESSION_SECRET: 'customKey99'
     },
     'cms.example.com'
   );
-  assert.equal(weakExplicitSecret.credentialsReady, false);
+  assert.equal(customShortSecret.credentialsReady, true);
+  assert.equal(customShortSecret.hasDerivedSecret, false);
+
+  // Placeholder ADMIN_SESSION_SECRET FAILS CLOSED
+  const placeholderSecret = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL: 'owner@example.com',
+      ADMIN_PASSWORD: 'Strong!Unique#Password2026',
+      ADMIN_SESSION_SECRET: 'replace-with-secret'
+    },
+    'cms.example.com'
+  );
+  assert.equal(placeholderSecret.credentialsReady, false);
 
   // Strong Email + Password + Session Secret SUCCEEDS
   const prodStrong = resolveAdminSecurityPolicy(
@@ -833,6 +870,69 @@ test('resolveAdminSecurityPolicy enforces zero hardcoded credentials, accepts st
   assert.equal(apiKeyOnly.credentialsReady, true);
   assert.equal(apiKeyOnly.hasApiKey, true);
   assert.equal(apiKeyOnly.hasDerivedSecret, true);
+});
+
+test('Edge login.js + [[catchall]].js handle 6-char secret passwords, issue session cookie, and serve /api/admin/workspace in parity', async () => {
+  const edgeLogin = await import('../../functions/api/admin/login.js');
+  const edgeCatchall = await import('../../functions/api/[[catchall]].js');
+  const edgeWorkspaceHtml = await import('../../functions/_shared/admin-workspace-html.js');
+  const nodeWorkspaceHtml = await import('./admin-workspace-html');
+
+  assert.equal(edgeWorkspaceHtml.getAdminWorkspaceShellHtml(), nodeWorkspaceHtml.getAdminWorkspaceShellHtml());
+
+  const env = {
+    CF_PAGES: '1',
+    ADMIN_EMAIL: 'login@officialdaman.com',
+    ADMIN_PASSWORD: 'Dm9x!2'
+  };
+
+  // 1. Login succeeds with 200 and HttpOnly __Host-cms_admin_session cookie
+  const loginReq = new Request('https://officialdaman.com/api/admin/login', {
+    method: 'POST',
+    headers: {
+      host: 'officialdaman.com',
+      origin: 'https://officialdaman.com',
+      'content-type': 'application/json',
+      'x-admin-csrf': '1'
+    },
+    body: JSON.stringify({ email: 'login@officialdaman.com', password: 'Dm9x!2' })
+  });
+  const loginRes = await edgeLogin.onRequestPost({ request: loginReq, env });
+  assert.equal(loginRes.status, 200);
+  const loginData = await loginRes.json();
+  assert.equal(loginData.success, true);
+  assert.equal(loginData.user.email, 'login@officialdaman.com');
+  const setCookie = loginRes.headers.get('set-cookie') || '';
+  assert.ok(setCookie.includes('__Host-cms_admin_session='));
+  const cookiePair = setCookie.split(';')[0];
+
+  // 2. Unauthenticated GET /api/admin/workspace returns 401
+  const unauthWsReq = new Request('https://officialdaman.com/api/admin/workspace', {
+    method: 'GET',
+    headers: { host: 'officialdaman.com' }
+  });
+  const unauthWsRes = await edgeCatchall.onRequest({
+    request: unauthWsReq,
+    env,
+    params: { catchall: ['admin', 'workspace'] }
+  });
+  assert.equal(unauthWsRes.status, 401);
+
+  // 3. Authenticated GET /api/admin/workspace returns 200 with full workspace HTML
+  const authWsReq = new Request('https://officialdaman.com/api/admin/workspace', {
+    method: 'GET',
+    headers: { host: 'officialdaman.com', cookie: cookiePair }
+  });
+  const authWsRes = await edgeCatchall.onRequest({
+    request: authWsReq,
+    env,
+    params: { catchall: ['admin', 'workspace'] }
+  });
+  assert.equal(authWsRes.status, 200);
+  const authWsData = await authWsRes.json();
+  assert.equal(authWsData.success, true);
+  assert.ok(authWsData.html.includes('id="panel-overview"'));
+  assert.ok(authWsData.html.includes('id="seo-audit-checklist"'));
 });
 
 test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non-optional exp claims and preserves credVersion', () => {
