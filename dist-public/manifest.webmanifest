@@ -1,6 +1,6 @@
 {
-  "name": "Official Portal — Official Portal",
-  "short_name": "Official Portal",
+  "name": "",
+  "short_name": "",
   "description": "",
   "start_url": "/",
   "scope": "/",
@@ -8,18 +8,5 @@
   "orientation": "portrait",
   "background_color": "#FFFFFF",
   "theme_color": "#EF4444",
-  "icons": [
-    {
-      "src": "/assets/app-icon.svg",
-      "sizes": "48x48 96x96 192x192 512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/assets/app-icon.svg",
-      "sizes": "180x180",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    }
-  ]
+  "icons": []
 }

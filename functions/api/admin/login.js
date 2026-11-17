@@ -6,10 +6,11 @@
 
 import {
   getAdminCredentials,
+  deriveEdgeAdminAuthSecrets,
   getFirebaseEnvFromEnv,
   buildEdgeEnvDiagnostics,
   readSiteConfigFromFirestoreRest,
-  timingSafeEqual,
+  timingSafeEqualDigest,
   createAdminToken,
   verifyCsrfEdge,
   checkEdgeLoginRateLimit,
@@ -45,19 +46,15 @@ export async function onRequestPost(context) {
     return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
   }
 
-  const clientIp = (
-    request.headers.get('cf-connecting-ip') ||
-    request.headers.get('x-forwarded-for') ||
-    'local'
-  )
-    .split(',')[0]
-    .trim();
+  // Only trust Cloudflare-verified cf-connecting-ip (never attacker-spoofable x-forwarded-for)
+  const clientIp = (cleanEnvVal(request.headers.get('cf-connecting-ip')) || 'edge-client').trim();
 
   const rate = checkEdgeLoginRateLimit(clientIp);
   if (!rate.allowed) {
     return jsonResponse(
       {
         success: false,
+        retryAfterSec: rate.retryAfterSec || 60,
         error: `Too many failed sign-in attempts. Please wait ${rate.retryAfterSec || 60} seconds.`
       },
       429,
@@ -90,13 +87,13 @@ export async function onRequestPost(context) {
     return jsonResponse({ success: false, error: 'Invalid credential format.' }, 400, {}, request, true);
   }
 
-  const email = rawEmailField.trim();
-  const password = rawPasswordField.trim();
-  const apiKey = rawKeyField.trim();
+  const email = cleanEnvVal(rawEmailField);
+  const password = cleanEnvVal(rawPasswordField);
+  const apiKey = cleanEnvVal(rawKeyField);
 
   if (!apiKey && (!email || !password)) {
     return jsonResponse(
-      { success: false, error: 'Please enter your administrator credentials to sign in.' },
+      { success: false, error: 'Please enter your administrator email and password to sign in.' },
       400,
       {},
       request,
@@ -105,23 +102,25 @@ export async function onRequestPost(context) {
   }
 
   const apiKeyAuthenticated = Boolean(
-    adminCreds.requiresApiKey && apiKey && timingSafeEqual(apiKey, adminCreds.apiKey)
+    adminCreds.requiresApiKey && apiKey && (await timingSafeEqualDigest(apiKey, adminCreds.apiKey))
   );
-  const credentialsAuthenticated = Boolean(
-    adminCreds.email &&
-    adminCreds.password &&
-    email &&
-    password &&
-    timingSafeEqual(email.toLowerCase(), adminCreds.email.toLowerCase()) &&
-    timingSafeEqual(password, adminCreds.password)
-  );
+  const [emailMatch, passMatch] = await Promise.all([
+    adminCreds.email && email
+      ? timingSafeEqualDigest(email.toLowerCase(), adminCreds.email.toLowerCase())
+      : Promise.resolve(false),
+    adminCreds.password && password
+      ? timingSafeEqualDigest(password, adminCreds.password)
+      : Promise.resolve(false)
+  ]);
+  const credentialsAuthenticated = Boolean(emailMatch && passMatch);
 
   if (!apiKeyAuthenticated && !credentialsAuthenticated) {
     recordEdgeFailedLogin(clientIp);
+    await new Promise((r) => setTimeout(r, 220));
     return jsonResponse(
       {
         success: false,
-        error: 'Invalid administrator credentials.'
+        error: 'Invalid email address or password.'
       },
       401,
       {},
@@ -132,7 +131,8 @@ export async function onRequestPost(context) {
 
   clearEdgeLoginAttempts(clientIp);
   const loginSubject = credentialsAuthenticated ? adminCreds.email : 'api-key-admin';
-  const token = await createAdminToken(loginSubject, adminCreds.secret);
+  const { signingSecret, credVersion } = await deriveEdgeAdminAuthSecrets(adminCreds, env);
+  const token = await createAdminToken(loginSubject, signingSecret, credVersion);
   const cookieHeader = buildSessionCookieHeader(token, isHttpsEdgeRequest(request));
 
   const fbEnv = getFirebaseEnvFromEnv(env);

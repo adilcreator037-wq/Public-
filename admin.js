@@ -28,7 +28,9 @@ import {
   normalizeFirebaseClientConfig,
   loginAdminUser,
   verifyAdminSession,
-  logoutAdminUser
+  logoutAdminUser,
+  onAdminUnauthorized,
+  notifyAdminUnauthorized
 } from './firebase-config.js';
 
 let currentConfig = mergeSiteConfig(getCachedSiteConfigSync(), EMPTY_ADMIN_CONFIG);
@@ -256,6 +258,45 @@ function syncUrlQuickPickers() {
   });
 }
 
+function setImagePreview(imgEl, rawUrl, displayStyle = 'block') {
+  if (!imgEl) return;
+  const val = String(rawUrl || '').trim();
+  if (val) {
+    imgEl.src = val;
+    imgEl.removeAttribute('hidden');
+    imgEl.style.display = displayStyle;
+  } else {
+    imgEl.removeAttribute('src');
+    imgEl.setAttribute('hidden', '');
+    imgEl.style.display = 'none';
+  }
+}
+
+function updateVaultStatusIndicator() {
+  const tag = $('sec-vault-status-tag');
+  if (!tag) return;
+  const raw = ($('sec-primary-url')?.value || currentConfig?.securityGate?.primaryDownloadUrl || '').trim();
+  const enc = ($('sec-encrypted-url')?.value || currentConfig?.securityGate?.encryptedPrimaryUrl || '').trim();
+
+  if (enc.startsWith('v2.') && enc.split('.').length >= 3) {
+    tag.textContent = 'v2 Encrypted Ready';
+    tag.style.background = '#ecfdf5';
+    tag.style.color = '#065f46';
+  } else if (raw && !enc) {
+    tag.textContent = 'Pending Encryption (Encrypt or Save)';
+    tag.style.background = '#fffbeb';
+    tag.style.color = '#92400e';
+  } else if (enc && !enc.startsWith('v2.')) {
+    tag.textContent = 'Legacy / Invalid Vault Format';
+    tag.style.background = '#fef2f2';
+    tag.style.color = '#b91c1c';
+  } else {
+    tag.textContent = 'Not Set';
+    tag.style.background = '#f1f5f9';
+    tag.style.color = '#64748b';
+  }
+}
+
 function refreshBrandThumbs() {
   const pairs = [
     ['brand-logo', 'brand-logo-thumb'],
@@ -267,16 +308,7 @@ function refreshBrandThumbs() {
     const inp = $(inputId);
     const img = $(imgId);
     if (inp && img) {
-      const val = inp.value.trim();
-      if (val) {
-        img.src = val;
-        img.removeAttribute('hidden');
-        img.style.display = 'inline-block';
-      } else {
-        img.removeAttribute('src');
-        img.setAttribute('hidden', '');
-        img.style.display = 'none';
-      }
+      setImagePreview(img, inp.value, 'inline-block');
     }
   });
 }
@@ -292,7 +324,7 @@ function updateJsonLdStatusIndicator(rawVal) {
   }
   try {
     JSON.parse(trimmed);
-    tag.textContent = '✓ Valid JSON-LD Ready';
+    tag.textContent = 'Valid JSON-LD Ready';
     tag.className = 'field-tag char-ok';
   } catch {
     tag.textContent = 'Invalid JSON syntax';
@@ -316,16 +348,16 @@ function getHtmlComponentSnippet(type) {
     case 'steps':
       return '\n<ol>\n  <li><strong>Step 1:</strong> Download and verify the package checksum from our specifications table.</li>\n  <li><strong>Step 2:</strong> Open the verified installer and allow system installation prompts.</li>\n  <li><strong>Step 3:</strong> Launch the application—all previous preferences stay intact.</li>\n</ol>';
     case 'checklist':
-      return '\n<ul>\n  <li>✓ <strong>Verified Checksum:</strong> Cryptographic SHA-256 signature verified.</li>\n  <li>✓ <strong>Zero Telemetry:</strong> Clean runtime with zero unwanted background scripts.</li>\n</ul>';
+      return '\n<ul>\n  <li><strong>Verified Checksum:</strong> Cryptographic SHA-256 signature verified.</li>\n  <li><strong>Zero Telemetry:</strong> Clean runtime with zero unwanted background scripts.</li>\n</ul>';
     case 'quote':
     case 'callout':
-      return '\n<div class="cms-callout-box">\n  <strong>✓ Verified Technical Note:</strong> Highlight an important tip, security verification note, or update notice here.\n</div>';
+      return '\n<div class="cms-callout-box">\n  <strong>Verified Technical Note:</strong> Highlight an important tip, security verification note, or update notice here.\n</div>';
     case 'grid':
-      return '\n<div class="cms-feature-grid">\n  <div class="cms-feature-item">\n    <strong>⚡ High-Speed Performance</strong>\n    <p style="margin:6px 0 0 0;">Optimized for sub-second response times on mobile and desktop.</p>\n  </div>\n  <div class="cms-feature-item">\n    <strong>🔒 Verified Integrity</strong>\n    <p style="margin:6px 0 0 0;">Every package is signed and verified with SHA-256 checksums.</p>\n  </div>\n</div>';
+      return '\n<div class="cms-feature-grid">\n  <div class="cms-feature-item">\n    <strong>High-Speed Performance</strong>\n    <p style="margin:6px 0 0 0;">Optimized for sub-second response times on mobile and desktop.</p>\n  </div>\n  <div class="cms-feature-item">\n    <strong>Verified Integrity</strong>\n    <p style="margin:6px 0 0 0;">Every package is signed and verified with SHA-256 checksums.</p>\n  </div>\n</div>';
     case 'table':
       return '\n<table>\n  <tbody>\n    <tr><th>Parameter</th><td>Specification Value</td></tr>\n    <tr><th>Compatibility</th><td>Android 9.0+ / iOS 15.0+</td></tr>\n  </tbody>\n</table>';
     case 'cta':
-      return '\n<div style="margin:18px 0;">\n  <a href="/#technical-specifications" data-spa-link class="section-inline-cta">⚡ Download Latest Build</a>\n</div>';
+      return '\n<div style="margin:18px 0;">\n  <a href="/#technical-specifications" data-spa-link class="section-inline-cta">Download Latest Build</a>\n</div>';
     case 'accordion':
       return '\n<details class="cms-accordion">\n  <summary>Click to expand technical details</summary>\n  <p style="margin-top:8px;">Detailed expandable explanation goes here.</p>\n</details>';
     case 'code':
@@ -379,7 +411,7 @@ function openInsertImageModal(targetDescriptor) {
   if ($('modal-img-url')) $('modal-img-url').value = '';
   if ($('modal-img-alt')) $('modal-img-alt').value = '';
   if ($('modal-img-caption')) $('modal-img-caption').value = '';
-  if ($('modal-img-preview')) $('modal-img-preview').src = '';
+  setImagePreview($('modal-img-preview'), '');
   modal.hidden = false;
 }
 
@@ -506,7 +538,7 @@ function syncVisualBlockModalFields() {
   if (type === 'callout') {
     if (lbl1) lbl1.textContent = 'Callout Title / Badge';
     if (txt1) txt1.textContent = 'Callout Message Text';
-    if ($('vb-title-1')) $('vb-title-1').value = '✓ Verified Security & Integrity Note';
+    if ($('vb-title-1')) $('vb-title-1').value = 'Verified Security & Integrity Note';
     if ($('vb-text-1')) $('vb-text-1').value = 'Every release is cryptographically signed with SHA-256 and verified clean across 72 security engines.';
     if (grp2) grp2.style.display = 'none';
     if (grp2Txt) grp2Txt.style.display = 'none';
@@ -515,9 +547,9 @@ function syncVisualBlockModalFields() {
     if (txt1) txt1.textContent = 'Left Feature Card Description';
     if (lbl2) lbl2.textContent = 'Right Feature Card Title';
     if (txt2) txt2.textContent = 'Right Feature Card Description';
-    if ($('vb-title-1')) $('vb-title-1').value = '⚡ Sub-Second Edge Speed';
+    if ($('vb-title-1')) $('vb-title-1').value = 'Sub-Second Edge Speed';
     if ($('vb-text-1')) $('vb-text-1').value = 'Pre-compiled static pages load in under 50ms globally with zero runtime database overhead.';
-    if ($('vb-title-2')) $('vb-title-2').value = '🔒 Verified SHA-256 Signature';
+    if ($('vb-title-2')) $('vb-title-2').value = 'Verified SHA-256 Signature';
     if ($('vb-text-2')) $('vb-text-2').value = 'Hardware-backed signature verification guarantees 100% package authenticity.';
     if (grp2) grp2.style.display = 'grid';
     if (grp2Txt) grp2Txt.style.display = 'grid';
@@ -537,9 +569,9 @@ function syncVisualBlockModalFields() {
     if (txt1) txt1.textContent = 'Checklist Item 1 Summary';
     if (lbl2) lbl2.textContent = 'Checklist Item 2 Title';
     if (txt2) txt2.textContent = 'Checklist Item 2 Summary';
-    if ($('vb-title-1')) $('vb-title-1').value = '✓ Official Signed Package';
+    if ($('vb-title-1')) $('vb-title-1').value = 'Official Signed Package';
     if ($('vb-text-1')) $('vb-text-1').value = 'Cryptographically verified SHA-256 checksum matches official release manifest.';
-    if ($('vb-title-2')) $('vb-title-2').value = '✓ Zero Bloatware or Adware';
+    if ($('vb-title-2')) $('vb-title-2').value = 'Zero Bloatware or Adware';
     if ($('vb-text-2')) $('vb-text-2').value = 'Independently scanned clean across 72 security engines with zero background trackers.';
     if (grp2) grp2.style.display = 'grid';
     if (grp2Txt) grp2Txt.style.display = 'grid';
@@ -557,7 +589,7 @@ function syncVisualBlockModalFields() {
   } else if (type === 'cta') {
     if (lbl1) lbl1.textContent = 'Action Button Label';
     if (txt1) txt1.textContent = 'Target URL or Section Anchor (e.g., /#technical-specifications)';
-    if ($('vb-title-1')) $('vb-title-1').value = '⚡ Download Official Signed Build';
+    if ($('vb-title-1')) $('vb-title-1').value = 'Download Official Signed Build';
     if ($('vb-text-1')) $('vb-text-1').value = '/#technical-specifications';
     if (grp2) grp2.style.display = 'none';
     if (grp2Txt) grp2Txt.style.display = 'none';
@@ -617,6 +649,111 @@ function confirmInsertVisualBlockFromModal() {
 /* ═══════════════════════════════════════════════════════════════════════════
    1. AUTHENTICATION FLOW & DYNAMIC WORKSPACE MOUNTING
    ═══════════════════════════════════════════════════════════════════════════ */
+let authCooldownTimer = null;
+
+function clearAuthValidation() {
+  ['login-email', 'login-password', 'login-apikey'].forEach((id) => {
+    const el = $(id);
+    if (el) el.removeAttribute('aria-invalid');
+  });
+}
+
+function setAuthError(message = '') {
+  const errBox = $('auth-error');
+  if (!errBox) return;
+  if (!message) {
+    errBox.textContent = '';
+    errBox.classList.remove('visible');
+    return;
+  }
+  errBox.textContent = message;
+  errBox.classList.add('visible');
+}
+
+function stopAuthCooldown() {
+  if (authCooldownTimer) {
+    clearInterval(authCooldownTimer);
+    authCooldownTimer = null;
+  }
+}
+
+function startAuthCooldown(seconds = 60) {
+  stopAuthCooldown();
+  let remaining = Math.max(1, Math.min(3600, Math.ceil(Number(seconds) || 60)));
+  const btn = $('btn-login-submit');
+  const updateUi = () => {
+    setAuthError(`Too many sign-in attempts. Please wait ${remaining}s before trying again.`);
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = `Locked (${remaining}s)`;
+    }
+  };
+  updateUi();
+  authCooldownTimer = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      stopAuthCooldown();
+      setAuthError('');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Workspace';
+      }
+      return;
+    }
+    updateUi();
+  }, 1000);
+}
+
+function resetPasswordInputMasks() {
+  const passInp = $('login-password');
+  const passBtn = $('btn-toggle-login-pass');
+  if (passInp) passInp.type = 'password';
+  if (passBtn) {
+    passBtn.textContent = 'Show';
+    passBtn.setAttribute('aria-pressed', 'false');
+  }
+  const keyInp = $('login-apikey');
+  const keyBtn = $('btn-toggle-login-apikey');
+  if (keyInp) keyInp.type = 'password';
+  if (keyBtn) {
+    keyBtn.textContent = 'Show';
+    keyBtn.setAttribute('aria-pressed', 'false');
+  }
+}
+
+function lockAdminStudio(reasonMessage = '') {
+  if (typeof closeAdminNavDrawer === 'function') {
+    closeAdminNavDrawer();
+  }
+  currentConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
+  dirtyModules.clear();
+  editorUndoHistory.clear();
+  isDirty = false;
+  pendingClearGithubToken = false;
+  pendingClearTurnstileSecret = false;
+
+  if ($('login-email')) $('login-email').value = '';
+  if ($('login-password')) $('login-password').value = '';
+  if ($('login-apikey')) $('login-apikey').value = '';
+  clearAuthValidation();
+  resetPasswordInputMasks();
+
+  const shell = $('cms-shell');
+  if (shell) {
+    shell.innerHTML = '';
+    shell.hidden = true;
+  }
+
+  const overlay = $('auth-overlay');
+  if (overlay) {
+    overlay.removeAttribute('data-checking');
+    overlay.hidden = false;
+  }
+
+  setAuthError(reasonMessage);
+  $('login-email')?.focus();
+}
+
 function setAuthMode(mode) {
   authMode = mode;
   document.querySelectorAll('.auth-tab[data-auth-mode]').forEach((btn) => {
@@ -626,6 +763,11 @@ function setAuthMode(mode) {
   });
   const groupCreds = $('auth-credentials-group') || $('auth-credentials-fields');
   const groupKey = $('auth-apikey-group') || $('auth-apikey-fields');
+
+  clearAuthValidation();
+  if (!authCooldownTimer) {
+    setAuthError('');
+  }
 
   if (mode === 'apikey') {
     if (groupCreds) groupCreds.hidden = true;
@@ -638,55 +780,81 @@ function setAuthMode(mode) {
 
 async function handleLoginSubmit(e) {
   e.preventDefault();
-  const errBox = $('auth-error');
-  const btn = $('btn-login-submit');
-  if (errBox) errBox.classList.remove('visible');
+  if (authCooldownTimer) return;
 
-  const email = authMode === 'credentials' ? ($('login-email')?.value.trim() || '') : '';
-  const password = authMode === 'credentials' ? ($('login-password')?.value || '') : '';
-  const apiKey = authMode === 'apikey' ? ($('login-apikey')?.value.trim() || '') : '';
+  const btn = $('btn-login-submit');
+  const emailEl = $('login-email');
+  const passEl = $('login-password');
+  const keyEl = $('login-apikey');
+
+  clearAuthValidation();
+  setAuthError('');
+
+  const email = authMode === 'credentials' ? (emailEl?.value.trim() || '') : '';
+  const password = authMode === 'credentials' ? (passEl?.value || '') : '';
+  const apiKey = authMode === 'apikey' ? (keyEl?.value.trim() || '') : '';
 
   if (authMode === 'apikey' && !apiKey) {
-    if (errBox) {
-      errBox.textContent = 'Please enter your administrator access key.';
-      errBox.classList.add('visible');
-    }
+    keyEl?.setAttribute('aria-invalid', 'true');
+    setAuthError('Please enter your administrator access key.');
+    keyEl?.focus();
     return;
   }
-  if (authMode === 'credentials' && (!email || !password)) {
-    if (errBox) {
-      errBox.textContent = 'Please enter both administrator email and password.';
-      errBox.classList.add('visible');
+  if (authMode === 'credentials') {
+    if (!email || !password) {
+      if (!email) emailEl?.setAttribute('aria-invalid', 'true');
+      if (!password) passEl?.setAttribute('aria-invalid', 'true');
+      setAuthError('Please enter both administrator email and password.');
+      (!email ? emailEl : passEl)?.focus();
+      return;
     }
-    return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      emailEl?.setAttribute('aria-invalid', 'true');
+      setAuthError('Please enter a valid administrator email address.');
+      emailEl?.focus();
+      return;
+    }
   }
 
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'Verifying...';
   }
+  [emailEl, passEl, keyEl].forEach((el) => {
+    if (el) el.disabled = true;
+  });
 
+  let rateLimited = false;
   try {
     const result = await loginAdminUser(email, password, apiKey);
     if (!result.success) {
-      if (errBox) {
-        errBox.textContent = result.error || 'Invalid administrator credentials.';
-        errBox.classList.add('visible');
+      if (result.status === 429 && result.retryAfterSec > 0) {
+        rateLimited = true;
+        startAuthCooldown(result.retryAfterSec);
+        return;
       }
+      if (authMode === 'credentials') {
+        passEl?.setAttribute('aria-invalid', 'true');
+      } else {
+        keyEl?.setAttribute('aria-invalid', 'true');
+      }
+      setAuthError(result.error || 'Invalid administrator credentials.');
       return;
     }
 
-    if ($('login-password')) $('login-password').value = '';
-    if ($('login-apikey')) $('login-apikey').value = '';
+    stopAuthCooldown();
+    if (passEl) passEl.value = '';
+    if (keyEl) keyEl.value = '';
+    resetPasswordInputMasks();
     await unlockAdminStudio();
     showToast('Signed in to Admin Studio', 'success');
   } catch (err) {
-    if (errBox) {
-      errBox.textContent = err.message || 'Authentication failed.';
-      errBox.classList.add('visible');
-    }
+    setAuthError(err?.message || 'Authentication failed.');
   } finally {
-    if (btn) {
+    [emailEl, passEl, keyEl].forEach((el) => {
+      if (el) el.disabled = false;
+    });
+    if (btn && !rateLimited) {
       btn.disabled = false;
       btn.textContent = 'Sign In to Workspace';
     }
@@ -707,6 +875,10 @@ async function mountAuthenticatedWorkspaceDom() {
         'X-Admin-CSRF': '1'
       }
     });
+    if (res.status === 401) {
+      notifyAdminUnauthorized('Session expired or unauthorized. Please sign in again.');
+      return false;
+    }
     if (!res.ok) return false;
     const data = await res.json().catch(() => null);
     if (!data?.success || typeof data.html !== 'string') return false;
@@ -720,18 +892,21 @@ async function mountAuthenticatedWorkspaceDom() {
 
 async function unlockAdminStudio() {
   const mounted = await mountAuthenticatedWorkspaceDom();
+  const overlay = $('auth-overlay');
   if (!mounted) {
-    const errBox = $('auth-error');
-    if (errBox) {
-      errBox.textContent = 'Session expired or unauthorized. Please sign in again.';
-      errBox.classList.add('visible');
+    if (overlay) {
+      overlay.removeAttribute('data-checking');
+      overlay.hidden = false;
     }
+    setAuthError('Session expired or unauthorized. Please sign in again.');
     return;
   }
 
-  const overlay = $('auth-overlay');
   const shell = $('cms-shell');
-  if (overlay) overlay.hidden = true;
+  if (overlay) {
+    overlay.removeAttribute('data-checking');
+    overlay.hidden = true;
+  }
   if (shell) shell.hidden = false;
 
   try {
@@ -822,10 +997,14 @@ function switchTab(tabId) {
 
   const ctx = WORKSPACE_CONTEXT_MAP[tabId] || WORKSPACE_CONTEXT_MAP.overview;
   if ($('editing-now-label')) {
-    $('editing-now-label').textContent = `📍 ${ctx.label}`;
+    $('editing-now-label').textContent = ctx.label;
   }
   if ($('editing-now-target')) {
     $('editing-now-target').textContent = ctx.target;
+  }
+  const btnMod = $('btn-save-active-module');
+  if (btnMod && !btnMod.disabled) {
+    btnMod.textContent = `Save [${getPrimaryModuleForActiveTab(tabId)}]`;
   }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -940,8 +1119,8 @@ function populateAllFields() {
   setVal('brand-email', c.brand.contactEmail);
   setVal('brand-logo', c.brand.logoUrl);
   setVal('brand-favicon', c.brand.faviconUrl);
-  setVal('brand-search-logo', c.brand.searchLogoUrl || c.brand.logoUrl);
-  setVal('brand-apple-icon', c.brand.appleTouchIconUrl || c.brand.logoUrl);
+  setVal('brand-search-logo', c.brand.searchLogoUrl || '');
+  setVal('brand-apple-icon', c.brand.appleTouchIconUrl || '');
   refreshBrandThumbs();
   setVal('brand-color', c.brand.accentColor);
   setVal('brand-theme-color', c.brand.themeColor || c.brand.accentColor);
@@ -953,7 +1132,7 @@ function populateAllFields() {
   setVal('hero-intro-html', c.hero.introHtml);
   setChecked('hero-show-banner', c.hero.showBanner !== false);
   setVal('hero-banner-url', c.hero.bannerImageUrl);
-  if ($('hero-banner-preview')) $('hero-banner-preview').src = c.hero.bannerImageUrl || '';
+  setImagePreview($('hero-banner-preview'), c.hero.bannerImageUrl || '');
   setVal('hero-banner-alt', c.hero.bannerAlt);
   setVal('hero-banner-caption', c.hero.bannerCaption || '');
 
@@ -1156,6 +1335,7 @@ function populateAllFields() {
   setVal('sec-unavailable-msg', sec.unavailableMessage || '');
   setVal('sec-whatsapp', sec.helplineWhatsapp || '');
   setVal('sec-telegram', sec.helplineTelegram || '');
+  updateVaultStatusIndicator();
 
   // Render Dynamic Lists & Overview Audit
   renderSectionsList();
@@ -1169,6 +1349,10 @@ function populateAllFields() {
   updateSerpSimulator();
   refreshOverviewAndSeoAudit();
   renderDirtyModulesSummary();
+  const btnMod = $('btn-save-active-module');
+  if (btnMod && !btnMod.disabled) {
+    btnMod.textContent = `Save [${getPrimaryModuleForActiveTab(activeTab)}]`;
+  }
 }
 
 function setVal(id, val) {
@@ -1196,10 +1380,14 @@ function renderGitHubDeployHistory() {
         ? `Target: ${gh.repoOwner}/${gh.repoName} (${gh.branch || 'main'})`
         : 'Local /dist-public Compiler Active';
   }
-  if (tagEl && gh.lastPublishedAt) {
-    tagEl.textContent = `Last GitHub Push: ${new Date(gh.lastPublishedAt).toLocaleString()} (${
-      gh.lastCommitSha ? gh.lastCommitSha.slice(0, 7) : 'ok'
-    })`;
+  if (tagEl) {
+    if (gh.lastPublishedAt) {
+      tagEl.textContent = `Last GitHub Push: ${new Date(gh.lastPublishedAt).toLocaleString()} (${
+        gh.lastCommitSha ? gh.lastCommitSha.slice(0, 7) : 'ok'
+      })`;
+    } else {
+      tagEl.textContent = 'No GitHub push yet';
+    }
   }
 
   renderDirtyModulesSummary();
@@ -1213,12 +1401,12 @@ function renderGitHubDeployHistory() {
     listEl.innerHTML = `
       <div class="audit-row">
         <div>
-          <strong style="font-size:0.84rem;">No GitHub Sync Commits Yet</strong>
+          <strong style="font-size:0.84rem;">No Sync or GitHub Commits Recorded Yet</strong>
           <div style="font-size:0.75rem; color:var(--text-muted);">
-            Save modules in Firebase and click <strong>Compile &amp; Push Static Website to GitHub Now</strong> above to push and log every Admin &rarr; Public sync commit.
+            Save modules to Firebase or click <strong>Compile &amp; Push Static Website to GitHub Now</strong> above to log every change and push.
           </div>
         </div>
-        <span class="audit-badge-pass">Ready</span>
+        <span class="audit-badge-muted">No Logs</span>
       </div>
     `;
     return;
@@ -1312,6 +1500,7 @@ function refreshOverviewAndSeoAudit() {
   const pagesCount = (currentConfig.pages || []).length;
   const sectionsCount = (currentConfig.sections || []).length;
   const faqsCount = (currentConfig.faqsSection?.items || []).length;
+  const passedCount = audit.checks.filter((chk) => chk.passed).length;
 
   const emptyGuide = $('empty-db-workspace-guide');
   if (emptyGuide) {
@@ -1324,9 +1513,53 @@ function refreshOverviewAndSeoAudit() {
   }
 
   if ($('stat-seo-score')) $('stat-seo-score').textContent = `${audit.score} / 100`;
+  if ($('stat-seo-sub')) {
+    $('stat-seo-sub').textContent = `${passedCount} of ${audit.checks.length} checks passed`;
+    $('stat-seo-sub').className = `stat-sub ${audit.score >= 80 ? 'is-ok' : 'is-warn'}`;
+  }
+
   if ($('stat-news-count')) $('stat-news-count').textContent = String(newsCount);
+  if ($('stat-news-sub')) {
+    if (currentConfig.newsSection?.enabled === false) {
+      $('stat-news-sub').textContent = 'News feed disabled';
+      $('stat-news-sub').className = 'stat-sub is-muted';
+    } else if (newsCount > 0) {
+      $('stat-news-sub').textContent = 'Active on /news & feed.xml';
+      $('stat-news-sub').className = 'stat-sub is-ok';
+    } else {
+      $('stat-news-sub').textContent = 'No articles yet';
+      $('stat-news-sub').className = 'stat-sub is-muted';
+    }
+  }
+
   if ($('stat-pages-count')) $('stat-pages-count').textContent = String(pagesCount);
+  if ($('stat-pages-sub')) {
+    if (pagesCount > 0) {
+      $('stat-pages-sub').textContent = 'Linked in Footer & Sitemap';
+      $('stat-pages-sub').className = 'stat-sub is-ok';
+    } else {
+      $('stat-pages-sub').textContent = 'No legal pages yet';
+      $('stat-pages-sub').className = 'stat-sub is-muted';
+    }
+  }
+
   if ($('stat-sitemap-count')) $('stat-sitemap-count').textContent = String(audit.totalUrlsInSitemap);
+  if ($('stat-sitemap-sub')) {
+    if (currentConfig.domainConfig?.enableSitemapXml === false) {
+      $('stat-sitemap-sub').textContent = 'Sitemap disabled';
+      $('stat-sitemap-sub').className = 'stat-sub is-muted';
+    } else if (audit.totalUrlsInSitemap > 0) {
+      $('stat-sitemap-sub').textContent = 'Ready for search crawlers';
+      $('stat-sitemap-sub').className = 'stat-sub is-ok';
+    } else {
+      $('stat-sitemap-sub').textContent = 'Not indexable yet';
+      $('stat-sitemap-sub').className = 'stat-sub is-muted';
+    }
+  }
+
+  if ($('seo-audit-summary-tag')) {
+    $('seo-audit-summary-tag').textContent = `${passedCount} / ${audit.checks.length} passed`;
+  }
 
   if ($('count-seo-score')) $('count-seo-score').textContent = `${audit.score}%`;
   if ($('drawer-count-seo')) $('drawer-count-seo').textContent = `${audit.score}%`;
@@ -1341,13 +1574,20 @@ function refreshOverviewAndSeoAudit() {
       .map(
         (chk) => `
         <div class="audit-row">
-          <div>
+          <div style="min-width:0; flex:1 1 240px;">
             <strong style="font-size:0.84rem;">${escapeHtml(chk.label)}</strong>
             <div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(chk.detail)}</div>
           </div>
-          <span class="audit-badge-pass" style="${
-            chk.passed ? '' : 'background:#fef2f2; color:#b91c1c;'
-          }">${chk.passed ? '✓ Passed' : 'Needs Attention'}</span>
+          <div class="audit-row-actions">
+            <span class="${chk.passed ? 'audit-badge-pass' : 'audit-badge-warn'}">${
+              chk.passed ? 'Passed' : 'Incomplete'
+            }</span>
+            ${
+              !chk.passed && chk.fixTab
+                ? `<button type="button" class="btn btn-sm" data-jump-tab="${escapeHtml(chk.fixTab)}" data-jump-subtab="${escapeHtml(chk.fixSubtab || '')}">Configure &rarr;</button>`
+                : ''
+            }
+          </div>
         </div>
       `
       )
@@ -1359,11 +1599,11 @@ function refreshOverviewAndSeoAudit() {
    5. HOMEPAGE SECTION ORDER CONTROLLER & CUSTOM SPEC ROWS
    ═══════════════════════════════════════════════════════════════════════════ */
 const BLOCK_LABELS = {
-  specs: '📦 Technical Package Specifications Table (#technical-specifications)',
-  sections: '📄 Homepage Editorial Content Sections',
-  rawHtml: '🧩 Additional Custom HTML / Component Block',
-  news: '📰 Daily News & Release Updates Feed (#latest-news)',
-  faqs: '❓ Frequently Asked Questions Accordion (#frequently-asked-questions)'
+  specs: 'Technical Package Specifications Table (#technical-specifications)',
+  sections: 'Homepage Editorial Content Sections',
+  rawHtml: 'Additional Custom HTML / Component Block',
+  news: 'Daily News & Release Updates Feed (#latest-news)',
+  faqs: 'Frequently Asked Questions Accordion (#frequently-asked-questions)'
 };
 
 function renderHomepageOrderController() {
@@ -1463,7 +1703,7 @@ function resetNewsComposer() {
   setVal('composer-news-readtime', '2 min read');
   setChecked('composer-news-featured', false);
   setVal('composer-news-cover-url', '');
-  if ($('composer-news-cover-preview')) $('composer-news-cover-preview').src = '';
+  setImagePreview($('composer-news-cover-preview'), '');
   setVal('composer-news-cover-alt', '');
   setVal('composer-news-cover-caption', '');
   setVal('composer-news-cta-label', '');
@@ -1473,7 +1713,7 @@ function resetNewsComposer() {
   setVal('composer-news-meta-title', '');
   setVal('composer-news-meta-desc', '');
   if ($('news-composer-heading')) {
-    $('news-composer-heading').textContent = '✍️ Publish a New Daily News Article';
+    $('news-composer-heading').textContent = 'Publish a New Daily News Article';
   }
   const preview = $('composer-live-preview');
   if (preview) {
@@ -1494,7 +1734,7 @@ function loadArticleIntoComposer(idx) {
   setVal('composer-news-readtime', art.readTime || '2 min read');
   setChecked('composer-news-featured', Boolean(art.featured));
   setVal('composer-news-cover-url', art.coverImageUrl || '');
-  if ($('composer-news-cover-preview')) $('composer-news-cover-preview').src = art.coverImageUrl || '';
+  setImagePreview($('composer-news-cover-preview'), art.coverImageUrl || '');
   setVal('composer-news-cover-alt', art.coverImageAlt || '');
   setVal('composer-news-cover-caption', art.coverImageCaption || '');
   setVal('composer-news-cta-label', art.ctaLabel || '');
@@ -1504,7 +1744,7 @@ function loadArticleIntoComposer(idx) {
   setVal('composer-news-meta-title', art.metaTitle);
   setVal('composer-news-meta-desc', art.metaDescription);
   if ($('news-composer-heading')) {
-    $('news-composer-heading').textContent = `✏️ Editing News Article: ${art.title}`;
+    $('news-composer-heading').textContent = `Editing News Article: ${art.title}`;
   }
   const preview = $('composer-live-preview');
   if (preview) {
@@ -1616,7 +1856,7 @@ function renderSectionsList() {
             ${
               sec.visible === false
                 ? `<span class="item-badge" style="background:#fee2e2; color:#b91c1c;">Hidden</span>`
-                : `<span class="placement-badge">📍 Homepage Body</span>`
+                : `<span class="item-badge" style="background:#ecfdf5; color:#065f46;">Visible</span>`
             }
             <span class="item-card-title">${escapeHtml(sec.heading || 'Untitled Section')}</span>
           </div>
@@ -1678,12 +1918,12 @@ function renderSectionsList() {
             <div class="field span-full">
               <div class="field-label">
                 <span>Section Image URL (Optional — Select Position Above)</span>
-                <button type="button" class="btn btn-sm" data-upload-collection="sections" data-index="${idx}" data-key="imageUrl">📤 Upload Image</button>
+                <button type="button" class="btn btn-sm" data-upload-collection="sections" data-index="${idx}" data-key="imageUrl">Upload Image</button>
               </div>
               <input type="text" class="input" id="sec-img-url-${idx}" value="${escapeHtml(
         sec.imageUrl || ''
       )}" data-collection="sections" data-index="${idx}" data-key="imageUrl" data-thumb-target="sec-img-thumb-${idx}" placeholder="Paste image URL or click Upload Image..." />
-              ${sec.imageUrl ? `<img id="sec-img-thumb-${idx}" class="img-mini-preview" src="${escapeHtml(sec.imageUrl)}" alt="Section Image Preview" />` : ''}
+              <img id="sec-img-thumb-${idx}" class="img-mini-preview" ${sec.imageUrl ? `src="${escapeHtml(sec.imageUrl)}"` : 'hidden'} alt="Section Image Preview" />
             </div>
             <div class="field">
               <label class="field-label">Section Image Alt Text</label>
@@ -1738,12 +1978,12 @@ function renderSectionsList() {
           <div class="field" style="margin-top: 12px">
             <div class="field-label">
               <span>Section Content Body (HTML + Rich Visual Blocks)</span>
-              <button type="button" class="btn btn-sm" data-toggle-preview="sec-preview-${idx}">👁️ Toggle Visual Preview</button>
+              <button type="button" class="btn btn-sm" data-toggle-preview="sec-preview-${idx}">Toggle Visual Preview</button>
             </div>
             <div class="html-toolbar">
-              <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="sections" data-index="${idx}" data-key="htmlContent" data-textarea="sec-html-${idx}" data-preview="sec-preview-${idx}">🧩 + Visual Block</button>
-              <button type="button" class="btn btn-sm btn-dark" data-open-collection-image-modal="sections" data-index="${idx}" data-key="htmlContent" data-textarea="sec-html-${idx}" data-preview="sec-preview-${idx}">🖼️ + Image</button>
-              <button type="button" class="btn btn-sm" data-open-collection-link-modal="sections" data-index="${idx}" data-key="htmlContent" data-textarea="sec-html-${idx}" data-preview="sec-preview-${idx}">🔗 + Link</button>
+              <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="sections" data-index="${idx}" data-key="htmlContent" data-textarea="sec-html-${idx}" data-preview="sec-preview-${idx}">+ Visual Block</button>
+              <button type="button" class="btn btn-sm btn-dark" data-open-collection-image-modal="sections" data-index="${idx}" data-key="htmlContent" data-textarea="sec-html-${idx}" data-preview="sec-preview-${idx}">+ Image</button>
+              <button type="button" class="btn btn-sm" data-open-collection-link-modal="sections" data-index="${idx}" data-key="htmlContent" data-textarea="sec-html-${idx}" data-preview="sec-preview-${idx}">+ Link</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="b" data-target="sec-html-${idx}" data-collection="sections" data-index="${idx}" data-key="htmlContent"><b>B</b></button>
               <button type="button" class="btn btn-sm" data-insert-snippet="p" data-target="sec-html-${idx}" data-collection="sections" data-index="${idx}" data-key="htmlContent">+ P</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="h3" data-target="sec-html-${idx}" data-collection="sections" data-index="${idx}" data-key="htmlContent">+ H3</button>
@@ -1753,7 +1993,7 @@ function renderSectionsList() {
               <button type="button" class="btn btn-sm" data-insert-snippet="grid" data-target="sec-html-${idx}" data-collection="sections" data-index="${idx}" data-key="htmlContent">+ Grid</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="table" data-target="sec-html-${idx}" data-collection="sections" data-index="${idx}" data-key="htmlContent">+ Table</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="cta" data-target="sec-html-${idx}" data-collection="sections" data-index="${idx}" data-key="htmlContent">+ Button</button>
-              <button type="button" class="btn btn-sm" data-undo-target="sec-html-${idx}">↩ Undo</button>
+              <button type="button" class="btn btn-sm" data-undo-target="sec-html-${idx}">Undo</button>
             </div>
             <textarea id="sec-html-${idx}" class="textarea code" rows="6" data-collection="sections" data-index="${idx}" data-key="htmlContent" data-preview-target="sec-preview-${idx}">${escapeHtml(
         sec.htmlContent
@@ -1761,7 +2001,7 @@ function renderSectionsList() {
             <div id="sec-preview-${idx}" class="live-preview-box"></div>
           </div>
           <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="sections">💾 Save Section to Firebase</button>
+            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="sections">Save [sections] to Firebase</button>
           </div>
         </div>
       </div>
@@ -1872,12 +2112,12 @@ function renderNewsList() {
             <div class="field span-full">
               <div class="field-label">
                 <span>Featured Cover Image URL (Optional)</span>
-                <button type="button" class="btn btn-sm" data-upload-collection="news" data-index="${idx}" data-key="coverImageUrl">📤 Upload Image</button>
+                <button type="button" class="btn btn-sm" data-upload-collection="news" data-index="${idx}" data-key="coverImageUrl">Upload Image</button>
               </div>
               <input type="text" class="input" id="news-img-url-${idx}" value="${escapeHtml(
         art.coverImageUrl || ''
-      )}" data-collection="news" data-index="${idx}" data-key="coverImageUrl" />
-              ${art.coverImageUrl ? `<img class="img-mini-preview" src="${escapeHtml(art.coverImageUrl)}" alt="Cover Preview" />` : ''}
+      )}" data-collection="news" data-index="${idx}" data-key="coverImageUrl" data-thumb-target="news-img-thumb-${idx}" />
+              <img id="news-img-thumb-${idx}" class="img-mini-preview" ${art.coverImageUrl ? `src="${escapeHtml(art.coverImageUrl)}"` : 'hidden'} alt="Cover Preview" />
             </div>
             <div class="field">
               <label class="field-label">Cover Image Alt Text</label>
@@ -1938,19 +2178,19 @@ function renderNewsList() {
           <div class="field" style="margin-top: 12px">
             <div class="field-label">
               <span>Full Article Body HTML</span>
-              <button type="button" class="btn btn-sm" data-toggle-preview="news-preview-${idx}">👁️ Toggle Visual Preview</button>
+              <button type="button" class="btn btn-sm" data-toggle-preview="news-preview-${idx}">Toggle Visual Preview</button>
             </div>
             <div class="html-toolbar">
-              <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="news" data-index="${idx}" data-key="htmlContent" data-textarea="news-html-${idx}" data-preview="news-preview-${idx}">🧩 + Visual Block</button>
-              <button type="button" class="btn btn-sm btn-dark" data-open-collection-image-modal="news" data-index="${idx}" data-key="htmlContent" data-textarea="news-html-${idx}" data-preview="news-preview-${idx}">🖼️ + Image</button>
-              <button type="button" class="btn btn-sm" data-open-collection-link-modal="news" data-index="${idx}" data-key="htmlContent" data-textarea="news-html-${idx}" data-preview="news-preview-${idx}">🔗 + Link</button>
+              <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="news" data-index="${idx}" data-key="htmlContent" data-textarea="news-html-${idx}" data-preview="news-preview-${idx}">+ Visual Block</button>
+              <button type="button" class="btn btn-sm btn-dark" data-open-collection-image-modal="news" data-index="${idx}" data-key="htmlContent" data-textarea="news-html-${idx}" data-preview="news-preview-${idx}">+ Image</button>
+              <button type="button" class="btn btn-sm" data-open-collection-link-modal="news" data-index="${idx}" data-key="htmlContent" data-textarea="news-html-${idx}" data-preview="news-preview-${idx}">+ Link</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="b" data-target="news-html-${idx}" data-collection="news" data-index="${idx}" data-key="htmlContent"><b>B</b></button>
               <button type="button" class="btn btn-sm" data-insert-snippet="p" data-target="news-html-${idx}" data-collection="news" data-index="${idx}" data-key="htmlContent">+ P</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="h3" data-target="news-html-${idx}" data-collection="news" data-index="${idx}" data-key="htmlContent">+ H3</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="ul" data-target="news-html-${idx}" data-collection="news" data-index="${idx}" data-key="htmlContent">+ List</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="steps" data-target="news-html-${idx}" data-collection="news" data-index="${idx}" data-key="htmlContent">+ Steps</button>
               <button type="button" class="btn btn-sm" data-insert-snippet="callout" data-target="news-html-${idx}" data-collection="news" data-index="${idx}" data-key="htmlContent">+ Callout</button>
-              <button type="button" class="btn btn-sm" data-undo-target="news-html-${idx}">↩ Undo</button>
+              <button type="button" class="btn btn-sm" data-undo-target="news-html-${idx}">Undo</button>
             </div>
             <textarea id="news-html-${idx}" class="textarea code" rows="5" data-collection="news" data-index="${idx}" data-key="htmlContent" data-preview-target="news-preview-${idx}">${escapeHtml(
         art.htmlContent
@@ -1958,7 +2198,7 @@ function renderNewsList() {
             <div id="news-preview-${idx}" class="live-preview-box"></div>
           </div>
           <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="newsSection">💾 Save Article to Firebase</button>
+            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="newsSection">Save [newsSection] to Firebase</button>
           </div>
         </div>
       </div>
@@ -2028,7 +2268,7 @@ function renderFaqsList() {
       )}</textarea>
             </div>
             <div style="display:flex; justify-content:flex-end;">
-              <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="faqsSection">💾 Save FAQ to Firebase</button>
+              <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="faqsSection">Save [faqsSection] to Firebase</button>
             </div>
           </div>
         </div>
@@ -2155,12 +2395,12 @@ function renderPagesList() {
         <div class="field">
           <div class="field-label">
             <span>Page Banner Image URL (Optional)</span>
-            <button type="button" class="btn btn-sm" data-upload-collection="pages" data-index="${idx}" data-key="bannerImageUrl">📤 Upload Image</button>
+            <button type="button" class="btn btn-sm" data-upload-collection="pages" data-index="${idx}" data-key="bannerImageUrl">Upload Image</button>
           </div>
           <input type="text" class="input" id="page-img-url-${idx}" value="${escapeHtml(
     pg.bannerImageUrl || ''
-  )}" data-collection="pages" data-index="${idx}" data-key="bannerImageUrl" placeholder="Optional banner image for this page..." />
-          ${pg.bannerImageUrl ? `<img class="img-mini-preview" src="${escapeHtml(pg.bannerImageUrl)}" alt="Page Banner Preview" />` : ''}
+  )}" data-collection="pages" data-index="${idx}" data-key="bannerImageUrl" data-thumb-target="page-img-thumb-${idx}" placeholder="Optional banner image for this page..." />
+          <img id="page-img-thumb-${idx}" class="img-mini-preview" ${pg.bannerImageUrl ? `src="${escapeHtml(pg.bannerImageUrl)}"` : 'hidden'} alt="Page Banner Preview" />
         </div>
         <div class="field">
           <label class="field-label">Banner Image Alt Text (SEO)</label>
@@ -2194,12 +2434,12 @@ function renderPagesList() {
       <div class="field" style="margin-top: 12px">
         <div class="field-label">
           <span>Full Page Document Content (HTML + Rich Components)</span>
-          <button type="button" class="btn btn-sm" data-toggle-preview="page-preview-${idx}">👁️ Toggle Visual Preview</button>
+          <button type="button" class="btn btn-sm" data-toggle-preview="page-preview-${idx}">Toggle Visual Preview</button>
         </div>
         <div class="html-toolbar">
-          <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">🧩 + Visual Block</button>
-          <button type="button" class="btn btn-sm btn-dark" data-open-collection-image-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">🖼️ + Image</button>
-          <button type="button" class="btn btn-sm" data-open-collection-link-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">🔗 + Link</button>
+          <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">+ Visual Block</button>
+          <button type="button" class="btn btn-sm btn-dark" data-open-collection-image-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">+ Image</button>
+          <button type="button" class="btn btn-sm" data-open-collection-link-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">+ Link</button>
           <button type="button" class="btn btn-sm" data-insert-snippet="b" data-target="page-html-${idx}" data-collection="pages" data-index="${idx}" data-key="htmlContent"><b>B</b></button>
           <button type="button" class="btn btn-sm" data-insert-snippet="p" data-target="page-html-${idx}" data-collection="pages" data-index="${idx}" data-key="htmlContent">+ P</button>
           <button type="button" class="btn btn-sm" data-insert-snippet="h3" data-target="page-html-${idx}" data-collection="pages" data-index="${idx}" data-key="htmlContent">+ H3</button>
@@ -2208,7 +2448,7 @@ function renderPagesList() {
           <button type="button" class="btn btn-sm" data-insert-snippet="callout" data-target="page-html-${idx}" data-collection="pages" data-index="${idx}" data-key="htmlContent">+ Callout</button>
           <button type="button" class="btn btn-sm" data-insert-snippet="table" data-target="page-html-${idx}" data-collection="pages" data-index="${idx}" data-key="htmlContent">+ Table</button>
           <button type="button" class="btn btn-sm" data-insert-snippet="accordion" data-target="page-html-${idx}" data-collection="pages" data-index="${idx}" data-key="htmlContent">+ Accordion</button>
-          <button type="button" class="btn btn-sm" data-undo-target="page-html-${idx}">↩ Undo</button>
+          <button type="button" class="btn btn-sm" data-undo-target="page-html-${idx}">Undo</button>
         </div>
         <textarea id="page-html-${idx}" class="textarea code" rows="9" data-collection="pages" data-index="${idx}" data-key="htmlContent" data-preview-target="page-preview-${idx}">${escapeHtml(
     pg.htmlContent
@@ -2853,7 +3093,7 @@ async function handleVerifyGitHubAccess() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '🔍 Verify GitHub Token & Repo Access';
+      btn.textContent = 'Verify GitHub Token & Repo Access';
     }
   }
 }
@@ -2914,6 +3154,10 @@ async function handleInspectStaticBundle() {
       headers: { Accept: 'application/json', 'X-Admin-CSRF': '1' }
     });
     const data = await res.json().catch(() => null);
+    if (res.status === 401) {
+      notifyAdminUnauthorized(data?.error);
+      return;
+    }
     if (res.ok && data?.success) {
       renderStaticBundleInspector(data);
       showToast(`Inspected ${data.totalFiles} compiled public static files`, 'success');
@@ -3080,7 +3324,7 @@ async function handleSaveActiveModule(explicitModuleKey = null) {
   } finally {
     if (btnModule) {
       btnModule.disabled = false;
-      btnModule.textContent = 'Save This Module Only';
+      btnModule.textContent = `Save [${getPrimaryModuleForActiveTab()}]`;
     }
   }
 }
@@ -3190,7 +3434,7 @@ function bindWorkspaceDomEvents() {
   $('btn-close-image-modal')?.addEventListener('click', closeInsertImageModal);
   $('btn-confirm-insert-image')?.addEventListener('click', confirmInsertImageFromModal);
   $('modal-img-url')?.addEventListener('input', (e) => {
-    if ($('modal-img-preview')) $('modal-img-preview').src = e.target.value.trim();
+    setImagePreview($('modal-img-preview'), e.target.value);
   });
 
   // Insert Link Modal Controls
@@ -3500,6 +3744,10 @@ function bindWorkspaceDomEvents() {
         }
       });
       const data = await res.json().catch(() => null);
+      if (res.status === 401) {
+        notifyAdminUnauthorized(data?.error);
+        return;
+      }
       if (res.ok && data?.success) {
         if (data.config) {
           currentConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
@@ -3565,9 +3813,14 @@ function bindWorkspaceDomEvents() {
         body: JSON.stringify({ url: rawUrl })
       });
       const data = await res.json().catch(() => null);
+      if (res.status === 401) {
+        notifyAdminUnauthorized(data?.error);
+        return;
+      }
       if (res.ok && data?.success && data?.encryptedUrl) {
         setVal('sec-encrypted-url', data.encryptedUrl);
         collectScalarFields();
+        updateVaultStatusIndicator();
         markDirty('Encrypted download URL into AES-256-GCM v2 vault — click Publish to save', 'securityGate');
         showToast('URL encrypted with AES-256-GCM (v2.<iv>.<cipher>)!', 'success');
       } else {
@@ -3578,9 +3831,13 @@ function bindWorkspaceDomEvents() {
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = '🔒 Encrypt URL with AES-256-GCM Now';
+        btn.textContent = 'Encrypt URL Now (AES-256-GCM)';
       }
     }
+  });
+
+  ['sec-primary-url', 'sec-encrypted-url'].forEach((id) => {
+    $(id)?.addEventListener('input', updateVaultStatusIndicator);
   });
 
   // Admin Hamburger Menu Drawer Toggle & Close
@@ -3591,25 +3848,7 @@ function bindWorkspaceDomEvents() {
   // Logout (Revokes server JTI, clears cookies, wipes in-memory & DOM state)
   $('btn-logout')?.addEventListener('click', async () => {
     await logoutAdminUser();
-    closeAdminNavDrawer();
-    currentConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
-    dirtyModules.clear();
-    editorUndoHistory.clear();
-    isDirty = false;
-    pendingClearGithubToken = false;
-    pendingClearTurnstileSecret = false;
-    if ($('login-email')) $('login-email').value = '';
-    if ($('login-password')) $('login-password').value = '';
-    if ($('login-apikey')) $('login-apikey').value = '';
-    if ($('auth-error')) {
-      $('auth-error').textContent = '';
-      $('auth-error').classList.remove('visible');
-    }
-    if ($('cms-shell')) {
-      $('cms-shell').innerHTML = '';
-      $('cms-shell').hidden = true;
-    }
-    if ($('auth-overlay')) $('auth-overlay').hidden = false;
+    lockAdminStudio();
     showToast('Signed out of Admin Studio');
   });
 
@@ -3633,21 +3872,6 @@ function bindWorkspaceDomEvents() {
     btn.addEventListener('click', () => {
       const subKey = btn.getAttribute('data-domain-subtab') || 'all';
       filterDomainSubcards(subKey);
-    });
-  });
-
-  // Quick Jump Buttons on Overview Panel & Topbar
-  document.querySelectorAll('[data-jump-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetTab = btn.getAttribute('data-jump-tab');
-      if (targetTab) {
-        switchTab(targetTab);
-        if (btn.id === 'btn-quick-jump-logs') {
-          setTimeout(() => {
-            $('gh-deploy-history-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 120);
-        }
-      }
     });
   });
 
@@ -3698,15 +3922,11 @@ function bindWorkspaceDomEvents() {
   });
 
   $('composer-news-cover-url')?.addEventListener('input', (e) => {
-    if ($('composer-news-cover-preview')) {
-      $('composer-news-cover-preview').src = e.target.value.trim();
-    }
+    setImagePreview($('composer-news-cover-preview'), e.target.value);
   });
 
   $('hero-banner-url')?.addEventListener('input', (e) => {
-    if ($('hero-banner-preview')) {
-      $('hero-banner-preview').src = e.target.value.trim();
-    }
+    setImagePreview($('hero-banner-preview'), e.target.value);
   });
 
   $('btn-news-autofill-seo')?.addEventListener('click', () => {
@@ -4244,7 +4464,7 @@ function bindWorkspaceDomEvents() {
 
     try {
       saveActiveFirebaseConfig(fb);
-      await fetch('/api/firebase/connect', {
+      const connectRes = await fetch('/api/firebase/connect', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -4254,6 +4474,10 @@ function bindWorkspaceDomEvents() {
         },
         body: JSON.stringify(fb)
       }).catch(() => null);
+      if (connectRes?.status === 401) {
+        notifyAdminUnauthorized('Session expired or unauthorized. Please sign in again.');
+        return;
+      }
 
       const testRes = await testFirebaseConnectionRemote(fb.apiKey ? fb : null);
       populateAllFields();
@@ -4321,7 +4545,7 @@ function bindWorkspaceDomEvents() {
   // Revert to .env / Server Firebase Defaults
   $('btn-clear-firebase')?.addEventListener('click', async () => {
     clearActiveFirebaseConfig();
-    await fetch('/api/firebase/connect', {
+    const clearRes = await fetch('/api/firebase/connect', {
       method: 'POST',
       credentials: 'include',
       headers: {
@@ -4331,6 +4555,10 @@ function bindWorkspaceDomEvents() {
       },
       body: JSON.stringify({ clear: true })
     }).catch(() => null);
+    if (clearRes?.status === 401) {
+      notifyAdminUnauthorized('Session expired or unauthorized. Please sign in again.');
+      return;
+    }
     setVal('fb-snippet-input', '');
     populateAllFields();
     showFirebaseFeedback(
@@ -4426,6 +4654,7 @@ function initAuthEvents() {
     const isPass = inp.type === 'password';
     inp.type = isPass ? 'text' : 'password';
     btn.textContent = isPass ? 'Hide' : 'Show';
+    btn.setAttribute('aria-pressed', isPass ? 'true' : 'false');
   });
 
   $('btn-toggle-login-apikey')?.addEventListener('click', () => {
@@ -4435,6 +4664,7 @@ function initAuthEvents() {
     const isPass = inp.type === 'password';
     inp.type = isPass ? 'text' : 'password';
     btn.textContent = isPass ? 'Hide' : 'Show';
+    btn.setAttribute('aria-pressed', isPass ? 'true' : 'false');
   });
 
   // Delegated Clicks (Inline Module Save, Upload Buttons, Image Modal, Visual Block Modal, Legal Page Selector, Accordion, Move, Delete, Snippets)
@@ -4452,6 +4682,28 @@ function initAuthEvents() {
       return;
     }
 
+    // 0B. Delegated Jump-to-Tab & Exact Subcard Filter (Overview Page Map + Dynamic SEO Audit "Configure →" Buttons)
+    const jumpBtn = target.closest('[data-jump-tab]');
+    if (jumpBtn) {
+      e.preventDefault();
+      const targetTab = jumpBtn.getAttribute('data-jump-tab');
+      const subtab = jumpBtn.getAttribute('data-jump-subtab') || '';
+      if (targetTab) {
+        switchTab(targetTab);
+        if (targetTab === 'brand') {
+          filterBrandSubcards(subtab || 'all');
+        } else if (targetTab === 'domain') {
+          filterDomainSubcards(subtab || 'all');
+        }
+        if (jumpBtn.id === 'btn-quick-jump-logs') {
+          setTimeout(() => {
+            $('gh-deploy-history-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 120);
+        }
+      }
+      return;
+    }
+
     // 1. Device Image Upload Button for Scalar Input (`data-upload-target`)
     const scalarUploadBtn = target.closest('[data-upload-target]');
     if (scalarUploadBtn) {
@@ -4463,7 +4715,7 @@ function initAuthEvents() {
           $(inputId).value = uploadedUrl;
         }
         if (previewId && $(previewId)) {
-          $(previewId).src = uploadedUrl;
+          setImagePreview($(previewId), uploadedUrl);
         }
       });
       return;
@@ -4845,7 +5097,7 @@ function initAuthEvents() {
 
     const thumbId = target.getAttribute('data-thumb-target');
     if (thumbId && $(thumbId)) {
-      $(thumbId).src = target.value.trim();
+      setImagePreview($(thumbId), target.value);
     }
 
     const previewId = target.getAttribute('data-preview-target');
@@ -4935,10 +5187,22 @@ function renderEnvSecurityDiagnostics() {
 }
 
 async function bootstrapAdmin() {
+  onAdminUnauthorized((reason) => {
+    lockAdminStudio(reason || 'Your session expired or was revoked. Please sign in again.');
+    showToast('Session expired — please sign in again', 'error');
+  });
   initAuthEvents();
+
+  const overlay = $('auth-overlay');
   const session = await verifyAdminSession();
   if (session && session.authenticated) {
     await unlockAdminStudio();
+    return;
+  }
+
+  if (overlay) {
+    overlay.removeAttribute('data-checking');
+    overlay.hidden = false;
   }
 }
 

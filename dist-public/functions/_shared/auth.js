@@ -34,10 +34,10 @@ export const EMPTY_ADMIN_CONFIG = {
     name: '',
     shortName: '',
     tagline: '',
-    logoUrl: '/assets/app-icon.svg',
-    faviconUrl: '/assets/app-icon.svg',
-    searchLogoUrl: '/assets/app-icon.svg',
-    appleTouchIconUrl: '/assets/app-icon.svg',
+    logoUrl: '',
+    faviconUrl: '',
+    searchLogoUrl: '',
+    appleTouchIconUrl: '',
     accentColor: '#EF4444',
     themeColor: '#EF4444',
     contactEmail: ''
@@ -102,7 +102,7 @@ export const EMPTY_ADMIN_CONFIG = {
     targetDirectory: 'dist-public',
     fineGrainedToken: '',
     hasFineGrainedToken: false,
-    commitMessageTemplate: 'chore(static-publish): sync compiled static public site from Admin Studio',
+    commitMessageTemplate: 'chore(static-publish): sync compiled static public site',
     autoPushOnPublish: false,
     deployHistory: []
   },
@@ -137,9 +137,9 @@ export const EMPTY_ADMIN_CONFIG = {
     bannerAlt: '',
     bannerCaption: '',
     showBanner: false,
-    secondaryCta: { label: 'Learn More', url: '#technical-specifications', relSponsored: false },
-    primaryCta: { label: 'Download', url: '/moreinfo', relSponsored: false },
-    floatingCta: { enabled: false, label: 'Download', url: '/moreinfo' }
+    secondaryCta: { label: '', url: '', relSponsored: false },
+    primaryCta: { label: '', url: '', relSponsored: false },
+    floatingCta: { enabled: false, label: '', url: '' }
   },
   packageSpecs: {
     enabled: false,
@@ -179,11 +179,11 @@ export const EMPTY_ADMIN_CONFIG = {
     showFooterBrandSummary: true,
     showFooterContactEmail: true,
     footerQuickLinks: [],
-    disclaimerHeading: 'Legal Disclaimer',
+    disclaimerHeading: '',
     disclaimerMetaTitle: '',
     disclaimerMetaDescription: '',
     disclaimer: '',
-    siteLinksHeading: 'Legal & Support Pages',
+    siteLinksHeading: '',
     copyright: '',
     showAdminLink: false
   },
@@ -224,11 +224,29 @@ export function isCmsModuleKey(value) {
 }
 
 const PLACEHOLDER_PREFIX_RE = /^(replace-with-|your[-_]|changeme|example[-_])/i;
+const COMMON_WEAK_PASSWORDS_EDGE = new Set([
+  'password',
+  'password1',
+  'password123',
+  '12345678',
+  '123456789',
+  '1234567890',
+  'admin123',
+  'admin1234',
+  'administrator',
+  'qwerty123',
+  'qwertyui',
+  'letmein1',
+  'welcome1',
+  'passw0rd'
+]);
 
 function isWeakSecretOrPasswordEdge(val, email = '', minLen = 8) {
   if (!val || val.length < minLen) return true;
   if (PLACEHOLDER_PREFIX_RE.test(val)) return true;
-  if (email && val.toLowerCase() === email.toLowerCase()) return true;
+  const lowered = val.toLowerCase();
+  if (COMMON_WEAK_PASSWORDS_EDGE.has(lowered)) return true;
+  if (email && lowered === email.toLowerCase()) return true;
   if (new Set(val).size < 4) return true;
   return false;
 }
@@ -258,27 +276,31 @@ export function resolveAdminSecurityPolicyEdge(env = {}, reqHost = '') {
   const isCfPages = Boolean(cleanEnvVal(env.CF_PAGES) || cleanEnvVal(env.CF_PAGES_URL));
   const isProduction = nodeEnvProd || (isCfPages && !isLocalHost) || (!isLocalHost && Boolean(hostOnly));
 
-  const hasValidEmail = Boolean(rawEmail && rawEmail.includes('@') && !PLACEHOLDER_PREFIX_RE.test(rawEmail));
+  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !PLACEHOLDER_PREFIX_RE.test(rawEmail));
   const hasValidPassword = !isWeakSecretOrPasswordEdge(rawPass, rawEmail, 8);
-  const hasValidSecret = !isWeakSecretOrPasswordEdge(rawSecret, rawEmail, 16);
+  const hasExplicitSecret = !isWeakSecretOrPasswordEdge(rawSecret, rawEmail, 16);
+  const hasExplicitWeakSecret = Boolean(rawSecret) && !hasExplicitSecret;
   const hasValidApiKey = !isWeakSecretOrPasswordEdge(rawApiKey, rawEmail, 16);
 
   const hasValidAuthMethod = (hasValidEmail && hasValidPassword) || hasValidApiKey;
+  const hasDerivedSecret = Boolean(!rawSecret && hasValidAuthMethod);
+  const hasCustomSecret = hasExplicitSecret || hasDerivedSecret;
 
-  if (!hasValidAuthMethod || !hasValidSecret) {
+  if (!hasValidAuthMethod || hasExplicitWeakSecret) {
     const missingParts = [];
     if (!hasValidAuthMethod) {
-      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD (min 8 chars) or ADMIN_API_KEY (min 16 chars)');
+      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD (min 8 strong chars)');
     }
-    if (!hasValidSecret) {
-      missingParts.push('ADMIN_SESSION_SECRET (min 16 chars)');
+    if (hasExplicitWeakSecret) {
+      missingParts.push('valid ADMIN_SESSION_SECRET (min 16 strong chars)');
     }
     return {
       isProduction,
       allowDefaultDevCreds: false,
       hasCustomEmail: hasValidEmail,
       hasCustomPassword: hasValidPassword,
-      hasCustomSecret: hasValidSecret,
+      hasCustomSecret: hasExplicitSecret,
+      hasDerivedSecret: false,
       hasApiKey: hasValidApiKey,
       credentialsReady: false,
       setupError: `Admin authentication is not configured. Set ${missingParts.join(' and ')} in Cloudflare Pages secrets.`
@@ -290,7 +312,8 @@ export function resolveAdminSecurityPolicyEdge(env = {}, reqHost = '') {
     allowDefaultDevCreds: false,
     hasCustomEmail: hasValidEmail,
     hasCustomPassword: hasValidPassword,
-    hasCustomSecret: hasValidSecret,
+    hasCustomSecret,
+    hasDerivedSecret,
     hasApiKey: hasValidApiKey,
     credentialsReady: true,
     setupError: null
@@ -316,7 +339,7 @@ export function getAdminCredentials(env = {}, reqHost = '') {
     cleanEnvVal(env.CMS_ADMIN_API_KEY) ||
     '';
 
-  const secret =
+  const rawExplicitSecret =
     cleanEnvVal(env.ADMIN_SESSION_SECRET) ||
     cleanEnvVal(env.ADMIN_SECRET) ||
     cleanEnvVal(env.SESSION_SECRET);
@@ -325,13 +348,42 @@ export function getAdminCredentials(env = {}, reqHost = '') {
     email: policy.hasCustomEmail ? email : '',
     password: policy.hasCustomPassword ? password : '',
     apiKey: policy.hasApiKey ? apiKey : '',
-    secret: policy.hasCustomSecret ? secret : '',
+    secret: rawExplicitSecret,
     isCustomEmail: policy.hasCustomEmail,
     isCustomPassword: policy.hasCustomPassword,
     isCustomSecret: policy.hasCustomSecret,
+    hasDerivedSecret: policy.hasDerivedSecret,
     requiresApiKey: policy.hasApiKey,
     policy
   };
+}
+
+export async function deriveEdgeAdminAuthSecrets(adminCreds, env = {}) {
+  if (!adminCreds?.policy?.credentialsReady) {
+    return { signingSecret: '', credVersion: '' };
+  }
+  let signingSecret = '';
+  if (!adminCreds.hasDerivedSecret && adminCreds.secret) {
+    signingSecret = await createHmacSignature(adminCreds.secret, 'master-cms:session:explicit:v2');
+  } else if (adminCreds.hasDerivedSecret) {
+    const vaultSalt = cleanEnvVal(
+      env.VAULT_ENCRYPTION_SECRET || env.LINK_VAULT_MASTER_SECRET || env.FIREBASE_API_KEY || ''
+    );
+    const ikm = `${adminCreds.password}\0${adminCreds.apiKey}\0${vaultSalt}`;
+    signingSecret = await createHmacSignature(
+      ikm,
+      `master-cms:session:derived:v2:${adminCreds.email.toLowerCase()}`
+    );
+  }
+  const credVersion = signingSecret
+    ? (
+        await createHmacSignature(
+          signingSecret,
+          `cred-epoch:v2:${adminCreds.email.toLowerCase()}\0${adminCreds.password}\0${adminCreds.apiKey}`
+        )
+      ).slice(0, 16)
+    : '';
+  return { signingSecret, credVersion };
 }
 
 export function timingSafeEqual(a, b) {
@@ -344,6 +396,21 @@ export function timingSafeEqual(a, b) {
     const ba = i < bufA.byteLength ? bufA[i] : 0;
     const bb = i < bufB.byteLength ? bufB[i] : 0;
     diff |= ba ^ bb;
+  }
+  return diff === 0;
+}
+
+export async function timingSafeEqualDigest(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const [hashA, hashB] = await Promise.all([
+    crypto.subtle.digest('SHA-256', textEncoder.encode(a)),
+    crypto.subtle.digest('SHA-256', textEncoder.encode(b))
+  ]);
+  const viewA = new Uint8Array(hashA);
+  const viewB = new Uint8Array(hashB);
+  let diff = 0;
+  for (let i = 0; i < 32; i++) {
+    diff |= viewA[i] ^ viewB[i];
   }
   return diff === 0;
 }
@@ -416,6 +483,9 @@ export async function hmacTruncated16B64Url(secret, data) {
   return bytesToBase64Url(new Uint8Array(signature).slice(0, 16));
 }
 
+const EDGE_SESSION_TTL_SEC = 12 * 60 * 60;
+const EDGE_SESSION_TTL_MS = EDGE_SESSION_TTL_SEC * 1000;
+const EDGE_LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const edgeRevokedJtis = new Map();
 const edgeLoginTracker = new Map();
 
@@ -430,17 +500,21 @@ export function revokeAdminJti(jti, exp) {
     if (!oldest) break;
     edgeRevokedJtis.delete(oldest);
   }
-  edgeRevokedJtis.set(jti, exp || now + 7 * 24 * 60 * 60 * 1000);
+  edgeRevokedJtis.set(jti, exp || now + EDGE_SESSION_TTL_MS);
 }
 
 export function checkEdgeLoginRateLimit(ip) {
   const now = Date.now();
+  const globalEntry = edgeLoginTracker.get('__global__');
+  if (globalEntry && now <= globalEntry.resetAt && globalEntry.count >= 12) {
+    return { allowed: false, retryAfterSec: Math.ceil((globalEntry.resetAt - now) / 1000) };
+  }
   const entry = edgeLoginTracker.get(ip);
   if (!entry || now > entry.resetAt) {
     if (entry) edgeLoginTracker.delete(ip);
     return { allowed: true };
   }
-  if (entry.count >= 12) {
+  if (entry.count >= 5) {
     return { allowed: false, retryAfterSec: Math.ceil((entry.resetAt - now) / 1000) };
   }
   return { allowed: true };
@@ -456,16 +530,19 @@ export function recordEdgeFailedLogin(ip) {
     if (!oldest) break;
     edgeLoginTracker.delete(oldest);
   }
-  const entry = edgeLoginTracker.get(ip);
-  if (!entry || now > entry.resetAt) {
-    edgeLoginTracker.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 });
-  } else {
-    entry.count += 1;
+  for (const bucketKey of [ip, '__global__']) {
+    const entry = edgeLoginTracker.get(bucketKey);
+    if (!entry || now > entry.resetAt) {
+      edgeLoginTracker.set(bucketKey, { count: 1, resetAt: now + EDGE_LOGIN_WINDOW_MS });
+    } else {
+      entry.count += 1;
+    }
   }
 }
 
 export function clearEdgeLoginAttempts(ip) {
   edgeLoginTracker.delete(ip);
+  edgeLoginTracker.delete('__global__');
 }
 
 export function parseCookies(cookieHeader = '') {
@@ -503,7 +580,7 @@ export function buildSessionCookieHeader(token, isHttps) {
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    'Max-Age=604800'
+    `Max-Age=${EDGE_SESSION_TTL_SEC}`
   ];
   if (isHttps) parts.push('Secure');
   return parts.join('; ');
@@ -516,7 +593,7 @@ export function clearSessionCookieHeaders(isHttps) {
   ];
 }
 
-export async function createAdminToken(email, secret) {
+export async function createAdminToken(email, secret, credVersion = '') {
   const rnd = new Uint8Array(16);
   crypto.getRandomValues(rnd);
   const jti = Array.from(rnd).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -524,21 +601,30 @@ export async function createAdminToken(email, secret) {
   const payload = {
     iss: 'master-cms-admin',
     typ: 'admin-session',
+    ver: 2,
     email,
+    cv: credVersion,
     jti,
     role: 'Master Administrator',
     iat: now,
-    exp: now + 7 * 24 * 60 * 60 * 1000
+    exp: now + EDGE_SESSION_TTL_MS
   };
   const b64Payload = bytesToBase64Url(textEncoder.encode(JSON.stringify(payload)));
   const signature = await createHmacSignature(secret, b64Payload);
   return `${b64Payload}.${signature}`;
 }
 
-export async function verifyAdminToken(token, secret, expectedApiKey = '', ignoreExpiryForLogout = false) {
+export async function verifyAdminToken(
+  token,
+  secret,
+  expectedApiKey = '',
+  ignoreExpiryForLogout = false,
+  expectedCredVersion = '',
+  fromCookie = false
+) {
   if (!token || typeof token !== 'string') return { valid: false };
 
-  if (expectedApiKey && timingSafeEqual(token.trim(), expectedApiKey.trim())) {
+  if (!fromCookie && expectedApiKey && (await timingSafeEqualDigest(token.trim(), expectedApiKey.trim()))) {
     return { valid: true, email: 'api-key-admin', role: 'Master Administrator' };
   }
   if (!secret) return { valid: false };
@@ -549,7 +635,7 @@ export async function verifyAdminToken(token, secret, expectedApiKey = '', ignor
 
   try {
     const expectedSig = await createHmacSignature(secret, b64Payload);
-    if (!timingSafeEqual(signature, expectedSig)) {
+    if (!(await timingSafeEqualDigest(signature, expectedSig))) {
       return { valid: false };
     }
 
@@ -579,6 +665,11 @@ export async function verifyAdminToken(token, secret, expectedApiKey = '', ignor
         return { valid: false, expired: true, jti: decoded.jti, exp: decoded.exp };
       }
       return { valid: false, expired: true };
+    }
+    if (expectedCredVersion) {
+      if (!decoded.cv || typeof decoded.cv !== 'string' || !(await timingSafeEqualDigest(decoded.cv, expectedCredVersion))) {
+        return { valid: false, expired: true };
+      }
     }
     if (edgeRevokedJtis.has(decoded.jti)) {
       return { valid: false, revoked: true };
@@ -657,6 +748,7 @@ export async function verifyAdminRequest(request, env = {}, ignoreExpiryForLogou
     };
   }
 
+  const { signingSecret, credVersion } = await deriveEdgeAdminAuthSecrets(adminCreds, env);
   const authHeader = request.headers.get('authorization') || '';
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const headerApiKey = cleanEnvVal(request.headers.get('x-admin-api-key'));
@@ -664,8 +756,16 @@ export async function verifyAdminRequest(request, env = {}, ignoreExpiryForLogou
   const cookieToken =
     cookies['__Host-cms_admin_session'] || cookies['cms_admin_session'] || '';
 
+  const fromCookie = Boolean(!headerApiKey && cookieToken);
   const token = headerApiKey || cookieToken || bearerToken;
-  const verification = await verifyAdminToken(token, adminCreds.secret, adminCreds.apiKey, ignoreExpiryForLogout);
+  const verification = await verifyAdminToken(
+    token,
+    signingSecret,
+    adminCreds.apiKey,
+    ignoreExpiryForLogout,
+    credVersion,
+    fromCookie
+  );
   return { verification, adminCreds };
 }
 

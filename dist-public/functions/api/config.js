@@ -218,3 +218,6 @@ export async function onRequestPut(context) {
     true
   );
 }
+
+export const onRequestPost = onRequestPut;
+

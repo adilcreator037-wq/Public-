@@ -51,6 +51,22 @@ export const defaultEnvFirebaseConfig = normalizeFirebaseClientConfig({
 let runtimeServerFirebaseConfig = null;
 let lastEnvDiagnostics = null;
 let inMemoryCachedConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
+let unauthorizedListener = null;
+let lastUnauthorizedAt = 0;
+
+export function onAdminUnauthorized(handler) {
+  unauthorizedListener = typeof handler === 'function' ? handler : null;
+}
+
+export function notifyAdminUnauthorized(reason = 'Your administrator session expired. Please sign in again.') {
+  inMemoryCachedConfig = mergeSiteConfig({}, EMPTY_ADMIN_CONFIG);
+  const now = Date.now();
+  if (now - lastUnauthorizedAt < 600) return;
+  lastUnauthorizedAt = now;
+  if (typeof unauthorizedListener === 'function') {
+    unauthorizedListener(reason);
+  }
+}
 
 export function getLastEnvDiagnostics() {
   return lastEnvDiagnostics;
@@ -171,12 +187,16 @@ export async function testFirebaseConnectionRemote(customConfig = null) {
       body: JSON.stringify(customConfig ? { firebaseConfig: customConfig } : {})
     });
     const data = await res.json().catch(() => null);
+    if (res.status === 401) {
+      notifyAdminUnauthorized(data?.error || 'Session expired or unauthorized. Please sign in again.');
+    }
     if (res.ok && data?.success) {
       if (data.firebaseConfig) setServerEnvFirebaseConfig(data.firebaseConfig);
       return data;
     }
     return {
       success: false,
+      status: res.status,
       error: data?.error || `Firestore connection test failed (HTTP ${res.status}).`
     };
   } catch (err) {
@@ -201,6 +221,10 @@ export async function getSiteConfigRemote() {
         'Cache-Control': 'no-cache'
       }
     });
+    if (res.status === 401) {
+      notifyAdminUnauthorized();
+      return inMemoryCachedConfig;
+    }
     if (!res.ok) return inMemoryCachedConfig;
     const data = await res.json().catch(() => null);
     if (!data) return inMemoryCachedConfig;
@@ -241,9 +265,13 @@ export async function saveSiteConfigRemote(config, editedModules = []) {
     body: JSON.stringify(payload)
   });
   const data = await res.json().catch(() => null);
+  if (res.status === 401) {
+    notifyAdminUnauthorized(data?.error);
+  }
   if (!res.ok || !data?.success) {
     return {
       success: false,
+      status: res.status,
       error: data?.error || `Failed to save configuration (HTTP ${res.status}).`
     };
   }
@@ -272,9 +300,13 @@ export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
     })
   });
   const data = await res.json().catch(() => null);
+  if (res.status === 401) {
+    notifyAdminUnauthorized(data?.error);
+  }
   if (!res.ok || !data?.success) {
     return {
       success: false,
+      status: res.status,
       error: data?.error || `Failed to save module [${moduleKey}] (HTTP ${res.status}).`
     };
   }
@@ -305,9 +337,13 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
     })
   });
   const data = await res.json().catch(() => null);
+  if (res.status === 401) {
+    notifyAdminUnauthorized(data?.error);
+  }
   if (!res.ok || !data?.success) {
     return {
       success: false,
+      status: res.status,
       error: data?.error || `Failed to save modules batch (HTTP ${res.status}).`
     };
   }
@@ -332,6 +368,9 @@ export async function resetSiteConfigRemote() {
     body: JSON.stringify({})
   });
   const data = await res.json().catch(() => null);
+  if (res.status === 401) {
+    notifyAdminUnauthorized(data?.error);
+  }
   if (res.ok && data?.config) {
     inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
     return inMemoryCachedConfig;
@@ -367,10 +406,11 @@ export async function uploadImageRemote(file) {
       })
     });
     const data = await res.json().catch(() => null);
+    if (res.status === 401) notifyAdminUnauthorized(data?.error);
     if (res.ok && data?.success && data?.url) {
       return { success: true, url: data.url };
     }
-    return { success: false, error: data?.error || 'Image upload failed.' };
+    return { success: false, status: res.status, error: data?.error || 'Image upload failed.' };
   } catch (err) {
     return { success: false, error: err?.message || 'Image upload error.' };
   }
@@ -392,7 +432,8 @@ export async function verifyGitHubRepoRemote(ghPayload) {
       body: JSON.stringify(ghPayload || {})
     });
     const data = await res.json().catch(() => null);
-    return data || { success: false, error: `HTTP ${res.status}` };
+    if (res.status === 401) notifyAdminUnauthorized(data?.error);
+    return data || { success: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {
     return { success: false, error: err?.message || 'Network error verifying GitHub access.' };
   }
@@ -414,10 +455,11 @@ export async function publishStaticSiteToGitHubRemote(payload) {
       body: JSON.stringify(payload || {})
     });
     const data = await res.json().catch(() => null);
+    if (res.status === 401) notifyAdminUnauthorized(data?.error);
     if (data?.config) {
       inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
     }
-    return data || { success: false, error: `HTTP ${res.status}` };
+    return data || { success: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {
     return { success: false, error: err?.message || 'Network error pushing to GitHub.' };
   }
@@ -457,11 +499,17 @@ export async function loginAdminUser(emailOrObj, password = '', apiKey = '') {
     }
     return {
       success: false,
+      status: res.status,
+      code: data?.code || '',
+      retryAfterSec: Number(data?.retryAfterSec) || 0,
       error: data?.error || 'Invalid credentials or access key.'
     };
   } catch {
     return {
       success: false,
+      status: 0,
+      code: 'network-error',
+      retryAfterSec: 0,
       error: 'Network error connecting to authentication service.'
     };
   }
@@ -484,11 +532,16 @@ export async function verifyAdminSession() {
     if (res.ok && data?.authenticated) {
       if (data.firebaseConfig) setServerEnvFirebaseConfig(data.firebaseConfig);
       if (data.envDiagnostics) lastEnvDiagnostics = data.envDiagnostics;
-      return { authenticated: true, user: data.user };
+      return { authenticated: true, user: data.user, status: res.status, code: '' };
     }
-    return { authenticated: false, user: null };
+    return {
+      authenticated: false,
+      user: null,
+      status: res.status,
+      code: data?.code || ''
+    };
   } catch {
-    return { authenticated: false, user: null };
+    return { authenticated: false, user: null, status: 0, code: 'network-error' };
   }
 }
 

@@ -255,6 +255,50 @@ test('generateSitemapXml (with Google Image Sitemap), generateWebManifestJson, g
   assert.ok(renderedHtml.includes('ApexMobile'));
 });
 
+test('auditSiteSeoHealth reports 0% and 0 sitemap URLs on EMPTY_ADMIN_CONFIG with zero false positives and actionable fixTab links', () => {
+  const emptyAudit = auditSiteSeoHealth(EMPTY_ADMIN_CONFIG);
+  assert.equal(emptyAudit.score, 0);
+  assert.equal(emptyAudit.totalUrlsInSitemap, 0);
+  assert.equal(emptyAudit.checks.length, 9);
+  for (const chk of emptyAudit.checks) {
+    assert.equal(chk.passed, false, `Expected check "${chk.id}" to fail on EMPTY_ADMIN_CONFIG`);
+    assert.ok(chk.fixTab && chk.fixTab.length > 0, `Expected check "${chk.id}" to expose fixTab`);
+    assert.ok(!/is ready/i.test(chk.detail), `Unexpected misleading "ready" claim on empty check "${chk.id}"`);
+  }
+
+  // Partial configuration only passes what is genuinely configured
+  const partialConfig = mergeSiteConfig(
+    {
+      brand: {
+        name: 'NovaPlayer',
+        logoUrl: 'https://cdn.example.com/logo.png',
+        faviconUrl: 'https://cdn.example.com/favicon.png',
+        accentColor: '#EF4444',
+        themeColor: '#EF4444'
+      },
+      hero: {
+        h1: 'NovaPlayer Official Release',
+        showBanner: false
+      },
+      domainConfig: {
+        enableSitemapXml: false,
+        enableRssFeed: false,
+        enableWebManifest: false
+      }
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  const partialAudit = auditSiteSeoHealth(partialConfig);
+  assert.ok(partialAudit.score > 0 && partialAudit.score < 100);
+  assert.equal(partialAudit.totalUrlsInSitemap, 0);
+
+  // Disabled flags produce clean empty/disabled output consistently
+  assert.equal(generateSitemapXml(partialConfig), '');
+  assert.equal(generateRssFeedXml(partialConfig), '');
+  assert.equal(generateWebManifestJson(partialConfig), '{}');
+});
+
 test('v12 7-Gate Security Engine & AES-256-GCM Link Vault: encrypts/decrypts URLs, blocks bots with 404, verifies hardware cData & TokenV12, and burns single-use nonces', async () => {
   const secret = 'unit-test-master-vault-secret-2026';
   const targetUrl = 'https://cdn.apexmobile.example.com/releases/v4.8.2/ApexMobile-Signed.apk';
@@ -698,7 +742,7 @@ test('appendSyncLogEntry records structured push telemetry and clears dirtyModul
   assert.equal(afterSuccess.githubConfig.deployHistory?.length, 2);
 });
 
-test('resolveAdminSecurityPolicy enforces zero hardcoded credentials and fails closed everywhere until configured', () => {
+test('resolveAdminSecurityPolicy enforces zero hardcoded credentials, accepts strong Email+Password directly, and rejects weak passwords/secrets', () => {
   // Missing env vars FAILS CLOSED even on localhost (zero hardcoded defaults)
   const localUnset = resolveAdminSecurityPolicy({}, 'localhost:3000');
   assert.equal(localUnset.isProduction, false);
@@ -713,17 +757,56 @@ test('resolveAdminSecurityPolicy enforces zero hardcoded credentials and fails c
   assert.equal(prodMissing.credentialsReady, false);
   assert.ok(prodMissing.setupError);
 
-  // Placeholder / short secrets FAIL CLOSED
-  const weakCreds = resolveAdminSecurityPolicy(
+  // Placeholder / common weak passwords FAIL CLOSED
+  for (const badPass of ['replace-with-password', 'password123', '12345678', 'admin123', 'short']) {
+    const weakCreds = resolveAdminSecurityPolicy(
+      {
+        NODE_ENV: 'production',
+        ADMIN_EMAIL: 'owner@example.com',
+        ADMIN_PASSWORD: badPass
+      },
+      'cms.example.com'
+    );
+    assert.equal(weakCreds.credentialsReady, false, `Expected password "${badPass}" to fail closed`);
+  }
+
+  // Invalid email format FAILS CLOSED
+  const badEmail = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL: 'not-an-email',
+      ADMIN_PASSWORD: 'Strong!Unique#Password2026'
+    },
+    'cms.example.com'
+  );
+  assert.equal(badEmail.credentialsReady, false);
+
+  // Strong Email + Password WITHOUT ADMIN_SESSION_SECRET SUCCEEDS via derived secret
+  const emailPassOnly = resolveAdminSecurityPolicy(
     {
       NODE_ENV: 'production',
       ADMIN_EMAIL: 'owner@example.com',
-      ADMIN_PASSWORD: 'replace-with-password',
+      ADMIN_PASSWORD: 'Strong!Unique#Password2026'
+    },
+    'cms.example.com'
+  );
+  assert.equal(emailPassOnly.credentialsReady, true);
+  assert.equal(emailPassOnly.hasDerivedSecret, true);
+  assert.equal(emailPassOnly.hasCustomSecret, true);
+  assert.equal(emailPassOnly.allowDefaultDevCreds, false);
+  assert.equal(emailPassOnly.setupError, null);
+
+  // Strong Email + Password with explicitly weak ADMIN_SESSION_SECRET FAILS CLOSED
+  const weakExplicitSecret = resolveAdminSecurityPolicy(
+    {
+      NODE_ENV: 'production',
+      ADMIN_EMAIL: 'owner@example.com',
+      ADMIN_PASSWORD: 'Strong!Unique#Password2026',
       ADMIN_SESSION_SECRET: 'short'
     },
     'cms.example.com'
   );
-  assert.equal(weakCreds.credentialsReady, false);
+  assert.equal(weakExplicitSecret.credentialsReady, false);
 
   // Strong Email + Password + Session Secret SUCCEEDS
   const prodStrong = resolveAdminSecurityPolicy(
@@ -736,22 +819,23 @@ test('resolveAdminSecurityPolicy enforces zero hardcoded credentials and fails c
     'cms.example.com'
   );
   assert.equal(prodStrong.credentialsReady, true);
+  assert.equal(prodStrong.hasDerivedSecret, false);
   assert.equal(prodStrong.allowDefaultDevCreds, false);
   assert.equal(prodStrong.setupError, null);
 
-  // Strong ADMIN_API_KEY + Session Secret SUCCEEDS without email/password
+  // Strong ADMIN_API_KEY SUCCEEDS without email/password
   const apiKeyOnly = resolveAdminSecurityPolicy(
     {
-      ADMIN_API_KEY: 'live-api-key-9876543210abcdef',
-      ADMIN_SESSION_SECRET: 'super-long-production-hmac-secret-999'
+      ADMIN_API_KEY: 'live-api-key-9876543210abcdef'
     },
     'localhost:3000'
   );
   assert.equal(apiKeyOnly.credentialsReady, true);
   assert.equal(apiKeyOnly.hasApiKey, true);
+  assert.equal(apiKeyOnly.hasDerivedSecret, true);
 });
 
-test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non-optional exp claims', () => {
+test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non-optional exp claims and preserves credVersion', () => {
   const now = Date.now();
   assert.equal(validateAdminSessionClaims(null, now).valid, false);
   assert.equal(
@@ -771,6 +855,8 @@ test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non
     {
       iss: 'master-cms-admin',
       typ: 'admin-session',
+      ver: 2,
+      cv: 'abc123epoch45678',
       email: 'owner@example.com',
       jti: '1234567890abcdef',
       iat: now,
@@ -780,6 +866,55 @@ test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non
   );
   assert.equal(ok.valid, true);
   assert.equal(ok.claims?.email, 'owner@example.com');
+  assert.equal(ok.claims?.ver, 2);
+  assert.equal(ok.claims?.cv, 'abc123epoch45678');
+});
+
+test('Edge auth module stays in strict parity: Email+Password derived HMAC, cookie channel isolation, and credential-rotation revocation', async () => {
+  const edgeAuth = await import('../../functions/_shared/auth.js');
+  const env = {
+    NODE_ENV: 'production',
+    ADMIN_EMAIL: 'admin@example.org',
+    ADMIN_PASSWORD: 'Ultra#Secure!Password99',
+    ADMIN_API_KEY: 'edge-api-key-0123456789abcdef'
+  };
+  const creds = edgeAuth.getAdminCredentials(env, 'cms.example.org');
+  assert.equal(creds.policy.credentialsReady, true);
+  assert.equal(creds.hasDerivedSecret, true);
+
+  const { signingSecret, credVersion } = await edgeAuth.deriveEdgeAdminAuthSecrets(creds, env);
+  assert.ok(signingSecret.length >= 32);
+  assert.ok(credVersion.length >= 12);
+
+  const token = await edgeAuth.createAdminToken(creds.email, signingSecret, credVersion);
+  const validRes = await edgeAuth.verifyAdminToken(token, signingSecret, creds.apiKey, false, credVersion, true);
+  assert.equal(validRes.valid, true);
+  assert.equal(validRes.email, 'admin@example.org');
+
+  // Raw API key MUST NEVER be accepted inside session cookie channel (fromCookie = true)
+  const cookieApiKeyAttempt = await edgeAuth.verifyAdminToken(
+    creds.apiKey,
+    signingSecret,
+    creds.apiKey,
+    false,
+    credVersion,
+    true
+  );
+  assert.equal(cookieApiKeyAttempt.valid, false);
+
+  // Rotating ADMIN_PASSWORD changes credVersion & signingSecret, invalidating old tokens immediately
+  const rotatedEnv = { ...env, ADMIN_PASSWORD: 'New!Rotated#Password2027' };
+  const rotatedCreds = edgeAuth.getAdminCredentials(rotatedEnv, 'cms.example.org');
+  const rotatedSecrets = await edgeAuth.deriveEdgeAdminAuthSecrets(rotatedCreds, rotatedEnv);
+  const staleRes = await edgeAuth.verifyAdminToken(
+    token,
+    rotatedSecrets.signingSecret,
+    rotatedCreds.apiKey,
+    false,
+    rotatedSecrets.credVersion,
+    true
+  );
+  assert.equal(staleRes.valid, false);
 });
 
 test('Public static bundle outputs zero Firebase SDKs, zero Admin files, and zero Admin secrets', () => {

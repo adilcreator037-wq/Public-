@@ -74,10 +74,10 @@ export async function onRequestPost(context) {
       siteKey,
       policyMode,
       appMeta: {
-        brandName: siteConfig?.brand?.name || cleanEnvVal(env.SITE_BRAND_NAME) || 'Official Portal',
-        logoUrl: siteConfig?.brand?.logoUrl || '/assets/app-icon.svg',
+        brandName: siteConfig?.brand?.name || cleanEnvVal(env.SITE_BRAND_NAME) || '',
+        logoUrl: siteConfig?.brand?.logoUrl || '',
         accentColor: siteConfig?.brand?.accentColor || '#EF4444',
-        appSlug: sec.appSlug || appId || 'official-package',
+        appSlug: sec.appSlug || appId || 'gateway',
         appSerialId: sec.appSerialId || 'PKG-001',
         devicePolicyMode: policyMode,
         proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
@@ -87,11 +87,11 @@ export async function onRequestPost(context) {
         customHeading: sec.customHeading || '',
         customNoteHtml: sec.customNoteHtml || '',
         showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
-        appName: sec.customHeading || siteConfig?.packageSpecs?.appName || siteConfig?.brand?.name || 'Official Package',
+        appName: sec.customHeading || siteConfig?.packageSpecs?.appName || siteConfig?.brand?.name || '',
         version: siteConfig?.packageSpecs?.version || '',
         fileSize: siteConfig?.packageSpecs?.fileSize || '',
-        operatingSystem: siteConfig?.packageSpecs?.operatingSystem || 'Android 9.0+ / iOS 15.0+',
-        securityStatus: siteConfig?.packageSpecs?.securityStatus || 'Verified Clean',
+        operatingSystem: siteConfig?.packageSpecs?.operatingSystem || '',
+        securityStatus: siteConfig?.packageSpecs?.securityStatus || '',
         sha256: siteConfig?.packageSpecs?.sha256 || ''
       }
     },

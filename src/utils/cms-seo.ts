@@ -433,6 +433,7 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
  * Powers Google Search Result Site Icon discovery, mobile home-screen installability, and theme color.
  */
 export function generateWebManifestJson(config: SiteConfig): string {
+  if (config.domainConfig?.enableWebManifest === false) return '{}';
   const brandName = (config.brand?.name || '').trim();
   const shortName = (config.brand?.shortName || brandName || '').trim();
   const iconUrl = optimizeCloudinaryUrl(
@@ -490,6 +491,7 @@ export function generateWebManifestJson(config: SiteConfig): string {
  * AND Google Image Sitemap (`<image:image>`) entries for fast Google Images indexing.
  */
 export function generateSitemapXml(config: SiteConfig): string {
+  if (config.domainConfig?.enableSitemapXml === false) return '';
   const base = normalizeDomainUrl(
     config.domainConfig?.primaryDomain || config.seo?.canonicalUrl,
     config.domainConfig?.forceHttps !== false
@@ -632,6 +634,7 @@ export function generateRobotsTxt(config: SiteConfig): string {
  * Generate Dynamic RSS 2.0 XML Feed (/feed.xml) for Daily News Articles
  */
 export function generateRssFeedXml(config: SiteConfig): string {
+  if (config.domainConfig?.enableRssFeed === false) return '';
   const base = normalizeDomainUrl(
     config.domainConfig?.primaryDomain || config.seo?.canonicalUrl,
     config.domainConfig?.forceHttps !== false
@@ -680,102 +683,185 @@ export interface SeoAuditResult {
     label: string;
     passed: boolean;
     detail: string;
+    fixTab?: string;
+    fixSubtab?: string;
   }>;
 }
 
 export function auditSiteSeoHealth(config: SiteConfig): SeoAuditResult {
   const checks: SeoAuditResult['checks'] = [];
+  const articles = config.newsSection?.articles || [];
+  const pages = config.pages || [];
+  const sections = config.sections || [];
 
   const titleLen = (config.seo?.metaTitle || '').trim().length;
+  const titleOk = titleLen >= 15 && titleLen <= 75;
   checks.push({
     id: 'home-meta-title',
     label: 'Homepage Meta Title Configured',
-    passed: titleLen >= 15 && titleLen <= 75,
-    detail: `${titleLen} characters (Recommended: 30–65 chars)`
+    passed: titleOk,
+    detail:
+      titleLen === 0
+        ? 'Not set (Recommended: 30–65 chars for homepage <title>)'
+        : `${titleLen} characters (Recommended: 30–65 chars)`,
+    fixTab: 'domain',
+    fixSubtab: 'serp'
   });
 
   const descLen = (config.seo?.metaDescription || '').trim().length;
+  const descOk = descLen >= 50 && descLen <= 200;
   checks.push({
     id: 'home-meta-desc',
     label: 'Homepage Meta Description Configured',
-    passed: descLen >= 50 && descLen <= 200,
-    detail: `${descLen} characters (Recommended: 80–165 chars)`
+    passed: descOk,
+    detail:
+      descLen === 0
+        ? 'Not set (Recommended: 80–165 chars for search snippet)'
+        : `${descLen} characters (Recommended: 80–165 chars)`,
+    fixTab: 'domain',
+    fixSubtab: 'serp'
   });
 
-  const domain = config.domainConfig?.primaryDomain || config.seo?.canonicalUrl || '';
+  const domain = (config.domainConfig?.primaryDomain || config.seo?.canonicalUrl || '').trim();
   checks.push({
     id: 'domain-https',
     label: 'Production Canonical Domain & HTTPS Active',
     passed: domain.startsWith('https://'),
-    detail: domain || 'Not set'
+    detail: domain || 'Not set — add your https:// production domain',
+    fixTab: 'domain',
+    fixSubtab: 'sitemap'
   });
 
-  const hasIconsAndManifest = Boolean(
-    config.brand?.faviconUrl?.trim() &&
-      (config.brand?.searchLogoUrl?.trim() || config.brand?.logoUrl?.trim()) &&
-      config.domainConfig?.enableWebManifest !== false
-  );
+  const hasFavicon = Boolean(config.brand?.faviconUrl?.trim());
+  const hasLogo = Boolean(config.brand?.searchLogoUrl?.trim() || config.brand?.logoUrl?.trim());
+  const manifestEnabled = config.domainConfig?.enableWebManifest !== false;
+  const hasIconsAndManifest = hasFavicon && hasLogo && manifestEnabled;
+  const missingIconParts: string[] = [];
+  if (!hasFavicon) missingIconParts.push('Favicon URL');
+  if (!hasLogo) missingIconParts.push('Logo / Search Logo URL');
+  if (!manifestEnabled) missingIconParts.push('Web Manifest disabled');
   checks.push({
     id: 'search-logo-manifest',
-    label: 'Google Search Result Logo, Favicon & Web Manifest Active',
+    label: 'Search Logo, Favicon & Web Manifest Active',
     passed: hasIconsAndManifest,
-    detail: `Organization 512x512 Logo + /manifest.webmanifest + Apple Touch Icon ready`
+    detail: hasIconsAndManifest
+      ? 'Organization 512x512 logo, favicon & /manifest.webmanifest active'
+      : `Needs setup: ${missingIconParts.join(', ')}`,
+    fixTab: 'brand',
+    fixSubtab: 'identity'
   });
 
-  const lcpBannerOptimized =
-    config.hero?.showBanner === false ||
-    Boolean(config.hero?.bannerImageUrl?.trim() && config.hero?.bannerAlt?.trim());
+  const hasHeroOrBrand = Boolean(config.hero?.h1?.trim() || config.brand?.name?.trim());
+  const bannerShown = config.hero?.showBanner !== false;
+  const hasBannerUrl = Boolean(config.hero?.bannerImageUrl?.trim());
+  const hasBannerAlt = Boolean(config.hero?.bannerAlt?.trim());
+  const lcpBannerOptimized = hasHeroOrBrand && (!bannerShown || (hasBannerUrl && hasBannerAlt));
+  let lcpDetail = '';
+  if (!hasHeroOrBrand) {
+    lcpDetail = 'Configure Hero headline / Brand name and 16:9 showcase banner';
+  } else if (!bannerShown) {
+    lcpDetail = 'Hero banner disabled — text-only LCP active';
+  } else if (hasBannerUrl && hasBannerAlt) {
+    lcpDetail =
+      config.domainConfig?.enableImageSitemap !== false
+        ? 'fetchpriority="high" + <link rel="preload"> + Image Sitemap active'
+        : 'fetchpriority="high" + <link rel="preload"> active';
+  } else {
+    const missingBanner: string[] = [];
+    if (!hasBannerUrl) missingBanner.push('Banner Image URL');
+    if (!hasBannerAlt) missingBanner.push('Banner Alt Text');
+    lcpDetail = `Missing: ${missingBanner.join(', ')}`;
+  }
   checks.push({
     id: 'lcp-image-seo',
-    label: 'FCP/LCP Hero Image Preload & Alt Text Optimized',
+    label: 'FCP/LCP Hero Headline, Banner & Alt Text Ready',
     passed: lcpBannerOptimized,
-    detail: `fetchpriority="high" + <link rel="preload"> + Google Image Sitemap active`
+    detail: lcpDetail,
+    fixTab: 'brand',
+    fixSubtab: 'hero'
   });
 
-  const sectionsWithMeta = (config.sections || []).every(
-    (s) => Boolean(s.metaTitle?.trim() && s.metaDescription?.trim())
-  );
+  const sectionsMissingMeta = sections.filter(
+    (s) => !Boolean(s.metaTitle?.trim() && s.metaDescription?.trim())
+  ).length;
+  const sectionsWithMeta = sections.length > 0 && sectionsMissingMeta === 0;
   checks.push({
     id: 'sections-meta',
-    label: 'All Content Sections Have Meta Title & Description',
-    passed: sectionsWithMeta && (config.sections || []).length > 0,
-    detail: `${(config.sections || []).length} content sections verified`
+    label: 'Content Sections Have Meta Title & Description',
+    passed: sectionsWithMeta,
+    detail:
+      sections.length === 0
+        ? 'No homepage content sections added yet'
+        : sectionsMissingMeta === 0
+        ? `${sections.length} content section(s) verified`
+        : `${sectionsMissingMeta} of ${sections.length} section(s) missing meta title or description`,
+    fixTab: 'sections'
   });
 
-  const articles = config.newsSection?.articles || [];
-  const newsWithMeta = articles.every(
-    (a) => Boolean(a.title?.trim() && a.slug?.trim() && a.metaTitle?.trim() && a.metaDescription?.trim())
-  );
+  const newsMissingMeta = articles.filter(
+    (a) => !Boolean(a.title?.trim() && a.slug?.trim() && a.metaTitle?.trim() && a.metaDescription?.trim())
+  ).length;
+  const newsWithMeta = articles.length > 0 && newsMissingMeta === 0;
   checks.push({
     id: 'news-meta',
-    label: 'Daily News Articles Have Standalone Slugs & Meta Tags',
-    passed: newsWithMeta && articles.length > 0,
-    detail: `${articles.length} daily news articles indexed under /news/:slug`
+    label: 'Daily News Articles Have Slugs & Meta Tags',
+    passed: newsWithMeta,
+    detail:
+      articles.length === 0
+        ? 'No daily news articles published yet'
+        : newsMissingMeta === 0
+        ? `${articles.length} daily news article(s) indexed under /news/:slug`
+        : `${newsMissingMeta} of ${articles.length} article(s) missing slug or SEO meta tags`,
+    fixTab: 'news'
   });
 
-  const pages = config.pages || [];
-  const pagesWithMeta = pages.every(
-    (p) => Boolean(p.slug?.trim() && p.metaTitle?.trim() && p.metaDescription?.trim() && p.htmlContent?.trim())
-  );
+  const pagesMissingMeta = pages.filter(
+    (p) => !Boolean(p.slug?.trim() && p.metaTitle?.trim() && p.metaDescription?.trim() && p.htmlContent?.trim())
+  ).length;
+  const pagesWithMeta = pages.length >= 3 && pagesMissingMeta === 0;
   checks.push({
     id: 'pages-meta',
-    label: 'Legal & Footer Pages Have Standalone URLs & Meta Tags',
-    passed: pagesWithMeta && pages.length >= 3,
-    detail: `${pages.length} standalone pages active (${pages.map((p) => '/' + p.slug).join(', ')})`
+    label: 'Legal & Footer Pages Have URLs & Meta Tags',
+    passed: pagesWithMeta,
+    detail:
+      pages.length === 0
+        ? 'No standalone legal pages added yet (recommend at least 3: Privacy, Terms, Contact)'
+        : pagesMissingMeta > 0
+        ? `${pagesMissingMeta} of ${pages.length} page(s) missing content or SEO meta tags`
+        : pages.length < 3
+        ? `${pages.length} page(s) configured — add at least 3 legal/support pages`
+        : `${pages.length} standalone pages active (${pages.map((p) => '/' + p.slug).join(', ')})`,
+    fixTab: 'pages'
   });
 
   const internalLinksCount = (config.domainConfig?.internalLinks || []).length;
   const autoInternalActive = config.domainConfig?.enableAutoInternalLinks !== false;
+  const hasLinkTargets =
+    internalLinksCount > 0 || pages.length > 0 || (sections.length > 0 && articles.length > 0);
+  const internalLinkingPassed = autoInternalActive && hasLinkTargets;
   checks.push({
     id: 'internal-linking-seo',
-    label: 'Smart Contextual Internal Linking & Crawl Hub Active',
-    passed: autoInternalActive,
-    detail: `${internalLinksCount} custom keyword link rules + auto section/news cross-linking active`
+    label: 'Contextual Internal Linking & Crawl Hub Active',
+    passed: internalLinkingPassed,
+    detail: !autoInternalActive
+      ? 'Auto internal linking disabled in Workspace 8'
+      : !hasLinkTargets
+      ? 'Enabled, waiting for keyword link rules or pages/sections to cross-link'
+      : `${internalLinksCount} keyword link rule(s) + automatic cross-linking active`,
+    fixTab: 'domain',
+    fixSubtab: 'internallinks'
   });
 
   const passedCount = checks.filter((c) => c.passed).length;
   const score = Math.round((passedCount / checks.length) * 100);
-  const totalUrlsInSitemap = 2 + articles.length + pages.length;
+
+  const isSiteConfigured = Boolean(
+    config.brand?.name?.trim() || config.hero?.h1?.trim() || articles.length > 0 || pages.length > 0
+  );
+  const totalUrlsInSitemap =
+    config.domainConfig?.enableSitemapXml === false || !isSiteConfigured
+      ? 0
+      : 2 + articles.length + pages.length;
 
   return {
     score,

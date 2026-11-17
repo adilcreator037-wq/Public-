@@ -12,6 +12,7 @@ import {
   preserveSecretsOnSave,
   sanitizeConfigForClient,
   appendSyncLogEntry,
+  cleanAuthEnvValue,
   resolveAdminSecurityPolicy,
   validateAdminSessionClaims,
   mergeSiteConfig,
@@ -58,10 +59,7 @@ for (const dir of [DATA_DIR, UPLOADS_DIR, PUBLIC_STATIC_ROUTES_DIR, DIST_PUBLIC_
 }
 
 function cleanEnvVal(val: unknown): string {
-  if (!val) return '';
-  return String(val)
-    .replace(/^["'`]+|["'`]+$/g, '')
-    .trim();
+  return cleanAuthEnvValue(val);
 }
 
 function getAdminAuthEnv(reqHost = '') {
@@ -83,16 +81,51 @@ function getAdminAuthEnv(reqHost = '') {
     cleanEnvVal(process.env.CMS_ADMIN_API_KEY) ||
     '';
 
-  const secret =
+  const rawExplicitSecret =
     cleanEnvVal(process.env.ADMIN_SESSION_SECRET) ||
     cleanEnvVal(process.env.ADMIN_SECRET) ||
     cleanEnvVal(process.env.SESSION_SECRET);
 
+  const safeEmail = policy.hasCustomEmail ? email : '';
+  const safePassword = policy.hasCustomPassword ? password : '';
+  const safeApiKey = policy.hasApiKey ? apiKey : '';
+
+  let secret = '';
+  if (policy.credentialsReady) {
+    if (!policy.hasDerivedSecret && rawExplicitSecret) {
+      secret = crypto
+        .createHmac('sha256', rawExplicitSecret)
+        .update('master-cms:session:explicit:v2')
+        .digest('hex');
+    } else if (policy.hasDerivedSecret) {
+      const vaultSalt = cleanEnvVal(
+        process.env.VAULT_ENCRYPTION_SECRET ||
+          process.env.LINK_VAULT_MASTER_SECRET ||
+          process.env.FIREBASE_API_KEY ||
+          ''
+      );
+      const ikm = `${safePassword}\0${safeApiKey}\0${vaultSalt}`;
+      secret = crypto
+        .createHmac('sha256', ikm)
+        .update(`master-cms:session:derived:v2:${safeEmail.toLowerCase()}`)
+        .digest('hex');
+    }
+  }
+
+  const credVersion = secret
+    ? crypto
+        .createHmac('sha256', secret)
+        .update(`cred-epoch:v2:${safeEmail.toLowerCase()}\0${safePassword}\0${safeApiKey}`)
+        .digest('base64url')
+        .slice(0, 16)
+    : '';
+
   return {
-    email: policy.hasCustomEmail ? email : '',
-    password: policy.hasCustomPassword ? password : '',
-    apiKey: policy.hasApiKey ? apiKey : '',
-    secret: policy.hasCustomSecret ? secret : '',
+    email: safeEmail,
+    password: safePassword,
+    apiKey: safeApiKey,
+    secret,
+    credVersion,
     isCustomEmail: policy.hasCustomEmail,
     isCustomPassword: policy.hasCustomPassword,
     isCustomSecret: policy.hasCustomSecret,
@@ -529,6 +562,12 @@ function safeTimingCompare(a: string, b: string): boolean {
   return crypto.timingSafeEqual(digestA, digestB);
 }
 
+const ADMIN_SESSION_TTL_SEC = 60 * 60 * 12; // 12 hours
+const ADMIN_SESSION_TTL_MS = ADMIN_SESSION_TTL_SEC * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_IP_ATTEMPTS = 5;
+const LOGIN_MAX_GLOBAL_ATTEMPTS = 12;
+
 const loginAttemptTracker = new Map<string, { count: number; resetAt: number }>();
 const revokedJtis = new Map<string, number>();
 
@@ -558,12 +597,16 @@ function getTrustedLoginRateLimitIp(req: express.Request): string {
 
 function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfterSec?: number } {
   const now = Date.now();
+  const globalEntry = loginAttemptTracker.get('__global__');
+  if (globalEntry && now <= globalEntry.resetAt && globalEntry.count >= LOGIN_MAX_GLOBAL_ATTEMPTS) {
+    return { allowed: false, retryAfterSec: Math.ceil((globalEntry.resetAt - now) / 1000) };
+  }
   const entry = loginAttemptTracker.get(ip);
   if (!entry || now > entry.resetAt) {
     if (entry) loginAttemptTracker.delete(ip);
     return { allowed: true };
   }
-  if (entry.count >= 12) {
+  if (entry.count >= LOGIN_MAX_IP_ATTEMPTS) {
     return { allowed: false, retryAfterSec: Math.ceil((entry.resetAt - now) / 1000) };
   }
   return { allowed: true };
@@ -579,16 +622,19 @@ function recordFailedLoginAttempt(ip: string) {
     if (!oldest) break;
     loginAttemptTracker.delete(oldest);
   }
-  const entry = loginAttemptTracker.get(ip);
-  if (!entry || now > entry.resetAt) {
-    loginAttemptTracker.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 });
-  } else {
-    entry.count += 1;
+  for (const bucketKey of [ip, '__global__']) {
+    const entry = loginAttemptTracker.get(bucketKey);
+    if (!entry || now > entry.resetAt) {
+      loginAttemptTracker.set(bucketKey, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    } else {
+      entry.count += 1;
+    }
   }
 }
 
 function clearLoginAttempts(ip: string) {
   loginAttemptTracker.delete(ip);
+  loginAttemptTracker.delete('__global__');
 }
 
 function parseCookies(cookieHeader = ''): Record<string, string> {
@@ -625,7 +671,7 @@ function setAdminSessionCookie(res: express.Response, token: string, isHttps: bo
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    `Max-Age=${60 * 60 * 24 * 7}`
+    `Max-Age=${ADMIN_SESSION_TTL_SEC}`
   ];
   if (isHttps) parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
@@ -639,17 +685,19 @@ function clearAdminSessionCookie(res: express.Response, isHttps: boolean) {
   res.setHeader('Set-Cookie', cookies);
 }
 
-function createAdminToken(email: string, secret: string): string {
+function createAdminToken(email: string, secret: string, credVersion = ''): string {
   const jti = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
   const now = Date.now();
   const payload = JSON.stringify({
     iss: 'master-cms-admin',
     typ: 'admin-session',
+    ver: 2,
     email,
     role: 'Master Administrator',
+    cv: credVersion,
     jti,
     iat: now,
-    exp: now + 1000 * 60 * 60 * 24 * 7
+    exp: now + ADMIN_SESSION_TTL_MS
   });
   const base64Payload = Buffer.from(payload).toString('base64url');
   const signature = crypto
@@ -662,6 +710,7 @@ function createAdminToken(email: string, secret: string): string {
 function extractAdminTokenFromReq(req: express.Request): {
   token: string;
   viaApiKeyHeader: boolean;
+  fromCookie: boolean;
 } {
   const authHeader = req.headers.authorization || '';
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -671,18 +720,19 @@ function extractAdminTokenFromReq(req: express.Request): {
     cookies['__Host-cms_admin_session'] || cookies['cms_admin_session'] || '';
 
   if (headerApiKey) {
-    return { token: headerApiKey, viaApiKeyHeader: true };
+    return { token: headerApiKey, viaApiKeyHeader: true, fromCookie: false };
   }
   if (cookieToken) {
-    return { token: cookieToken, viaApiKeyHeader: false };
+    return { token: cookieToken, viaApiKeyHeader: false, fromCookie: true };
   }
-  return { token: bearerToken, viaApiKeyHeader: false };
+  return { token: bearerToken, viaApiKeyHeader: Boolean(bearerToken), fromCookie: false };
 }
 
 function verifyAdminToken(
   token: string | undefined,
   reqHost = '',
-  ignoreExpiryForLogout = false
+  ignoreExpiryForLogout = false,
+  fromCookie = false
 ): { valid: boolean; email?: string; role?: string; jti?: string; exp?: number; policyError?: string } {
   const adminEnv = getAdminAuthEnv(reqHost);
   if (!adminEnv.policy.credentialsReady) {
@@ -690,7 +740,8 @@ function verifyAdminToken(
   }
   if (!token || typeof token !== 'string') return { valid: false };
 
-  if (adminEnv.apiKey && safeTimingCompare(token, adminEnv.apiKey)) {
+  // Session cookies may never contain static API keys — only signed session tokens
+  if (!fromCookie && adminEnv.apiKey && safeTimingCompare(token, adminEnv.apiKey)) {
     return { valid: true, email: 'api-key-admin', role: 'Master Administrator' };
   }
 
@@ -715,6 +766,11 @@ function verifyAdminToken(
         return { valid: false, jti: decoded.jti, exp: typeof decoded.exp === 'number' ? decoded.exp : undefined };
       }
       return { valid: false };
+    }
+    if (adminEnv.credVersion) {
+      if (!claimCheck.claims.cv || !safeTimingCompare(claimCheck.claims.cv, adminEnv.credVersion)) {
+        return { valid: false };
+      }
     }
     if (revokedJtis.has(claimCheck.claims.jti)) {
       return { valid: false };
@@ -780,20 +836,20 @@ function verifyAdminCsrf(req: express.Request): { ok: boolean; error?: string } 
 }
 
 function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const { token } = extractAdminTokenFromReq(req);
-  const verification = verifyAdminToken(token, req.headers.host || '');
+  const { token, fromCookie } = extractAdminTokenFromReq(req);
+  const verification = verifyAdminToken(token, req.headers.host || '', false, fromCookie);
   if (verification.policyError) {
     res.status(503).json({
       success: false,
       code: 'admin-not-configured',
-      error: verification.policyError
+      error: 'Administrator authentication is unavailable until configured on this server.'
     });
     return;
   }
   if (!verification.valid) {
     res.status(401).json({
       success: false,
-      error: 'Unauthorized. Please sign in with your configured Admin Email & Password.'
+      error: 'Unauthorized. Please sign in to continue.'
     });
     return;
   }
@@ -813,6 +869,9 @@ function requireAdminAuth(req: express.Request, res: express.Response, next: exp
   next();
 }
 
+const ADMIN_CSP_POLICY =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://firestore.googleapis.com https://api.github.com; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
+
 async function startServer() {
   const app = express();
   app.use((req, res, next) => {
@@ -830,6 +889,8 @@ async function startServer() {
       urlPath === '/api/news'
     ) {
       res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Content-Security-Policy', ADMIN_CSP_POLICY);
       res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
     }
@@ -1103,6 +1164,10 @@ async function startServer() {
   // 6. Dynamic XML Sitemap (/sitemap.xml)
   app.get('/sitemap.xml', (_req, res) => {
     const config = loadPersistedSiteConfig();
+    if (config.domainConfig?.enableSitemapXml === false) {
+      res.status(404).set('Content-Type', 'text/plain; charset=utf-8').send('XML Sitemap is disabled in CMS settings.');
+      return;
+    }
     res.status(200).set('Content-Type', 'application/xml; charset=utf-8').send(generateSitemapXml(config));
   });
 
@@ -1115,12 +1180,20 @@ async function startServer() {
   // 8. Dynamic RSS 2.0 Feed for Daily News (/feed.xml)
   app.get('/feed.xml', (_req, res) => {
     const config = loadPersistedSiteConfig();
+    if (config.domainConfig?.enableRssFeed === false) {
+      res.status(404).set('Content-Type', 'text/plain; charset=utf-8').send('RSS Feed is disabled in CMS settings.');
+      return;
+    }
     res.status(200).set('Content-Type', 'application/rss+xml; charset=utf-8').send(generateRssFeedXml(config));
   });
 
   // 8b. Dynamic W3C Web App Manifest (/manifest.webmanifest & /manifest.json)
   app.get(['/manifest.webmanifest', '/manifest.json', '/site.webmanifest'], (_req, res) => {
     const config = loadPersistedSiteConfig();
+    if (config.domainConfig?.enableWebManifest === false) {
+      res.status(404).set('Content-Type', 'text/plain; charset=utf-8').send('Web App Manifest is disabled in CMS settings.');
+      return;
+    }
     res
       .status(200)
       .set('Content-Type', 'application/manifest+json; charset=utf-8')
@@ -1128,7 +1201,7 @@ async function startServer() {
   });
 
   // 9. Hardened Server-Side Admin Login (HttpOnly Cookie + Fail-Closed Policy + Rate-Limiting + Zero Env Var Disclosure)
-  app.post('/api/admin/login', (req, res) => {
+  app.post('/api/admin/login', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const adminEnv = getAdminAuthEnv(req.headers.host || '');
     if (!adminEnv.policy.credentialsReady) {
@@ -1154,6 +1227,7 @@ async function startServer() {
       }
       res.status(429).json({
         success: false,
+        retryAfterSec: rateCheck.retryAfterSec || 60,
         error: `Too many failed sign-in attempts. Please wait ${rateCheck.retryAfterSec || 60} seconds.`
       });
       return;
@@ -1178,14 +1252,14 @@ async function startServer() {
       return;
     }
 
-    const cleanEmail = email.trim();
-    const cleanPass = password.trim();
-    const cleanKey = apiKey.trim();
+    const cleanEmail = cleanAuthEnvValue(email);
+    const cleanPass = cleanAuthEnvValue(password);
+    const cleanKey = cleanAuthEnvValue(apiKey);
 
     if (!cleanKey && (!cleanEmail || !cleanPass)) {
       res.status(400).json({
         success: false,
-        error: 'Please enter your administrator credentials to sign in.'
+        error: 'Please enter your administrator email and password to sign in.'
       });
       return;
     }
@@ -1193,27 +1267,27 @@ async function startServer() {
     const apiKeyAuthenticated = Boolean(
       adminEnv.requiresApiKey && cleanKey && safeTimingCompare(cleanKey, adminEnv.apiKey)
     );
-    const credentialsAuthenticated = Boolean(
-      adminEnv.email &&
-        adminEnv.password &&
-        cleanEmail &&
-        cleanPass &&
-        safeTimingCompare(cleanEmail.toLowerCase(), adminEnv.email.toLowerCase()) &&
-        safeTimingCompare(cleanPass, adminEnv.password)
+    const emailMatch = Boolean(
+      adminEnv.email && cleanEmail && safeTimingCompare(cleanEmail.toLowerCase(), adminEnv.email.toLowerCase())
     );
+    const passMatch = Boolean(
+      adminEnv.password && cleanPass && safeTimingCompare(cleanPass, adminEnv.password)
+    );
+    const credentialsAuthenticated = emailMatch && passMatch;
 
     if (!apiKeyAuthenticated && !credentialsAuthenticated) {
       recordFailedLoginAttempt(clientIp);
+      await new Promise((r) => setTimeout(r, 220));
       res.status(401).json({
         success: false,
-        error: 'Invalid administrator credentials.'
+        error: 'Invalid email address or password.'
       });
       return;
     }
 
     clearLoginAttempts(clientIp);
     const loginSubject = credentialsAuthenticated ? adminEnv.email : 'api-key-admin';
-    const token = createAdminToken(loginSubject, adminEnv.secret);
+    const token = createAdminToken(loginSubject, adminEnv.secret, adminEnv.credVersion);
     setAdminSessionCookie(res, token, isHttpsRequest(req));
 
     const fbEnv = getFirebaseEnvConfig();
@@ -1237,11 +1311,11 @@ async function startServer() {
       res.status(403).json({ success: false, error: csrf.error });
       return;
     }
-    const { token } = extractAdminTokenFromReq(req);
-    const verification = verifyAdminToken(token, req.headers.host || '', true);
+    const { token, fromCookie } = extractAdminTokenFromReq(req);
+    const verification = verifyAdminToken(token, req.headers.host || '', true, fromCookie);
     if (verification.jti) {
       cleanupRevokedJtis();
-      revokedJtis.set(verification.jti, verification.exp || Date.now() + 1000 * 60 * 60 * 24 * 7);
+      revokedJtis.set(verification.jti, verification.exp || Date.now() + ADMIN_SESSION_TTL_MS);
     }
     clearAdminSessionCookie(res, isHttpsRequest(req));
     res.json({ success: true });
@@ -1250,8 +1324,8 @@ async function startServer() {
   // 10. Zero-Leak Admin Session Verification (Never discloses env var names or setup hints when unauthenticated)
   app.get('/api/admin/verify', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    const { token } = extractAdminTokenFromReq(req);
-    const verification = verifyAdminToken(token, req.headers.host || '');
+    const { token, fromCookie } = extractAdminTokenFromReq(req);
+    const verification = verifyAdminToken(token, req.headers.host || '', false, fromCookie);
 
     if (!verification.valid) {
       res.json({

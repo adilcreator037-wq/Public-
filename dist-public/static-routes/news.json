@@ -2,9 +2,10 @@
   "path": "/news",
   "canonicalPath": "/news",
   "viewType": "news-hub",
-  "metaTitle": "Daily News & Release Updates | ",
-  "metaDescription": "Browse all daily news updates, release changelogs, and security advisories for .",
-  "ogImage": "/assets/hero-banner.svg",
+  "isConfigured": false,
+  "metaTitle": "Daily News & Updates",
+  "metaDescription": "Browse published news updates and announcements.",
+  "ogImage": "",
   "heroH1": "Latest News & Updates",
   "showHeroSection": true,
   "showHeroCtaGrid": false,
@@ -14,63 +15,51 @@
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://apexmobile.example.com/#website",
-        "url": "https://apexmobile.example.com",
+        "@id": "https://example.com/#website",
+        "url": "https://example.com",
         "name": "Website",
         "alternateName": "Website",
         "description": "",
         "publisher": {
-          "@id": "https://apexmobile.example.com/#organization"
+          "@id": "https://example.com/#organization"
         },
         "inLanguage": "en-US"
       },
       {
         "@type": "Organization",
-        "@id": "https://apexmobile.example.com/#organization",
+        "@id": "https://example.com/#organization",
         "name": "Organization",
-        "url": "https://apexmobile.example.com",
-        "logo": {
-          "@type": "ImageObject",
-          "@id": "https://apexmobile.example.com/#logo",
-          "url": "https://apexmobile.example.com/assets/app-icon.svg",
-          "contentUrl": "https://apexmobile.example.com/assets/app-icon.svg",
-          "width": 512,
-          "height": 512,
-          "caption": "Organization Logo"
-        },
-        "image": {
-          "@id": "https://apexmobile.example.com/#logo"
-        }
+        "url": "https://example.com"
       },
       {
         "@type": "BreadcrumbList",
-        "@id": "https://apexmobile.example.com/news/#breadcrumb",
+        "@id": "https://example.com/news/#breadcrumb",
         "itemListElement": [
           {
             "@type": "ListItem",
             "position": 1,
             "name": "Home",
-            "item": "https://apexmobile.example.com"
+            "item": "https://example.com"
           },
           {
             "@type": "ListItem",
             "position": 2,
             "name": "Latest News & Updates",
-            "item": "https://apexmobile.example.com/news"
+            "item": "https://example.com/news"
           }
         ]
       },
       {
         "@type": "CollectionPage",
-        "@id": "https://apexmobile.example.com/news/#news-collection",
-        "url": "https://apexmobile.example.com/news",
-        "name": "Daily News & Release Updates | ",
-        "description": "Browse all daily news updates, release changelogs, and security advisories for .",
+        "@id": "https://example.com/news/#news-collection",
+        "url": "https://example.com/news",
+        "name": "Daily News & Updates",
+        "description": "Browse published news updates and announcements.",
         "isPartOf": {
-          "@id": "https://apexmobile.example.com/#website"
+          "@id": "https://example.com/#website"
         },
         "breadcrumb": {
-          "@id": "https://apexmobile.example.com/news/#breadcrumb"
+          "@id": "https://example.com/news/#breadcrumb"
         },
         "mainEntity": {
           "@type": "ItemList",
@@ -84,10 +73,10 @@
       "name": "",
       "shortName": "",
       "tagline": "",
-      "logoUrl": "/assets/app-icon.svg",
-      "faviconUrl": "/assets/app-icon.svg",
-      "searchLogoUrl": "/assets/app-icon.svg",
-      "appleTouchIconUrl": "/assets/app-icon.svg",
+      "logoUrl": "",
+      "faviconUrl": "",
+      "searchLogoUrl": "",
+      "appleTouchIconUrl": "",
       "accentColor": "#EF4444",
       "themeColor": "#EF4444",
       "contactEmail": ""
@@ -138,19 +127,19 @@
     },
     "heroCtas": {
       "secondaryCta": {
-        "label": "Learn More",
-        "url": "#technical-specifications",
+        "label": "",
+        "url": "",
         "relSponsored": false
       },
       "primaryCta": {
-        "label": "Download",
-        "url": "/moreinfo",
+        "label": "",
+        "url": "",
         "relSponsored": false
       },
       "floatingCta": {
         "enabled": false,
-        "label": "Download",
-        "url": "/moreinfo"
+        "label": "",
+        "url": ""
       }
     },
     "packageVersion": "",
@@ -159,23 +148,18 @@
     "recentNewsDrawerItems": [],
     "headerPages": [],
     "footerPages": [],
-    "allSubpagePills": [
-      {
-        "label": "News",
-        "href": "/news"
-      }
-    ],
+    "allSubpagePills": [],
     "newsCount": 0,
     "navigation": {
       "footerSummary": "",
       "showFooterBrandSummary": true,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimerHeading": "",
       "disclaimer": "",
-      "siteLinksHeading": "Legal & Support Pages",
+      "siteLinksHeading": "",
       "copyright": ""
     }
   },
-  "updatedAt": 1794899531750
+  "updatedAt": 0
 }

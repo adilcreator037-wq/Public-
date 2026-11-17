@@ -2,69 +2,58 @@
   "path": "/",
   "canonicalPath": "/",
   "viewType": "home",
-  "metaTitle": " Official Site",
+  "isConfigured": false,
+  "metaTitle": "Coming Soon",
   "metaDescription": "",
-  "ogImage": "/assets/hero-banner.svg",
+  "ogImage": "",
   "heroH1": "",
-  "showHeroSection": true,
-  "showHeroCtaGrid": true,
-  "renderedMainHtml": "<section class=\"cms-callout-box\"><p>Homepage content is ready to publish from the Admin Studio.</p></section>",
+  "showHeroSection": false,
+  "showHeroCtaGrid": false,
+  "renderedMainHtml": "<section class=\"site-coming-soon\"><h1>Coming Soon</h1><p>This website is currently being prepared.</p></section>",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://apexmobile.example.com/#website",
-        "url": "https://apexmobile.example.com",
+        "@id": "https://example.com/#website",
+        "url": "https://example.com",
         "name": "Website",
         "alternateName": "Website",
         "description": "",
         "publisher": {
-          "@id": "https://apexmobile.example.com/#organization"
+          "@id": "https://example.com/#organization"
         },
         "inLanguage": "en-US"
       },
       {
         "@type": "Organization",
-        "@id": "https://apexmobile.example.com/#organization",
+        "@id": "https://example.com/#organization",
         "name": "Organization",
-        "url": "https://apexmobile.example.com",
-        "logo": {
-          "@type": "ImageObject",
-          "@id": "https://apexmobile.example.com/#logo",
-          "url": "https://apexmobile.example.com/assets/app-icon.svg",
-          "contentUrl": "https://apexmobile.example.com/assets/app-icon.svg",
-          "width": 512,
-          "height": 512,
-          "caption": "Organization Logo"
-        },
-        "image": {
-          "@id": "https://apexmobile.example.com/#logo"
-        }
+        "url": "https://example.com"
       },
       {
         "@type": "WebPage",
-        "@id": "https://apexmobile.example.com/#webpage",
-        "url": "https://apexmobile.example.com",
-        "name": " Official Site",
+        "@id": "https://example.com/#webpage",
+        "url": "https://example.com",
+        "name": "Coming Soon",
         "description": "",
         "isPartOf": {
-          "@id": "https://apexmobile.example.com/#website"
+          "@id": "https://example.com/#website"
         },
         "about": {
-          "@id": "https://apexmobile.example.com/#organization"
+          "@id": "https://example.com/#organization"
         },
         "inLanguage": "en-US"
       },
       {
         "@type": "BreadcrumbList",
-        "@id": "https://apexmobile.example.com/#breadcrumb",
+        "@id": "https://example.com/#breadcrumb",
         "itemListElement": [
           {
             "@type": "ListItem",
             "position": 1,
             "name": "Home",
-            "item": "https://apexmobile.example.com"
+            "item": "https://example.com"
           }
         ]
       }
@@ -75,10 +64,10 @@
       "name": "",
       "shortName": "",
       "tagline": "",
-      "logoUrl": "/assets/app-icon.svg",
-      "faviconUrl": "/assets/app-icon.svg",
-      "searchLogoUrl": "/assets/app-icon.svg",
-      "appleTouchIconUrl": "/assets/app-icon.svg",
+      "logoUrl": "",
+      "faviconUrl": "",
+      "searchLogoUrl": "",
+      "appleTouchIconUrl": "",
       "accentColor": "#EF4444",
       "themeColor": "#EF4444",
       "contactEmail": ""
@@ -129,19 +118,19 @@
     },
     "heroCtas": {
       "secondaryCta": {
-        "label": "Learn More",
-        "url": "#technical-specifications",
+        "label": "",
+        "url": "",
         "relSponsored": false
       },
       "primaryCta": {
-        "label": "Download",
-        "url": "/moreinfo",
+        "label": "",
+        "url": "",
         "relSponsored": false
       },
       "floatingCta": {
         "enabled": false,
-        "label": "Download",
-        "url": "/moreinfo"
+        "label": "",
+        "url": ""
       }
     },
     "packageVersion": "",
@@ -150,23 +139,18 @@
     "recentNewsDrawerItems": [],
     "headerPages": [],
     "footerPages": [],
-    "allSubpagePills": [
-      {
-        "label": "News",
-        "href": "/news"
-      }
-    ],
+    "allSubpagePills": [],
     "newsCount": 0,
     "navigation": {
       "footerSummary": "",
       "showFooterBrandSummary": true,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimerHeading": "",
       "disclaimer": "",
-      "siteLinksHeading": "Legal & Support Pages",
+      "siteLinksHeading": "",
       "copyright": ""
     }
   },
-  "updatedAt": 1794899531750
+  "updatedAt": 0
 }

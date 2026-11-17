@@ -97,6 +97,11 @@ export async function onRequest(context) {
     newHeaders.set('Referrer-Policy', isGateway ? 'no-referrer' : 'strict-origin-when-cross-origin');
     if (isAdmin || sensitive) {
       newHeaders.set('X-Frame-Options', 'DENY');
+      newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
+      newHeaders.set(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://firestore.googleapis.com https://api.github.com; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+      );
     }
   } else {
     newHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');

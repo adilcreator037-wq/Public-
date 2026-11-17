@@ -41,7 +41,7 @@ export function generateSlugEdge(text) {
 
 export function normalizeDomainUrlEdge(rawDomain, forceHttps = true) {
   let clean = String(rawDomain || '').trim();
-  if (!clean) return 'https://your-domain.com';
+  if (!clean) return 'https://example.com';
   clean = clean.replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(clean)) {
     clean = `${forceHttps ? 'https' : 'http'}://${clean}`;
@@ -60,7 +60,7 @@ export function optimizeCloudinaryUrlEdge(url) {
 
 export function toAbsoluteAssetUrlEdge(urlOrPath, baseCanonical) {
   const raw = String(urlOrPath || '').trim();
-  if (!raw) return `${baseCanonical}/assets/app-icon.svg`;
+  if (!raw) return '';
   const optimized = optimizeCloudinaryUrlEdge(raw);
   if (/^https?:\/\//i.test(optimized) || optimized.startsWith('data:')) {
     return optimized;
@@ -78,7 +78,7 @@ export function routePathToStaticJsonNameEdge(pathname) {
 
 export function normalizeBaseUrlEdge(config) {
   const forceHttps = config?.domainConfig?.forceHttps !== false;
-  const raw = config?.seo?.canonicalUrl || config?.domainConfig?.primaryDomain || 'https://your-domain.com';
+  const raw = config?.seo?.canonicalUrl || config?.domainConfig?.primaryDomain || 'https://example.com';
   return normalizeDomainUrlEdge(raw, forceHttps);
 }
 
@@ -94,7 +94,7 @@ export function generateSitemapXmlEdge(config) {
       priority: '1.0',
       changefreq: 'daily',
       images: heroImg
-        ? [{ loc: heroImg, title: config?.hero?.bannerAlt || config?.brand?.name || 'Official Release' }]
+        ? [{ loc: heroImg, title: config?.hero?.bannerAlt || config?.brand?.name || 'Banner' }]
         : []
     }
   ];
@@ -162,7 +162,7 @@ export function generateRobotsTxtEdge(config) {
 
 export function generateRssFeedXmlEdge(config) {
   const baseUrl = normalizeBaseUrlEdge(config);
-  const brand = config?.brand?.name || 'Official Portal';
+  const brand = (config?.brand?.name || 'Site').trim();
   const desc = config?.seo?.metaDescription || config?.brand?.tagline || '';
   const items = (config?.newsSection?.articles || [])
     .slice(0, 20)
@@ -177,14 +177,26 @@ export function generateRssFeedXmlEdge(config) {
 }
 
 export function generateWebManifestJsonEdge(config) {
-  const brand = config?.brand?.name || 'Official Portal';
+  const brand = (config?.brand?.name || '').trim();
   const icon = optimizeCloudinaryUrlEdge(
-    config?.brand?.searchLogoUrl || config?.brand?.faviconUrl || config?.brand?.logoUrl || '/assets/app-icon.svg'
+    config?.brand?.searchLogoUrl || config?.brand?.faviconUrl || config?.brand?.logoUrl || ''
   );
-  const isSvg = icon.toLowerCase().endsWith('.svg');
+  const icons = [];
+  if (icon) {
+    const isSvg = icon.toLowerCase().endsWith('.svg');
+    icons.push({
+      src: icon,
+      sizes: isSvg ? 'any' : '512x512',
+      type: isSvg ? 'image/svg+xml' : 'image/png',
+      purpose: 'any'
+    });
+  }
+  const manifestName = config?.brand?.tagline
+    ? (brand ? `${brand} — ${config.brand.tagline}` : config.brand.tagline)
+    : brand;
   return JSON.stringify(
     {
-      name: `${brand}${config?.brand?.tagline ? ` — ${config.brand.tagline}` : ''}`,
+      name: manifestName,
       short_name: config?.brand?.shortName || brand,
       description: config?.seo?.metaDescription || config?.hero?.metaDescription || '',
       start_url: '/',
@@ -193,26 +205,66 @@ export function generateWebManifestJsonEdge(config) {
       orientation: 'portrait',
       background_color: config?.uiConfig?.surfaceBackgroundColor || '#FFFFFF',
       theme_color: config?.brand?.themeColor || config?.brand?.accentColor || '#EF4444',
-      icons: [
-        { src: icon, sizes: isSvg ? 'any' : '512x512', type: isSvg ? 'image/svg+xml' : 'image/png', purpose: 'any' }
-      ]
+      icons
     },
     null,
     2
   );
 }
 
+function hasPackageSpecsDataEdge(specs) {
+  if (!specs || specs.enabled === false) return false;
+  return Boolean(
+    specs.appName ||
+      specs.version ||
+      specs.fileSize ||
+      specs.operatingSystem ||
+      specs.packageFormat ||
+      specs.sha256 ||
+      specs.license ||
+      specs.lastUpdated ||
+      specs.securityStatus ||
+      (Array.isArray(specs.customRows) && specs.customRows.length > 0)
+  );
+}
+
+function isSiteConfiguredEdge(config) {
+  const brandName = String(config?.brand?.name || '').trim();
+  const heroH1 = String(config?.hero?.h1 || '').trim();
+  const heroIntro = String(config?.hero?.introHtml || '').trim();
+  const heroBanner = config?.hero?.showBanner !== false && Boolean(String(config?.hero?.bannerImageUrl || '').trim());
+  const hasVisibleSection = Array.isArray(config?.sections) && config.sections.some((s) => s && s.visible !== false);
+  const hasNews = Array.isArray(config?.newsSection?.articles) && config.newsSection.articles.length > 0;
+  const hasFaqs = Array.isArray(config?.faqsSection?.items) && config.faqsSection.items.length > 0;
+  const hasRaw = Boolean(String(config?.content?.rawHtml || '').trim());
+  const hasPages = Array.isArray(config?.pages) && config.pages.length > 0;
+  const hasSpecs = hasPackageSpecsDataEdge(config?.packageSpecs);
+  return Boolean(
+    brandName ||
+      heroH1 ||
+      heroIntro ||
+      heroBanner ||
+      hasVisibleSection ||
+      hasNews ||
+      hasFaqs ||
+      hasRaw ||
+      hasPages ||
+      hasSpecs
+  );
+}
+
 function resolveRouteEdge(pathname, config) {
   const cleanPath = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
-  const brandName = config?.brand?.name || 'Official Portal';
+  const brandName = (config?.brand?.name || '').trim();
+  const brandSuffix = brandName ? ` | ${brandName}` : '';
 
   if (cleanPath === '/news') {
     return {
       viewType: 'news-hub',
-      metaTitle: config?.newsSection?.metaTitle || `Daily News & Updates | ${brandName}`,
+      metaTitle: config?.newsSection?.metaTitle || `Daily News & Updates${brandSuffix}`,
       metaDescription: config?.newsSection?.metaDescription || config?.seo?.metaDescription || '',
       canonicalPath: '/news',
-      ogImage: config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || '/assets/hero-banner.svg'
+      ogImage: config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || ''
     };
   }
 
@@ -224,10 +276,10 @@ function resolveRouteEdge(pathname, config) {
     if (article) {
       return {
         viewType: 'news-article',
-        metaTitle: article.metaTitle || `${article.title} | ${brandName}`,
+        metaTitle: article.metaTitle || `${article.title}${brandSuffix}`,
         metaDescription: article.metaDescription || article.summary || config?.seo?.metaDescription || '',
         canonicalPath: `/news/${generateSlugEdge(article.slug || article.title)}`,
-        ogImage: article.coverImageUrl || config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || '/assets/hero-banner.svg',
+        ogImage: article.coverImageUrl || config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || '',
         article
       };
     }
@@ -240,10 +292,10 @@ function resolveRouteEdge(pathname, config) {
       const s = generateSlugEdge(page.slug || page.label);
       return {
         viewType: 'standalone-page',
-        metaTitle: page.metaTitle || `${page.h1 || page.label} | ${brandName}`,
+        metaTitle: page.metaTitle || `${page.h1 || page.label}${brandSuffix}`,
         metaDescription: page.metaDescription || config?.seo?.metaDescription || '',
         canonicalPath: `/${s}`,
-        ogImage: page.bannerImageUrl || config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || '/assets/hero-banner.svg',
+        ogImage: page.bannerImageUrl || config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || '',
         page
       };
     }
@@ -251,38 +303,41 @@ function resolveRouteEdge(pathname, config) {
 
   return {
     viewType: 'home',
-    metaTitle: config?.seo?.metaTitle || config?.hero?.metaTitle || brandName,
+    metaTitle: config?.seo?.metaTitle || config?.hero?.metaTitle || config?.hero?.h1 || brandName || 'Coming Soon',
     metaDescription: config?.seo?.metaDescription || config?.hero?.metaDescription || '',
     canonicalPath: '/',
-    ogImage: config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || '/assets/hero-banner.svg'
+    ogImage: config?.seo?.ogImageUrl || config?.hero?.bannerImageUrl || ''
   };
 }
 
 function buildJsonLdEdge(config, route) {
   const baseCanonical = normalizeBaseUrlEdge(config);
   const fullUrl = route.canonicalPath === '/' ? `${baseCanonical}/` : `${baseCanonical}${route.canonicalPath}`;
-  const brandName = config?.brand?.name || 'Official Portal';
-  const orgLogoUrl = toAbsoluteAssetUrlEdge(
-    config?.brand?.searchLogoUrl || config?.brand?.logoUrl || '/assets/app-icon.svg',
-    baseCanonical
-  );
+  const brandName = (config?.brand?.name || '').trim();
+  const rawLogo = config?.brand?.searchLogoUrl || config?.brand?.logoUrl || config?.brand?.faviconUrl || '';
+  const orgLogoUrl = rawLogo ? toAbsoluteAssetUrlEdge(rawLogo, baseCanonical) : '';
+
+  const orgNode = {
+    '@type': 'Organization',
+    '@id': `${baseCanonical}/#organization`,
+    name: brandName || 'Organization',
+    url: `${baseCanonical}/`
+  };
+  if (orgLogoUrl) {
+    orgNode.logo = { '@type': 'ImageObject', url: orgLogoUrl, width: 512, height: 512 };
+    orgNode.image = orgLogoUrl;
+  }
 
   const graph = [
     {
       '@type': 'WebSite',
       '@id': `${baseCanonical}/#website`,
       url: `${baseCanonical}/`,
-      name: brandName,
-      alternateName: config?.brand?.shortName || brandName,
+      name: brandName || 'Website',
+      alternateName: config?.brand?.shortName || brandName || 'Website',
       publisher: { '@id': `${baseCanonical}/#organization` }
     },
-    {
-      '@type': 'Organization',
-      '@id': `${baseCanonical}/#organization`,
-      name: brandName,
-      url: `${baseCanonical}/`,
-      logo: { '@type': 'ImageObject', url: orgLogoUrl, width: 512, height: 512 }
-    },
+    orgNode,
     {
       '@type': route.viewType === 'news-article' ? 'NewsArticle' : route.viewType === 'news-hub' ? 'CollectionPage' : 'WebPage',
       '@id': `${fullUrl}#webpage`,
@@ -298,32 +353,32 @@ function buildJsonLdEdge(config, route) {
 
 function renderSpecsHtmlEdge(config) {
   const specs = config?.packageSpecs;
-  if (!specs || specs.enabled === false) return '';
-  const customRows = Array.isArray(specs.customRows)
-    ? specs.customRows
-        .map((r) => `<tr><th>${escapeHtmlEdge(r.label)}</th><td>${escapeHtmlEdge(r.value)}</td></tr>`)
-        .join('')
-    : '';
+  if (!hasPackageSpecsDataEdge(specs)) return '';
+  const rows = [];
+  const appTitle = specs.appName || config?.brand?.name || '';
+  if (appTitle) rows.push(`<tr><th>Application Name</th><td><strong>${escapeHtmlEdge(appTitle)}</strong></td></tr>`);
+  if (specs.version) rows.push(`<tr><th>Latest Version</th><td><code>${escapeHtmlEdge(specs.version)}</code></td></tr>`);
+  if (specs.fileSize) rows.push(`<tr><th>Package Size</th><td>${escapeHtmlEdge(specs.fileSize)}</td></tr>`);
+  if (specs.operatingSystem) rows.push(`<tr><th>System Requirements</th><td>${escapeHtmlEdge(specs.operatingSystem)}</td></tr>`);
+  if (specs.packageFormat) rows.push(`<tr><th>Package Format</th><td>${escapeHtmlEdge(specs.packageFormat)}</td></tr>`);
+  if (specs.license) rows.push(`<tr><th>License &amp; Cost</th><td>${escapeHtmlEdge(specs.license)}</td></tr>`);
+  if (specs.securityStatus) rows.push(`<tr><th>Security Scan Status</th><td><span class="spec-verified-badge">${escapeHtmlEdge(specs.securityStatus.replace(/^✓\s*/, ''))}</span></td></tr>`);
+  if (specs.lastUpdated) rows.push(`<tr><th>Last Updated</th><td>${escapeHtmlEdge(specs.lastUpdated)}</td></tr>`);
+  if (specs.sha256) rows.push(`<tr><th>SHA-256 Checksum</th><td><div class="hash-cell-wrap"><code>${escapeHtmlEdge(specs.sha256)}</code></div></td></tr>`);
+  if (Array.isArray(specs.customRows)) {
+    for (const r of specs.customRows) {
+      if (r?.label || r?.value) {
+        rows.push(`<tr><th>${escapeHtmlEdge(r.label)}</th><td>${escapeHtmlEdge(r.value)}</td></tr>`);
+      }
+    }
+  }
   return `
     <section id="technical-specifications">
       <h2>${escapeHtmlEdge(specs.heading || 'Technical Package Specifications')}</h2>
       <div class="table-scroll-wrapper">
         <table>
           <tbody>
-            <tr><th>Application Name</th><td><strong>${escapeHtmlEdge(specs.appName || config?.brand?.name || 'Official Package')}</strong></td></tr>
-            <tr><th>Latest Version</th><td><code>${escapeHtmlEdge(specs.version || '—')}</code></td></tr>
-            <tr><th>Package Size</th><td>${escapeHtmlEdge(specs.fileSize || '—')}</td></tr>
-            <tr><th>System Requirements</th><td>${escapeHtmlEdge(specs.operatingSystem || 'Android 9.0+ / iOS 15.0+')}</td></tr>
-            <tr><th>Package Format</th><td>${escapeHtmlEdge(specs.packageFormat || 'Signed Package')}</td></tr>
-            <tr><th>License &amp; Cost</th><td>${escapeHtmlEdge(specs.license || 'Freeware')}</td></tr>
-            <tr><th>Security Scan Status</th><td><span class="spec-verified-badge">${escapeHtmlEdge((specs.securityStatus || 'Verified Clean').replace(/^✓\s*/, ''))}</span></td></tr>
-            <tr><th>Last Updated</th><td>${escapeHtmlEdge(specs.lastUpdated || '')}</td></tr>
-            ${
-              specs.sha256
-                ? `<tr><th>SHA-256 Checksum</th><td><div class="hash-cell-wrap"><code>${escapeHtmlEdge(specs.sha256)}</code></div></td></tr>`
-                : ''
-            }
-            ${customRows}
+            ${rows.join('\n            ')}
           </tbody>
         </table>
       </div>
@@ -383,42 +438,63 @@ function renderMainContentEdge(route, config) {
           .join('')}</section>`
       : '';
 
-  return `${intro}${banner}${specsHtml}${sectionsHtml}${rawHtml}${faqsHtml}`;
+  const combined = `${intro}${banner}${specsHtml}${sectionsHtml}${rawHtml}${faqsHtml}`;
+  if (!combined) {
+    if ((config?.hero?.h1 || '').trim() || (config?.brand?.name || '').trim()) {
+      return '';
+    }
+    return '<section class="site-coming-soon"><h1>Coming Soon</h1><p>This website is currently being prepared.</p></section>';
+  }
+  return combined;
 }
 
 export function buildPartialRoutePayloadEdge(pathname, config) {
   const safe = config || EMPTY_ADMIN_CONFIG;
   const route = resolveRouteEdge(pathname, safe);
+  const configured = isSiteConfiguredEdge(safe);
   const baseCanonical = normalizeBaseUrlEdge(safe);
   const canonicalUrl = route.canonicalPath === '/' ? `${baseCanonical}/` : `${baseCanonical}${route.canonicalPath}`;
   const mainHtml = renderMainContentEdge(route, safe);
   const jsonLd = buildJsonLdEdge(safe, route);
+  const heroH1 = safe?.hero?.h1 || safe?.brand?.name || '';
+  const secCta = safe?.hero?.secondaryCta || EMPTY_ADMIN_CONFIG.hero.secondaryCta;
+  const priCta = safe?.hero?.primaryCta || EMPTY_ADMIN_CONFIG.hero.primaryCta;
+  const hasSecCta = Boolean(secCta?.label && secCta?.url);
+  const hasPriCta = Boolean(priCta?.label && priCta?.url);
+  const showHeroCtaGrid = route.viewType === 'home' && safe?.uiConfig?.showHeroCtaButtons !== false && (hasSecCta || hasPriCta);
+  const showHeroSection = route.viewType === 'home'
+    ? (safe?.uiConfig?.showHeroSection !== false && Boolean(heroH1 || showHeroCtaGrid))
+    : true;
 
   return {
     viewType: route.viewType,
+    isConfigured: configured,
     canonicalPath: route.canonicalPath,
     canonicalUrl,
     metaTitle: route.metaTitle,
     metaDescription: route.metaDescription,
-    ogImage: toAbsoluteAssetUrlEdge(route.ogImage, baseCanonical),
-    heroH1: safe?.hero?.h1 || safe?.brand?.name || 'Official Portal',
-    showHeroSection: route.viewType === 'home',
-    showHeroCtaGrid: route.viewType === 'home',
+    ogImage: route.ogImage ? toAbsoluteAssetUrlEdge(route.ogImage, baseCanonical) : '',
+    heroH1,
+    showHeroSection,
+    showHeroCtaGrid,
     renderedMainHtml: mainHtml,
     jsonLd,
     shell: {
-      brandName: safe?.brand?.name || 'Official Portal',
-      logoUrl: optimizeCloudinaryUrlEdge(safe?.brand?.logoUrl || '/assets/app-icon.svg'),
-      faviconUrl: optimizeCloudinaryUrlEdge(safe?.brand?.faviconUrl || safe?.brand?.logoUrl || '/assets/app-icon.svg'),
+      brand: safe?.brand || EMPTY_ADMIN_CONFIG.brand,
+      brandName: (safe?.brand?.name || '').trim(),
+      logoUrl: optimizeCloudinaryUrlEdge(safe?.brand?.logoUrl || ''),
+      faviconUrl: optimizeCloudinaryUrlEdge(safe?.brand?.faviconUrl || safe?.brand?.logoUrl || ''),
       accentColor: safe?.brand?.accentColor || '#EF4444',
-      buttonTextColor: safe?.brand?.buttonTextColor || '#FFFFFF',
+      buttonTextColor: safe?.uiConfig?.buttonTextColor || '#FFFFFF',
+      uiConfig: safe?.uiConfig || EMPTY_ADMIN_CONFIG.uiConfig,
       heroCtas: {
-        primaryCta: safe?.hero?.primaryCta || EMPTY_ADMIN_CONFIG.hero.primaryCta,
-        secondaryCta: safe?.hero?.secondaryCta || EMPTY_ADMIN_CONFIG.hero.secondaryCta,
+        primaryCta: priCta,
+        secondaryCta: secCta,
         floatingCta: safe?.hero?.floatingCta || EMPTY_ADMIN_CONFIG.hero.floatingCta
       },
       footerPages: (safe?.pages || []).filter((p) => p && p.showInFooter !== false),
-      newsCount: (safe?.newsSection?.articles || []).length
+      newsCount: (safe?.newsSection?.articles || []).length,
+      navigation: safe?.navigation || EMPTY_ADMIN_CONFIG.navigation
     },
     compiledAt: Date.now()
   };
@@ -429,10 +505,10 @@ const FALLBACK_EDGE_HTML_TEMPLATE = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Official Portal</title>
+  <title>Site</title>
   <meta name="description" content="" />
   <link rel="canonical" href="" />
-  <link rel="icon" href="/assets/app-icon.svg" />
+  <link rel="icon" href="" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="" />
   <meta property="og:description" content="" />
@@ -449,8 +525,8 @@ const FALLBACK_EDGE_HTML_TEMPLATE = `<!DOCTYPE html>
     <header class="sticky-header">
       <div class="header-inner">
         <a href="/" class="brand-logo-container" id="navbar-logo-link" data-spa-link>
-          <img id="navbar-logo-img" class="brand-logo-img" src="/assets/app-icon.svg" alt="Brand Logo" width="30" height="30" />
-          <span id="navbar-logo-text" class="brand-logo-text">Official Portal</span>
+          <img id="navbar-logo-img" class="brand-logo-img hidden" src="" alt="" width="30" height="30" />
+          <span id="navbar-logo-text" class="brand-logo-text"></span>
         </a>
         <div class="header-right-actions">
           <a href="/news" id="header-news-btn" class="header-news-link" data-spa-link>News</a>
@@ -459,17 +535,17 @@ const FALLBACK_EDGE_HTML_TEMPLATE = `<!DOCTYPE html>
     </header>
     <div class="page-content-shell">
       <section id="hero-section" class="hero-container">
-        <h1 id="hero-heading" class="hero-title">Official Portal</h1>
+        <h1 id="hero-heading" class="hero-title"></h1>
         <div id="hero-cta-grid" class="hero-action-grid">
-          <a id="hero-cta-secondary" class="btn-secondary" href="#install-guide">Installation Guide</a>
-          <a id="hero-cta-primary" class="btn-primary" href="/moreinfo" rel="nofollow noopener">Download Official Package</a>
+          <a id="hero-cta-secondary" class="btn-secondary hidden" href="#"></a>
+          <a id="hero-cta-primary" class="btn-primary hidden" href="#"></a>
         </div>
       </section>
       <main id="dynamic-content" class="content-container prose-container"></main>
     </div>
     <footer class="site-footer">
       <div class="footer-inner">
-        <div id="footer-brand-title" class="footer-brand-title">Official Portal</div>
+        <div id="footer-brand-title" class="footer-brand-title"></div>
         <div id="footer-links-list" class="footer-links-stack"></div>
         <p id="footer-copyright" class="footer-copyright-text"></p>
       </div>
@@ -486,8 +562,9 @@ export function renderCompleteStaticPageHtmlEdge(indexHtmlTemplate, config, path
   const desc = escapeHtmlEdge(payload.metaDescription);
   const canonical = escapeHtmlEdge(payload.canonicalUrl);
   const ogImg = escapeHtmlEdge(payload.ogImage);
-  const brandName = escapeHtmlEdge(safe?.brand?.name || 'Official Portal');
-  const logoSrc = escapeHtmlEdge(optimizeCloudinaryUrlEdge(safe?.brand?.logoUrl || '/assets/app-icon.svg'));
+  const rawBrand = (safe?.brand?.name || '').trim();
+  const brandName = escapeHtmlEdge(rawBrand);
+  const logoSrc = escapeHtmlEdge(optimizeCloudinaryUrlEdge(safe?.brand?.logoUrl || ''));
   const jsonLdStr = JSON.stringify(payload.jsonLd).replace(/<\/script/gi, '<\\/script');
 
   let html = indexHtmlTemplate || FALLBACK_EDGE_HTML_TEMPLATE;
@@ -503,24 +580,45 @@ export function renderCompleteStaticPageHtmlEdge(indexHtmlTemplate, config, path
   html = html.replace(/<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${desc}" />`);
   html = html.replace(/<meta\s+name="twitter:image"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${ogImg}" />`);
 
-  html = html.replace(/id="navbar-logo-img"([^>]*)src="[^"]*"/i, `id="navbar-logo-img"$1src="${logoSrc}"`);
-  html = html.replace(/(id="navbar-logo-img"[^>]*?)alt="[^"]*"/i, `$1alt="${brandName}"`);
+  html = html.replace(
+    /<img\b[^>]*id="navbar-logo-img"[^>]*>/i,
+    `<img id="navbar-logo-img" class="brand-logo-img${logoSrc ? '' : ' hidden'}" src="${logoSrc}" alt="${escapeHtmlEdge(rawBrand ? `${rawBrand} Logo` : '')}" width="30" height="30" loading="eager" referrerpolicy="no-referrer" />`
+  );
   html = html.replace(/<span id="navbar-logo-text" class="brand-logo-text">[\s\S]*?<\/span>/i, `<span id="navbar-logo-text" class="brand-logo-text">${brandName}</span>`);
+  const hideEmptyHeader = !payload.isConfigured && (safe?.navigation?.headerLinks || []).length === 0;
+  html = html.replace(
+    /<header(?:\s+id="site-sticky-header")?\s+class="sticky-header(?:\s+hidden)?"[^>]*>/i,
+    `<header id="site-sticky-header" class="sticky-header${hideEmptyHeader ? ' hidden' : ''}">`
+  );
   html = html.replace(/<h1 id="hero-heading" class="hero-title">[\s\S]*?<\/h1>/i, `<h1 id="hero-heading" class="hero-title">${escapeHtmlEdge(payload.heroH1)}</h1>`);
-  if (!payload.showHeroSection) {
-    html = html.replace(/<section id="hero-section" class="hero-container">/i, `<section id="hero-section" class="hero-container hidden">`);
-  }
+  html = html.replace(/<section id="hero-section" class="hero-container(?:\s+hidden)?">/i, `<section id="hero-section" class="hero-container${payload.showHeroSection ? '' : ' hidden'}">`);
+  html = html.replace(/<div id="hero-cta-grid" class="hero-action-grid(?:\s+hidden)?">/i, `<div id="hero-cta-grid" class="hero-action-grid${payload.showHeroCtaGrid ? '' : ' hidden'}">`);
   html = html.replace(
     /<main id="dynamic-content" class="content-container prose-container"[^>]*>[\s\S]*?<\/main>/i,
-    `<main id="dynamic-content" class="content-container prose-container" data-ssr-path="${escapeHtmlEdge(payload.canonicalPath)}">${payload.renderedMainHtml}</main>`
+    `<main id="dynamic-content" class="content-container prose-container" tabindex="-1" data-ssr-path="${escapeHtmlEdge(payload.canonicalPath)}">${payload.renderedMainHtml}</main>`
   );
   html = html.replace(/<div id="footer-brand-title" class="footer-brand-title">[\s\S]*?<\/div>/i, `<div id="footer-brand-title" class="footer-brand-title">${brandName}</div>`);
-  html = html.replace(/<p id="footer-copyright" class="footer-copyright-text">[\s\S]*?<\/p>/i, `<p id="footer-copyright" class="footer-copyright-text">${escapeHtmlEdge(safe?.navigation?.copyright || '')}</p>`);
+  const copyrightStr = String(safe?.navigation?.copyright || '').trim();
+  html = html.replace(/<p id="footer-copyright" class="footer-copyright-text">[\s\S]*?<\/p>/i, `<p id="footer-copyright" class="footer-copyright-text">${escapeHtmlEdge(copyrightStr)}</p>`);
 
   const footerLinks = (payload.shell.footerPages || [])
     .map((pg) => `<a href="/${escapeHtmlEdge(generateSlugEdge(pg.slug || pg.label))}" data-spa-link class="footer-link">${escapeHtmlEdge(pg.label)}</a>`)
     .join('');
   html = html.replace(/<div id="footer-links-list" class="footer-links-stack">[\s\S]*?<\/div>/i, `<div id="footer-links-list" class="footer-links-stack">${footerLinks}</div>`);
+
+  const hasFooterContent = Boolean(
+    rawBrand ||
+      safe?.brand?.tagline ||
+      safe?.brand?.contactEmail ||
+      safe?.navigation?.footerBrandSummary ||
+      safe?.navigation?.disclaimer ||
+      footerLinks ||
+      copyrightStr
+  );
+  html = html.replace(
+    /<footer(?:\s+id="site-footer")?\s+class="site-footer(?:\s+hidden)?">/i,
+    `<footer id="site-footer" class="site-footer${hasFooterContent ? '' : ' hidden'}">`
+  );
 
   const gaRaw = String(safe?.domainConfig?.googleAnalyticsId || '').trim();
   const gaSnippet =
@@ -535,7 +633,8 @@ export function renderCompleteStaticPageHtmlEdge(indexHtmlTemplate, config, path
     );
   }
 
-  const headInject = `${gaSnippet}\n  <script>window.__INITIAL_ROUTE_PAYLOAD__=${JSON.stringify(payload).replace(/<\//g, '<\\/')};</script>\n</head>`;
+  const robotsMeta = `<meta name="robots" content="${payload.isConfigured ? 'index, follow' : 'noindex, nofollow'}" />`;
+  const headInject = `${robotsMeta}${gaSnippet}\n  <script>window.__INITIAL_ROUTE_PAYLOAD__=${JSON.stringify(payload).replace(/<\//g, '<\\/')};</script>\n</head>`;
   return html.replace('</head>', headInject);
 }
 

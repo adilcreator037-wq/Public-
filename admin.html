@@ -24,48 +24,71 @@
          1. RESTRICTED ADMINISTRATOR SIGN-IN GATE
          Zero environment variable names, zero hints, zero workspace DOM before auth
          ═══════════════════════════════════════════════════════════════════════ -->
-    <div id="auth-overlay" class="auth-overlay">
+    <div id="auth-overlay" class="auth-overlay" data-checking="true">
+      <div id="auth-checking-state" class="auth-checking-state" role="status" aria-live="polite">
+        <span class="auth-checking-spinner" aria-hidden="true"></span>
+        <span>Checking workspace session…</span>
+      </div>
+
       <div class="auth-card">
         <div class="auth-header">
           <div class="auth-brand">
             <div class="auth-logo-mark" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
             </div>
-            <div>
-              <div class="auth-title">Administrator Sign In</div>
-              <div class="auth-subtitle">Restricted Workspace Access</div>
+            <div class="auth-heading-group">
+              <h1 class="auth-title">Administrator Sign In</h1>
+              <p class="auth-subtitle">Restricted workspace access</p>
             </div>
           </div>
-          <span class="auth-lock-pill">Protected</span>
         </div>
 
-        <div class="auth-tabs" role="tablist">
-          <button type="button" class="auth-tab active" data-auth-mode="credentials" role="tab" aria-selected="true">
+        <div class="auth-tabs" role="tablist" aria-label="Sign-in method">
+          <button
+            type="button"
+            id="tab-auth-credentials"
+            class="auth-tab active"
+            data-auth-mode="credentials"
+            role="tab"
+            aria-selected="true"
+            aria-controls="auth-credentials-group"
+          >
             Email &amp; Password
           </button>
-          <button type="button" class="auth-tab" data-auth-mode="apikey" role="tab" aria-selected="false">
+          <button
+            type="button"
+            id="tab-auth-apikey"
+            class="auth-tab"
+            data-auth-mode="apikey"
+            role="tab"
+            aria-selected="false"
+            aria-controls="auth-apikey-group"
+          >
             Access Key
           </button>
         </div>
 
-        <div id="auth-error" class="auth-error" role="alert"></div>
+        <div id="auth-error" class="auth-error" role="alert" aria-live="assertive"></div>
 
-        <form id="login-form" class="form-grid" autocomplete="on" novalidate>
-          <div id="auth-credentials-group" class="form-grid">
+        <form id="login-form" class="form-grid auth-form" autocomplete="on" novalidate>
+          <div id="auth-credentials-group" class="form-grid" role="tabpanel" aria-labelledby="tab-auth-credentials">
             <div class="field">
               <label class="field-label" for="login-email">Administrator Email</label>
               <input
                 type="email"
                 id="login-email"
-                class="input"
-                placeholder="Enter administrator email"
+                name="email"
+                class="input auth-input"
+                placeholder="name@company.com"
                 autocomplete="username"
                 inputmode="email"
                 autocapitalize="none"
+                autocorrect="off"
                 spellcheck="false"
+                required
               />
             </div>
 
@@ -75,15 +98,18 @@
                 <input
                   type="password"
                   id="login-password"
-                  class="input"
-                  placeholder="Enter password"
+                  name="password"
+                  class="input auth-input"
+                  placeholder="Enter your password"
                   autocomplete="current-password"
+                  required
                 />
                 <button
                   type="button"
                   id="btn-toggle-login-pass"
                   class="btn btn-sm password-toggle-btn"
                   aria-label="Show or hide password"
+                  aria-pressed="false"
                 >
                   Show
                 </button>
@@ -91,14 +117,15 @@
             </div>
           </div>
 
-          <div id="auth-apikey-group" class="form-grid" hidden>
+          <div id="auth-apikey-group" class="form-grid" role="tabpanel" aria-labelledby="tab-auth-apikey" hidden>
             <div class="field">
               <label class="field-label" for="login-apikey">Administrator Access Key</label>
               <div class="password-input-wrap">
                 <input
                   type="password"
                   id="login-apikey"
-                  class="input"
+                  name="apiKey"
+                  class="input auth-input"
                   placeholder="Enter secret access key"
                   autocomplete="off"
                 />
@@ -107,6 +134,7 @@
                   id="btn-toggle-login-apikey"
                   class="btn btn-sm password-toggle-btn"
                   aria-label="Show or hide access key"
+                  aria-pressed="false"
                 >
                   Show
                 </button>

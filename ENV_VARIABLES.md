@@ -12,7 +12,7 @@ This document lists **every environment variable** read by this application acro
 - **NON-SECRET variables** are public identifiers, repository metadata, hostnames, runtime flags, or client Firebase Web SDK parameters (protected by Firestore Security Rules).
   - On **Cloudflare Pages / Node.js**: Store as standard **Plaintext** or **Environment Variables**.
 
-> **Zero Hardcoded Credentials Guarantee:** There are **no** default admin passwords, default admin emails, or default session signing secrets in the login system. Until you configure strong Admin credentials and `ADMIN_SESSION_SECRET`, the Admin Studio fails closed (`HTTP 503` / Setup Required). Public website pages (`index.html`, `/news/*`, legal pages) are 100% static and never read Firebase or server secrets.
+> **Zero Hardcoded Credentials Guarantee:** There are **no** default admin passwords, default admin emails, or default session signing secrets in the login system. Until you configure strong Admin credentials (`ADMIN_EMAIL` + `ADMIN_PASSWORD`, or `ADMIN_API_KEY`), the Admin Studio fails closed (`HTTP 503`). Public website pages (`index.html`, `/news/*`, legal pages) are 100% static and never read Firebase or server secrets.
 
 ---
 
@@ -20,10 +20,10 @@ This document lists **every environment variable** read by this application acro
 
 | Variable Name | Classification | Status | Aliases Accepted | Purpose & Exact Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| `ADMIN_EMAIL` | **SECRET / PRIVATE** | **Required** *(unless using `ADMIN_API_KEY`)* | `ADMIN_USER`, `ADMIN_USERNAME`, `CMS_ADMIN_EMAIL` | Admin sign-in email checked by `POST /api/admin/login` using SHA-256 constant-time comparison. Must contain `@` and not be a placeholder. |
-| `ADMIN_PASSWORD` | **SECRET** | **Required** *(unless using `ADMIN_API_KEY`)* | `ADMIN_PASS`, `CMS_ADMIN_PASSWORD` | Admin sign-in password (minimum **8 characters**, must not equal `ADMIN_EMAIL` or placeholder text). Checked via SHA-256 constant-time comparison. |
-| `ADMIN_SESSION_SECRET` | **SECRET** | **Required (Always)** | `ADMIN_SECRET`, `SESSION_SECRET` | High-entropy key (**minimum 16 chars, recommended 32+ random chars**) used to HMAC-SHA256 sign 7-day `HttpOnly` admin session cookies and validate `iss`/`typ`/`jti`/`exp` claims. |
-| `ADMIN_API_KEY` | **SECRET** | **Optional** | `CMS_ADMIN_API_KEY` | Master API key (**minimum 16 chars**) enabling login via the **Server API Key** tab or `x-admin-api-key` header. Can be used alone or alongside `ADMIN_EMAIL` + `ADMIN_PASSWORD`. |
+| `ADMIN_EMAIL` | **SECRET / PRIVATE** | **Required** *(unless using `ADMIN_API_KEY`)* | `ADMIN_USER`, `ADMIN_USERNAME`, `CMS_ADMIN_EMAIL` | Admin sign-in email checked by `POST /api/admin/login` using SHA-256 constant-time comparison. Must be a valid email (`name@domain.com`) and not a placeholder. |
+| `ADMIN_PASSWORD` | **SECRET** | **Required** *(unless using `ADMIN_API_KEY`)* | `ADMIN_PASS`, `CMS_ADMIN_PASSWORD` | Admin sign-in password (minimum **8 characters**, rejects common weak passwords like `password123` / `12345678`, must not equal `ADMIN_EMAIL` or placeholder text). Checked via SHA-256 constant-time comparison. |
+| `ADMIN_SESSION_SECRET` | **SECRET** | **Optional** *(Recommended custom override)* | `ADMIN_SECRET`, `SESSION_SECRET` | Optional high-entropy key (**minimum 16 chars, recommended 32+ random chars**) used to HMAC-SHA256 sign 12-hour `HttpOnly` admin session cookies. When omitted, a unique domain-separated signing key is derived via HMAC-SHA256 from your server credentials (`ADMIN_PASSWORD`, `ADMIN_API_KEY`, and `VAULT_ENCRYPTION_SECRET`), so setting only `ADMIN_EMAIL` + `ADMIN_PASSWORD` works securely out of the box. Rotating credentials automatically revokes older cookies. |
+| `ADMIN_API_KEY` | **SECRET** | **Optional** | `CMS_ADMIN_API_KEY` | Master API key (**minimum 16 chars**) enabling login via the **Access Key** tab or `x-admin-api-key` header. Can be used alone or alongside `ADMIN_EMAIL` + `ADMIN_PASSWORD`. |
 
 **Generate strong secrets locally before pasting into your host:**
 ```bash
@@ -138,8 +138,8 @@ Read once by Node.js (`server.ts`) and Edge Functions when bootstrapping a brand
 2. Always include `NODE_ENV="production"` and the minimum required keys:
    - `ADMIN_EMAIL`
    - `ADMIN_PASSWORD`
-   - `ADMIN_SESSION_SECRET`
-   - `VAULT_ENCRYPTION_SECRET`
+   - `VAULT_ENCRYPTION_SECRET` *(for protected download links)*
+   - `ADMIN_SESSION_SECRET` *(optional custom session key override)*
 3. Build and start:
    ```bash
    npm run build

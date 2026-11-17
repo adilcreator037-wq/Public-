@@ -277,12 +277,36 @@ export async function onRequest(context) {
       : EMPTY_ADMIN_CONFIG;
     const templates = await loadEdgeTemplates(env, request.url);
     const files = buildEdgeStaticFiles(cfg, templates);
+    const distinctIcons = new Set(
+      [
+        cfg.brand?.logoUrl,
+        cfg.brand?.faviconUrl,
+        cfg.brand?.searchLogoUrl,
+        cfg.brand?.appleTouchIconUrl
+      ]
+        .map((u) => String(u || '').trim())
+        .filter(Boolean)
+    );
     return jsonResponse(
       {
         success: true,
         compiledAt: Date.now(),
         totalFiles: files.length,
-        dirtyModulesSinceSync: cfg.dirtyModulesSinceSync || [],
+                dirtyModulesSinceSync: cfg.dirtyModulesSinceSync || [],
+        contentSource: fbEnv.isConfigured ? 'Live Cloud Firestore' : 'Local Admin Workspace',
+        brandSummary: {
+          name: cfg.brand?.name || '',
+          logoUrl: cfg.brand?.logoUrl || '',
+          faviconUrl: cfg.brand?.faviconUrl || '',
+          primaryDomain: cfg.domainConfig?.primaryDomain || cfg.seo?.canonicalUrl || ''
+        },
+        seoManifestSummary: {
+          manifestEnabled: cfg.domainConfig?.enableWebManifest !== false,
+          sitemapEnabled: cfg.domainConfig?.enableSitemapXml !== false,
+          robotsEnabled: true,
+          rssEnabled: Boolean(cfg.domainConfig?.enableRssFeed),
+          manifestIconsCount: distinctIcons.size
+        },
         filesList: files.map((f) => ({
           path: f.path,
           sizeBytes: String(f.content || '').length,
