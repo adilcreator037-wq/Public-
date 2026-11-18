@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   optimizeCloudinaryUrl,
+  optimizeImageUrl,
+  buildResponsiveImageSrcSet,
+  calculateTargetImageDimensions,
   generateSlug,
   stripHtmlToExcerpt,
   mergeSiteConfig,
@@ -1832,5 +1835,275 @@ test('Edge catch-all router fails closed on Firestore read errors, persists sync
     globalThis.fetch = origFetch;
   }
 });
+
+test('Image optimization helpers generate responsive URLs, srcsets, and proportional dimensions', () => {
+  const cloudBanner = 'https://res.cloudinary.com/demo/image/upload/v123/hero.png';
+  assert.equal(
+    optimizeImageUrl(cloudBanner, 768),
+    'https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_768,c_limit/v123/hero.png'
+  );
+  const srcSet = buildResponsiveImageSrcSet(cloudBanner, [480, 768]);
+  assert.ok(srcSet.includes('w_480,c_limit/v123/hero.png 480w'));
+  assert.ok(srcSet.includes('w_768,c_limit/v123/hero.png 768w'));
+
+  // SVG, local uploads, and data URLs must remain untouched
+  assert.equal(optimizeImageUrl('/assets/logo.svg', 768), '/assets/logo.svg');
+  assert.equal(buildResponsiveImageSrcSet('/uploads/photo.webp'), '');
+  assert.equal(optimizeImageUrl('data:image/webp;base64,AAAA', 400), 'data:image/webp;base64,AAAA');
+
+  // ImageKit, Unsplash, and Imgix CDNs get width/format query optimization
+  assert.ok(
+    decodeURIComponent(optimizeImageUrl('https://ik.imagekit.io/demo/cover.jpg', 768)).includes(
+      'tr=f-auto,q-82,w-768'
+    )
+  );
+  assert.ok(
+    optimizeImageUrl('https://images.unsplash.com/photo-123?auto=format', 480).includes('w=480')
+  );
+
+  // Proportional downscale without upscaling small images
+  const scaled = calculateTargetImageDimensions(2800, 1575, 1400, 1400);
+  assert.deepEqual(scaled, { width: 1400, height: 788, resized: true });
+  const unscaled = calculateTargetImageDimensions(400, 300, 1400, 1400);
+  assert.deepEqual(unscaled, { width: 400, height: 300, resized: false });
+});
+
+test('renderCompleteStaticPageHtml emits compact idempotent bootstrap and strict LCP vs lazy image attributes', () => {
+  const cfg = mergeSiteConfig({
+    brand: { name: 'SpeedPortal', accentColor: '#EF4444' },
+    hero: {
+      h1: 'SpeedPortal Official',
+      showBanner: true,
+      bannerImageUrl: 'https://res.cloudinary.com/demo/image/upload/v1/hero-banner.png',
+      bannerAlt: 'SpeedPortal Hero'
+    },
+    sections: [
+      {
+        id: 'sec-1',
+        heading: 'Features Overview',
+        slug: 'features-overview',
+        visible: true,
+        imageUrl: 'https://res.cloudinary.com/demo/image/upload/v1/sec-photo.png',
+        imagePosition: 'top',
+        htmlContent: '<p>Fast feature copy.</p>'
+      }
+    ],
+    newsSection: {
+      articles: [
+        {
+          id: 'n1',
+          title: 'Latest Release v2',
+          slug: 'latest-release-v2',
+          coverImageUrl: 'https://res.cloudinary.com/demo/image/upload/v1/news-thumb.png',
+          summary: 'Summary copy',
+          htmlContent: '<p>Full news story.</p>'
+        }
+      ]
+    }
+  });
+
+  const baseTpl = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+  const renderedHome = renderCompleteStaticPageHtml(baseTpl, cfg, '/');
+
+  // Strict LCP hero vs lazy below-the-fold images
+  assert.ok(renderedHome.includes('hero-banner.png"'));
+  assert.ok(renderedHome.includes('loading="eager" fetchpriority="high" decoding="async"'));
+  assert.ok(renderedHome.includes('loading="lazy" fetchpriority="low" decoding="async"'));
+
+  // Bootstrap placed cleanly before </body>, not blocking <head>, with empty renderedMainHtml
+  const headSection = renderedHome.split('</head>')[0];
+  assert.ok(!headSection.includes('window.__INITIAL_ROUTE_PAYLOAD__'), 'Head must not contain bloated initial payload script');
+  const bodyBootstrapMatch = renderedHome.match(/<script>window\.__INITIAL_ROUTE_PAYLOAD__=([\s\S]*?);<\/script>\s*<\/body>/);
+  assert.ok(bodyBootstrapMatch, 'Expected compact bootstrap script before </body>');
+  const parsedBootstrap = JSON.parse(bodyBootstrapMatch![1].replace(/<\\\//g, '</'));
+  assert.equal(parsedBootstrap.canonicalPath, '/');
+  assert.equal(parsedBootstrap.renderedMainHtml, '');
+
+  // Re-rendering an already compiled HTML template must stay idempotent
+  const reRenderedHome = renderCompleteStaticPageHtml(renderedHome, cfg, '/');
+  assert.equal(
+    (reRenderedHome.match(/window\.__INITIAL_ROUTE_PAYLOAD__=/g) || []).length,
+    1,
+    'Re-compiling template must not duplicate bootstrap scripts'
+  );
+  assert.equal(
+    (reRenderedHome.match(/rel="manifest"/g) || []).length,
+    1,
+    'Re-compiling template must not duplicate manifest link tags'
+  );
+
+  // Non-home route clears Hero CTAs and isolates route DOM
+  const renderedNews = renderCompleteStaticPageHtml(baseTpl, cfg, '/news');
+  assert.ok(!renderedNews.includes('id="features-overview"'), '/news must not load homepage sections');
+  assert.ok(renderedNews.includes('id="hero-cta-primary" class="btn-primary hidden" href="#"'));
+
+  // Zero Admin Studio contamination on public HTML
+  assert.ok(!renderedHome.includes('admin.js'));
+  assert.ok(!renderedHome.includes('firebase-config.js'));
+});
+
+test('mergeSiteConfig migrates legacy newsSection.posts fields into canonical articles', () => {
+  const migrated = mergeSiteConfig({
+    newsSection: {
+      heading: 'Updates',
+      posts: [
+        {
+          id: 'legacy-1',
+          title: 'Legacy Post Title',
+          slug: 'legacy-post-title',
+          excerpt: 'Short legacy excerpt',
+          imageUrl: '/uploads/legacy-cover.webp',
+          bodyHtml: '<p>Legacy article HTML</p>'
+        }
+      ]
+    }
+  });
+  assert.equal(migrated.newsSection.articles.length, 1);
+  assert.equal(migrated.newsSection.articles[0].summary, 'Short legacy excerpt');
+  assert.equal(migrated.newsSection.articles[0].coverImageUrl, '/uploads/legacy-cover.webp');
+  assert.equal(migrated.newsSection.articles[0].htmlContent, '<p>Legacy article HTML</p>');
+});
+
+test('Cloudflare Edge /api/route & _middleware dynamic fallbacks resolve per-URL routes cleanly from Firestore', async () => {
+  const edgeCatchall = await import('../../functions/api/[[catchall]].js');
+  const edgeMiddleware = await import('../../functions/_middleware.js');
+  const origFetch = globalThis.fetch;
+
+  const liveCfg = mergeSiteConfig({
+    brand: { name: 'EdgePortal', accentColor: '#2563EB' },
+    hero: { h1: 'EdgePortal Home' },
+    newsSection: {
+      articles: [
+        {
+          id: 'art-edge-1',
+          title: 'Launch Announcement',
+          slug: 'launch-announcement',
+          summary: 'Release summary',
+          htmlContent: '<p>Edge article body</p>'
+        }
+      ]
+    },
+    pages: [
+      {
+        id: 'pg-privacy',
+        label: 'Privacy Policy',
+        slug: 'privacy-policy',
+        h1: 'Privacy Policy',
+        htmlContent: '<p>Privacy terms here.</p>'
+      }
+    ]
+  });
+
+  const encodeFs = (val: any): any => {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === 'string') return { stringValue: val };
+    if (typeof val === 'boolean') return { booleanValue: val };
+    if (typeof val === 'number') return { integerValue: String(Math.floor(val)) };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(encodeFs) } };
+    if (typeof val === 'object') {
+      const fields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        if (v !== undefined) fields[k] = encodeFs(v);
+      }
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(val) };
+  };
+
+  const firestoreModules: Record<string, any> = {
+    brand: liveCfg.brand,
+    hero: liveCfg.hero,
+    newsSection: liveCfg.newsSection,
+    pages: liveCfg.pages,
+    domainConfig: liveCfg.domainConfig,
+    seo: liveCfg.seo,
+    uiConfig: liveCfg.uiConfig
+  };
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/documents/cmsModules')) {
+        const docs = Object.entries(firestoreModules).map(([id, val]) => ({
+          name: `projects/test-proj/databases/(default)/documents/cmsModules/${id}`,
+          fields: {
+            data: encodeFs(val)
+          }
+        }));
+        return new Response(JSON.stringify({ documents: docs }), { status: 200 });
+      }
+      if (url.includes('/documents/siteConfig/main')) {
+        return new Response(JSON.stringify({ fields: { updatedAt: { integerValue: '1762265000000' } } }), {
+          status: 200
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+
+    const env = {
+      FIREBASE_API_KEY: 'AIzaTestFirebaseKey1234567890',
+      FIREBASE_PROJECT_ID: 'test-proj'
+    };
+
+    // 1. Direct GET /api/route?path=/news/launch-announcement
+    const apiRouteRes = await edgeCatchall.onRequest({
+      request: new Request('https://edgeportal.test/api/route?path=%2Fnews%2Flaunch-announcement'),
+      env,
+      params: { catchall: ['route'] }
+    });
+    assert.equal(apiRouteRes.status, 200);
+    const apiRouteJson = await apiRouteRes.json();
+    assert.equal(apiRouteJson.success, true);
+    assert.equal(apiRouteJson.payload.viewType, 'news-article');
+    assert.equal(apiRouteJson.payload.canonicalPath, '/news/launch-announcement');
+    assert.ok(apiRouteJson.payload.renderedMainHtml.includes('Edge article body'));
+
+    // 2. Missing /static-routes/news--launch-announcement.json returning Cloudflare HTML SPA fallback gets resolved to live JSON!
+    const mwJsonRes = await edgeMiddleware.onRequest({
+      request: new Request('https://edgeportal.test/static-routes/news--launch-announcement.json'),
+      env,
+      next: async () => new Response('<!doctype html><html><body>SPA fallback</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      })
+    });
+    assert.equal(mwJsonRes.status, 200);
+    assert.ok((mwJsonRes.headers.get('content-type') || '').includes('application/json'));
+    const mwJsonPayload = await mwJsonRes.json();
+    assert.equal(mwJsonPayload.viewType, 'news-article');
+    assert.equal(mwJsonPayload.canonicalPath, '/news/launch-announcement');
+
+    // 3. Stale SPA fallback HTML for /news/launch-announcement gets dynamically rendered for /news/launch-announcement
+    const baseTpl = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+    const homeSsrHtml = baseTpl.replace('<main id="dynamic-content"', '<main id="dynamic-content" data-ssr-path="/"');
+    const mwHtmlRes = await edgeMiddleware.onRequest({
+      request: new Request('https://edgeportal.test/news/launch-announcement'),
+      env,
+      next: async () => new Response(homeSsrHtml, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      })
+    });
+    assert.equal(mwHtmlRes.status, 200);
+    const mwHtmlText = await mwHtmlRes.text();
+    assert.ok(mwHtmlText.includes('data-ssr-path="/news/launch-announcement"'));
+    assert.ok(mwHtmlText.includes('Edge article body'));
+
+    // 4. Unknown slug returns 404 HTML
+    const mwNotFoundRes = await edgeMiddleware.onRequest({
+      request: new Request('https://edgeportal.test/this-slug-does-not-exist'),
+      env,
+      next: async () => new Response(homeSsrHtml, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      })
+    });
+    assert.equal(mwNotFoundRes.status, 404);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+
 
 

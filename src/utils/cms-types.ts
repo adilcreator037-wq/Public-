@@ -372,7 +372,7 @@ export function optimizeCloudinaryUrl(url: string | undefined | null): string {
   if (!url || typeof url !== 'string') return '';
   const trimmed = url.trim();
   if (!trimmed.includes('res.cloudinary.com')) return trimmed;
-  if (trimmed.includes('/f_auto,q_auto/')) return trimmed;
+  if (trimmed.includes('/f_auto,q_auto')) return trimmed;
 
   const uploadToken = '/image/upload/';
   const uploadIndex = trimmed.indexOf(uploadToken);
@@ -381,6 +381,123 @@ export function optimizeCloudinaryUrl(url: string | undefined | null): string {
   const prefix = trimmed.substring(0, uploadIndex + uploadToken.length);
   const suffix = trimmed.substring(uploadIndex + uploadToken.length);
   return `${prefix}f_auto,q_auto/${suffix}`;
+}
+
+/**
+ * Multi-CDN Responsive Image URL Optimizer (Cloudinary, Imgix, ImageKit, Unsplash)
+ * Safely leaves SVGs, data URLs, local `/uploads/*`, and unknown hosts unchanged.
+ */
+export function optimizeImageUrl(url: string | undefined | null, widthHint?: number): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith('data:') || trimmed.toLowerCase().includes('.svg')) {
+    return trimmed;
+  }
+
+  const w = typeof widthHint === 'number' && Number.isFinite(widthHint) && widthHint > 0 ? Math.round(widthHint) : 0;
+
+  // Cloudinary
+  if (trimmed.includes('res.cloudinary.com') && trimmed.includes('/image/upload/')) {
+    const uploadToken = '/image/upload/';
+    const uploadIndex = trimmed.indexOf(uploadToken);
+    const prefix = trimmed.substring(0, uploadIndex + uploadToken.length);
+    const suffix = trimmed.substring(uploadIndex + uploadToken.length);
+    if (trimmed.includes('/f_auto,q_auto')) {
+      if (w > 0 && !trimmed.includes(',w_')) {
+        return trimmed.replace('/f_auto,q_auto', `/f_auto,q_auto,w_${w},c_limit`);
+      }
+      return trimmed;
+    }
+    const transform = w > 0 ? `f_auto,q_auto,w_${w},c_limit/` : 'f_auto,q_auto/';
+    return `${prefix}${transform}${suffix}`;
+  }
+
+  // ImageKit
+  if (trimmed.includes('ik.imagekit.io')) {
+    try {
+      const u = new URL(trimmed);
+      if (!u.searchParams.has('tr')) {
+        u.searchParams.set('tr', w > 0 ? `f-auto,q-82,w-${w}` : 'f-auto,q-82');
+      }
+      return u.toString();
+    } catch {
+      return trimmed;
+    }
+  }
+
+  // Unsplash
+  if (trimmed.includes('images.unsplash.com')) {
+    try {
+      const u = new URL(trimmed);
+      if (!u.searchParams.has('auto')) u.searchParams.set('auto', 'format');
+      if (!u.searchParams.has('q')) u.searchParams.set('q', '80');
+      if (w > 0 && !u.searchParams.has('w')) u.searchParams.set('w', String(w));
+      return u.toString();
+    } catch {
+      return trimmed;
+    }
+  }
+
+  // Imgix
+  if (trimmed.includes('.imgix.net')) {
+    try {
+      const u = new URL(trimmed);
+      if (!u.searchParams.has('auto')) u.searchParams.set('auto', 'format,compress');
+      if (!u.searchParams.has('q')) u.searchParams.set('q', '80');
+      if (w > 0 && !u.searchParams.has('w')) u.searchParams.set('w', String(w));
+      return u.toString();
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return trimmed;
+}
+
+/**
+ * Generate a responsive `srcset` string when the source URL uses an adaptive CDN.
+ */
+export function buildResponsiveImageSrcSet(
+  url: string | undefined | null,
+  widths: number[] = [480, 768, 1200]
+): string {
+  const clean = String(url || '').trim();
+  if (!clean || clean.startsWith('data:') || clean.toLowerCase().includes('.svg')) return '';
+  const supportsWidths =
+    (clean.includes('res.cloudinary.com') && clean.includes('/image/upload/')) ||
+    clean.includes('ik.imagekit.io') ||
+    clean.includes('images.unsplash.com') ||
+    clean.includes('.imgix.net');
+  if (!supportsWidths) return '';
+
+  return widths
+    .map((w) => `${optimizeImageUrl(clean, w)} ${w}w`)
+    .join(', ');
+}
+
+/**
+ * Compute proportional resize target dimensions without upscaling small images.
+ */
+export function calculateTargetImageDimensions(
+  srcWidth: number,
+  srcHeight: number,
+  maxWidth = 1400,
+  maxHeight = 1400
+): { width: number; height: number; resized: boolean } {
+  const w = Math.max(1, Math.round(Number(srcWidth) || 1));
+  const h = Math.max(1, Math.round(Number(srcHeight) || 1));
+  const mw = Math.max(16, Math.round(Number(maxWidth) || 1400));
+  const mh = Math.max(16, Math.round(Number(maxHeight) || 1400));
+
+  if (w <= mw && h <= mh) {
+    return { width: w, height: h, resized: false };
+  }
+  const scale = Math.min(mw / w, mh / h);
+  return {
+    width: Math.max(1, Math.round(w * scale)),
+    height: Math.max(1, Math.round(h * scale)),
+    resized: true
+  };
 }
 
 /**
@@ -406,6 +523,26 @@ export function escapeHtml(str: string | undefined | null): string {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Automatically convert plain-text paragraphs into clean `<p>...</p>` HTML
+ * while preserving any existing HTML block elements (`<p>`, `<h3>`, `<ul>`, `<div>`, `<figure>`, `<table>`, etc.).
+ */
+export function ensureCleanHtmlParagraphs(raw: string | undefined | null): string {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return '';
+  const blockTagRegex = /<(p|h[1-6]|ul|ol|li|div|table|figure|details|blockquote|section|article|hr)\b/i;
+  const chunks = trimmed.split(/\r?\n\s*\r?\n+/);
+  return chunks
+    .map((chunk) => {
+      const c = chunk.trim();
+      if (!c) return '';
+      if (blockTagRegex.test(c)) return c;
+      return `<p>${c.replace(/\r?\n/g, '<br />')}</p>`;
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -1241,12 +1378,19 @@ export function mergeSiteConfig(
       })
     : JSON.parse(JSON.stringify(base.sections));
 
+  const rawNewsList = Array.isArray(p.newsSection?.articles)
+    ? p.newsSection.articles
+    : Array.isArray(p.newsSection?.posts)
+    ? p.newsSection.posts
+    : null;
+
   const mergedNews = {
     ...base.newsSection,
     ...(p.newsSection || {}),
-    articles: Array.isArray(p.newsSection?.articles)
-      ? p.newsSection.articles.map((a: any, idx: number) => {
-          const autoSummary = a.summary || stripHtmlToExcerpt(a.htmlContent || '', 160);
+    articles: rawNewsList
+      ? rawNewsList.map((a: any, idx: number) => {
+          const bodyHtml = a.htmlContent || a.bodyHtml || '';
+          const autoSummary = a.summary || a.excerpt || stripHtmlToExcerpt(bodyHtml, 160);
           return {
             id: a.id || `news-${idx + 1}`,
             title: a.title || 'News Update',
@@ -1257,14 +1401,14 @@ export function mergeSiteConfig(
             readTime: a.readTime || '2 min read',
             featured: Boolean(a.featured),
             summary: autoSummary,
-            coverImageUrl: a.coverImageUrl || '',
+            coverImageUrl: a.coverImageUrl || a.imageUrl || '',
             coverImageAlt: a.coverImageAlt || a.title || '',
             coverImageCaption: a.coverImageCaption || '',
             ctaLabel: a.ctaLabel || '',
             ctaUrl: a.ctaUrl || '',
             metaTitle: a.metaTitle || `${a.title || 'News'} | ${mergedBrand.name}`,
             metaDescription: a.metaDescription || autoSummary || `${a.title || 'News'} published by ${mergedBrand.name}.`,
-            htmlContent: a.htmlContent || `<p>${autoSummary || ''}</p>`
+            htmlContent: bodyHtml || `<p>${autoSummary || ''}</p>`
           };
         })
       : JSON.parse(JSON.stringify(base.newsSection.articles))

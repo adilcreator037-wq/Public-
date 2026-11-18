@@ -431,6 +431,8 @@
 
     .cv-auto-section {
       display: block;
+      content-visibility: auto;
+      contain-intrinsic-size: auto 320px;
     }
 
     /* Above-the-Fold Hero Block */
@@ -656,6 +658,16 @@
       aspect-ratio: 16 / 9;
       object-fit: cover;
       background-color: var(--surface-subtle);
+      transition: opacity 0.2s ease;
+    }
+
+    .prose-container img[data-img-state="loading"] {
+      opacity: 0.72;
+    }
+
+    .prose-container img[data-img-state="loaded"] {
+      opacity: 1;
+      background-color: transparent;
     }
 
     .media-figure img {
@@ -980,6 +992,8 @@
     .news-item-block {
       padding: 20px 0;
       border-bottom: 1px solid var(--border-color);
+      content-visibility: auto;
+      contain-intrinsic-size: auto 240px;
     }
 
     .news-item-block:last-child {

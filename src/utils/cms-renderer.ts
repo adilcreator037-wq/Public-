@@ -19,12 +19,35 @@ import {
   HomepageBlockKey,
   MASTER_DEFAULT_CONFIG,
   optimizeCloudinaryUrl,
+  optimizeImageUrl,
+  buildResponsiveImageSrcSet,
   generateSlug,
   escapeHtml,
+  ensureCleanHtmlParagraphs,
   normalizeDomainUrl,
   resolveFontStackCss
 } from './cms-types';
 import { resolveRouteView, buildJsonLdSchema, applySmartInternalLinks } from './cms-seo';
+
+function buildResponsiveImgTag(
+  rawUrl: string,
+  alt: string,
+  opts: {
+    priority?: 'high' | 'low';
+    maxWidth?: number;
+    className?: string;
+    sizes?: string;
+  } = {}
+): string {
+  const isHigh = opts.priority === 'high';
+  const maxWidth = opts.maxWidth || (isHigh ? 1200 : 768);
+  const src = optimizeImageUrl(rawUrl, maxWidth);
+  const srcSet = buildResponsiveImageSrcSet(rawUrl, isHigh ? [480, 768, 1200] : [400, 768]);
+  const sizes = opts.sizes || '(max-width: 768px) 100vw, 720px';
+  const classAttr = opts.className ? ` class="${escapeHtml(opts.className)}"` : '';
+  const srcSetAttrs = srcSet ? ` srcset="${escapeHtml(srcSet)}" sizes="${escapeHtml(sizes)}"` : '';
+  return `<img src="${escapeHtml(src)}"${srcSetAttrs} alt="${escapeHtml(alt)}" width="1200" height="675" loading="${isHigh ? 'eager' : 'lazy'}" fetchpriority="${isHigh ? 'high' : 'low'}" decoding="async" referrerpolicy="no-referrer"${classAttr} />`;
+}
 
 function wrapEditorialTables(html: string): string {
   if (!html || !html.includes('<table')) return html;
@@ -90,19 +113,18 @@ export function renderHomeContentHtml(config: SiteConfig): string {
 
   // 1. Hero Intro HTML
   if (hero.introHtml) {
-    introParts.push(`<div class="hero-intro-block">${hero.introHtml}</div>`);
+    introParts.push(`<div class="hero-intro-block">${ensureCleanHtmlParagraphs(hero.introHtml)}</div>`);
   }
 
   // 2. Hero 16:9 Showcase Banner (LCP Priority Image: eager + fetchpriority="high")
   if (hero.showBanner !== false && hero.bannerImageUrl) {
-    const bannerSrc = optimizeCloudinaryUrl(hero.bannerImageUrl);
-    const bannerAlt = escapeHtml(hero.bannerAlt || config.brand?.name || 'Banner');
+    const bannerAlt = hero.bannerAlt || config.brand?.name || 'Banner';
     const captionHtml = hero.bannerCaption
       ? `<figcaption class="media-caption">${escapeHtml(hero.bannerCaption)}</figcaption>`
       : '';
     introParts.push(`
       <figure class="media-figure">
-        <img src="${escapeHtml(bannerSrc)}" alt="${bannerAlt}" width="1200" height="675" loading="eager" fetchpriority="high" decoding="async" />
+        ${buildResponsiveImgTag(hero.bannerImageUrl, bannerAlt, { priority: 'high', maxWidth: 1200 })}
         ${captionHtml}
       </figure>
     `);
@@ -212,11 +234,11 @@ export function renderHomeContentHtml(config: SiteConfig): string {
         const badgeHtml = sec.badgeText
           ? `<div class="section-eyebrow-badge">${escapeHtml(sec.badgeText)}</div>`
           : '';
-        const hasImg = Boolean(sec.imageUrl && sec.imagePosition !== 'none');
-        const imgSrc = hasImg ? optimizeCloudinaryUrl(sec.imageUrl!) : '';
+        const effImgPos = sec.imageUrl ? (sec.imagePosition && sec.imagePosition !== 'none' ? sec.imagePosition : 'top') : 'none';
+        const hasImg = Boolean(sec.imageUrl && effImgPos !== 'none');
         const imgMarkup = hasImg
           ? `<figure class="media-figure">
-              <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(sec.imageAlt || sec.heading)}" width="1200" height="675" loading="lazy" decoding="async" />
+              ${buildResponsiveImgTag(sec.imageUrl!, sec.imageAlt || sec.heading, { priority: 'low', maxWidth: 800 })}
               ${sec.imageCaption ? `<figcaption class="media-caption">${escapeHtml(sec.imageCaption)}</figcaption>` : ''}
             </figure>`
           : '';
@@ -228,15 +250,15 @@ export function renderHomeContentHtml(config: SiteConfig): string {
             : '';
 
         const enhancedSectionHtml = wrapEditorialTables(
-          applySmartInternalLinks(sec.htmlContent || '', config, '/')
+          applySmartInternalLinks(ensureCleanHtmlParagraphs(sec.htmlContent || ''), config, '/')
         );
         return `
           <section id="${slug}" data-meta-title="${escapeHtml(sec.metaTitle)}" data-meta-description="${escapeHtml(sec.metaDescription)}">
             ${badgeHtml}
             <h2 id="${slug}-heading">${escapeHtml(sec.heading || '')}</h2>
-            ${sec.imagePosition === 'top' ? imgMarkup : ''}
+            ${effImgPos === 'top' ? imgMarkup : ''}
             ${enhancedSectionHtml}
-            ${sec.imagePosition === 'bottom' ? imgMarkup : ''}
+            ${effImgPos === 'bottom' ? imgMarkup : ''}
             ${ctaMarkup}
           </section>
         `;
@@ -262,7 +284,11 @@ export function renderHomeContentHtml(config: SiteConfig): string {
         const articleUrl = `/news/${artSlug}`;
         const coverHtml = art.coverImageUrl
           ? `<a href="${articleUrl}" data-spa-link class="news-card-media-link">
-              <img src="${escapeHtml(optimizeCloudinaryUrl(art.coverImageUrl))}" alt="${escapeHtml(art.coverImageAlt || art.title)}" width="1200" height="675" loading="lazy" decoding="async" class="news-card-cover-img" />
+              ${buildResponsiveImgTag(art.coverImageUrl, art.coverImageAlt || art.title, {
+                priority: 'low',
+                maxWidth: 768,
+                className: 'news-card-cover-img'
+              })}
             </a>`
           : '';
 
@@ -363,7 +389,11 @@ export function renderNewsHubContentHtml(config: SiteConfig, selectedCategory = 
             const articleUrl = `/news/${artSlug}`;
             const coverHtml = art.coverImageUrl
               ? `<a href="${articleUrl}" data-spa-link class="news-card-media-link">
-                  <img src="${escapeHtml(optimizeCloudinaryUrl(art.coverImageUrl))}" alt="${escapeHtml(art.coverImageAlt || art.title)}" width="1200" height="675" loading="lazy" decoding="async" class="news-card-cover-img" />
+                  ${buildResponsiveImgTag(art.coverImageUrl, art.coverImageAlt || art.title, {
+                    priority: 'low',
+                    maxWidth: 768,
+                    className: 'news-card-cover-img'
+                  })}
                 </a>`
               : '';
 
@@ -407,7 +437,10 @@ export function renderNewsArticleContentHtml(article: NewsArticleItem, config: S
 
   const coverHtml = article.coverImageUrl
     ? `<figure class="media-figure">
-        <img src="${escapeHtml(optimizeCloudinaryUrl(article.coverImageUrl))}" alt="${escapeHtml(article.coverImageAlt || article.title)}" width="1200" height="675" loading="eager" fetchpriority="high" decoding="async" />
+        ${buildResponsiveImgTag(article.coverImageUrl, article.coverImageAlt || article.title, {
+          priority: 'high',
+          maxWidth: 1200
+        })}
         ${article.coverImageCaption ? `<figcaption class="media-caption">${escapeHtml(article.coverImageCaption)}</figcaption>` : ''}
       </figure>`
     : '';
@@ -463,7 +496,7 @@ export function renderNewsArticleContentHtml(article: NewsArticleItem, config: S
 
   const enhancedArticleBody = wrapEditorialTables(
     applySmartInternalLinks(
-      article.htmlContent || `<p>${escapeHtml(article.summary || '')}</p>`,
+      ensureCleanHtmlParagraphs(article.htmlContent || `<p>${escapeHtml(article.summary || '')}</p>`),
       config,
       `/news/${generateSlug(article.slug || article.title)}`
     )
@@ -491,15 +524,19 @@ export function renderNewsArticleContentHtml(article: NewsArticleItem, config: S
 export function renderStandalonePageContentHtml(page: StandalonePageItem, config?: SiteConfig): string {
   const bannerHtml = page.bannerImageUrl
     ? `<figure class="media-figure">
-        <img src="${escapeHtml(optimizeCloudinaryUrl(page.bannerImageUrl))}" alt="${escapeHtml(page.bannerImageAlt || page.h1)}" width="1200" height="675" loading="eager" fetchpriority="high" decoding="async" />
+        ${buildResponsiveImgTag(page.bannerImageUrl, page.bannerImageAlt || page.h1, {
+          priority: 'high',
+          maxWidth: 1200
+        })}
       </figure>`
     : '';
 
   const subtitleText = page.subtitle || 'Official Document';
+  const rawPageHtml = ensureCleanHtmlParagraphs(page.htmlContent || '');
   const enhancedHtml = wrapEditorialTables(
     config
-      ? applySmartInternalLinks(page.htmlContent || '', config, `/${generateSlug(page.slug || page.label)}`)
-      : page.htmlContent || ''
+      ? applySmartInternalLinks(rawPageHtml, config, `/${generateSlug(page.slug || page.label)}`)
+      : rawPageHtml
   );
 
   return `
@@ -864,6 +901,15 @@ export function renderCompleteStaticPageHtml(
 
   let html = indexHtmlTemplate;
 
+  // 0. Strip any previously injected dynamic head/bootstrap blocks so recompiling is 100% idempotent
+  html = html
+    .replace(/<meta\s+name="(?:robots|theme-color|application-name|apple-mobile-web-app-title|google-site-verification|msvalidate\.01)"[^>]*>\s*/gi, '')
+    .replace(/<meta\s+property="og:(?:site_name|locale|image:width|image:height)"[^>]*>\s*/gi, '')
+    .replace(/<link\s+rel="(?:apple-touch-icon|manifest|sitemap|alternate)"[^>]*>\s*/gi, '')
+    .replace(/<link\s+rel="preload"\s+as="image"[^>]*>\s*/gi, '')
+    .replace(/<script\s+async\s+src="https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=[^"]*"[^>]*><\/script>\s*<script>window\.dataLayer[\s\S]*?<\/script>\s*/gi, '')
+    .replace(/<script>\s*window\.__INITIAL_ROUTE_PAYLOAD__\s*=[\s\S]*?<\/script>\s*/gi, '');
+
   // 1. Inject inline CSS variables onto <html> tag for 0ms visual stability (FCP/CLS = 0)
   const inlineRootVars = [
     `--accent-color:${config.brand?.accentColor || '#EF4444'}`,
@@ -883,7 +929,7 @@ export function renderCompleteStaticPageHtml(
     `--font-stack:${resolveFontStackCss(ui.fontFamily).replace(/"/g, "'")}`
   ].join(';');
 
-  html = html.replace(/<html\s+lang="en">/i, `<html lang="en" style="${escapeHtml(inlineRootVars)}">`);
+  html = html.replace(/<html\s+lang="en"(?:\s+style="[^"]*")?>/i, `<html lang="en" style="${escapeHtml(inlineRootVars)}">`);
 
   // 2. Replace <head> SEO tags
   const faviconHref = escapeHtml(
@@ -1018,32 +1064,33 @@ export function renderCompleteStaticPageHtml(
   );
   const secCta = payload.shell.heroCtas?.secondaryCta;
   const priCta = payload.shell.heroCtas?.primaryCta;
-  const hasSecCta = Boolean(secCta?.label && secCta?.url);
-  const hasPriCta = Boolean(priCta?.label && priCta?.url);
+  const isHomeRoute = payload.viewType === 'home';
+  const hasSecCta = isHomeRoute && Boolean(secCta?.label && secCta?.url);
+  const hasPriCta = isHomeRoute && Boolean(priCta?.label && priCta?.url);
 
   html = html.replace(
     /<a id="hero-cta-secondary"[^>]*>[\s\S]*?<\/a>/i,
-    `<a id="hero-cta-secondary" class="btn-secondary${hasSecCta ? '' : ' hidden'}" href="${escapeHtml(secCta?.url || '#')}"${
-      secCta?.relSponsored ? ' rel="sponsored noopener"' : ''
-    }${hasSecCta ? ' data-spa-link' : ''}>${escapeHtml(secCta?.label || '')}</a>`
+    `<a id="hero-cta-secondary" class="btn-secondary${hasSecCta ? '' : ' hidden'}" href="${escapeHtml(hasSecCta ? secCta?.url || '#' : '#')}"${
+      hasSecCta && secCta?.relSponsored ? ' rel="sponsored noopener"' : ''
+    }${hasSecCta ? ' data-spa-link' : ''}>${escapeHtml(hasSecCta ? secCta?.label || '' : '')}</a>`
   );
-  const primaryHref = priCta?.url || '#';
+  const primaryHref = hasPriCta ? priCta?.url || '#' : '#';
   const primaryRel =
-    primaryHref === '/moreinfo' || primaryHref === '/download'
+    hasPriCta && (primaryHref === '/moreinfo' || primaryHref === '/download')
       ? ' rel="nofollow noopener"'
-      : priCta?.relSponsored
+      : hasPriCta && priCta?.relSponsored
       ? ' rel="sponsored noopener"'
       : '';
   html = html.replace(
     /<a id="hero-cta-primary"[^>]*>[\s\S]*?<\/a>/i,
     `<a id="hero-cta-primary" class="btn-primary${hasPriCta ? '' : ' hidden'}" href="${escapeHtml(primaryHref)}"${primaryRel}${
       hasPriCta ? ' data-spa-link' : ''
-    }>${escapeHtml(priCta?.label || '')}</a>`
+    }>${escapeHtml(hasPriCta ? priCta?.label || '' : '')}</a>`
   );
 
   // Pre-render <main id="dynamic-content"> with exact route HTML so initial load has zero height jump
   html = html.replace(
-    /<main id="dynamic-content" class="content-container prose-container"[^>]*>[\s\S]*?<\/main>/i,
+    /<main\b[^>]*\bid="dynamic-content"[^>]*>[\s\S]*?<\/main>/i,
     `<main id="dynamic-content" class="content-container prose-container" tabindex="-1" data-ssr-path="${escapeHtml(payload.canonicalPath)}">${payload.renderedMainHtml}</main>`
   );
 
@@ -1213,14 +1260,35 @@ export function renderCompleteStaticPageHtml(
     );
   }
 
-  const preloadScript = `
+  // Compact non-blocking bootstrap metadata (never duplicates <main> HTML or <head> JSON-LD)
+  const lightweightBootstrap = {
+    path: payload.path,
+    canonicalPath: payload.canonicalPath,
+    viewType: payload.viewType,
+    isConfigured: payload.isConfigured,
+    metaTitle: payload.metaTitle,
+    metaDescription: payload.metaDescription,
+    ogImage: payload.ogImage,
+    heroH1: payload.heroH1,
+    showHeroSection: payload.showHeroSection,
+    showHeroCtaGrid: payload.showHeroCtaGrid,
+    renderedMainHtml: '',
+    shell: payload.shell,
+    updatedAt: payload.updatedAt
+  };
+
+  const headInject = `
   ${extraHeadTags.join('\n  ')}
   ${hasExistingJsonLd ? '' : `<script id="dynamic-jsonld-schema" type="application/ld+json">${jsonLd}</script>`}
-  <script>
-    window.__INITIAL_ROUTE_PAYLOAD__ = ${JSON.stringify(payload).replace(/<\//g, '<\\/')};
-  </script>
 </head>`;
-  html = html.replace('</head>', preloadScript);
+  html = html.replace('</head>', headInject);
+
+  const bootstrapScriptTag = `<script>window.__INITIAL_ROUTE_PAYLOAD__=${JSON.stringify(lightweightBootstrap).replace(/<\//g, '<\\/')};</script>`;
+  if (/<\/body>/i.test(html)) {
+    html = html.replace(/<\/body>/i, `  ${bootstrapScriptTag}\n</body>`);
+  } else {
+    html = html.replace('</head>', `${bootstrapScriptTag}\n</head>`);
+  }
   return html;
 }
 

@@ -1,84 +1,90 @@
 {
-  "viewType": "home",
-  "isConfigured": true,
+  "path": "/",
   "canonicalPath": "/",
-  "canonicalUrl": "https://officialdaman.com/",
-  "metaTitle": "Daman Game",
+  "viewType": "home",
+  "isConfigured": false,
+  "metaTitle": "Coming Soon",
   "metaDescription": "",
   "ogImage": "",
-  "heroH1": "Daman Game",
-  "showHeroSection": true,
+  "heroH1": "",
+  "showHeroSection": false,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "",
+  "renderedMainHtml": "<section class=\"site-coming-soon\"><h1>Coming Soon</h1><p>This website is currently being prepared.</p></section>",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://officialdaman.com/#website",
-        "url": "https://officialdaman.com/",
-        "name": "Daman Game",
-        "alternateName": "Daman Game",
+        "@id": "https://example.com/#website",
+        "url": "https://example.com",
+        "name": "Website",
+        "alternateName": "Website",
+        "description": "",
         "publisher": {
-          "@id": "https://officialdaman.com/#organization"
-        }
+          "@id": "https://example.com/#organization"
+        },
+        "inLanguage": "en-US"
       },
       {
         "@type": "Organization",
-        "@id": "https://officialdaman.com/#organization",
-        "name": "Daman Game",
-        "url": "https://officialdaman.com/",
-        "logo": {
-          "@type": "ImageObject",
-          "url": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-          "width": 512,
-          "height": 512
-        },
-        "image": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png"
+        "@id": "https://example.com/#organization",
+        "name": "Organization",
+        "url": "https://example.com"
       },
       {
         "@type": "WebPage",
-        "@id": "https://officialdaman.com/#webpage",
-        "url": "https://officialdaman.com/",
-        "name": "Daman Game",
+        "@id": "https://example.com/#webpage",
+        "url": "https://example.com",
+        "name": "Coming Soon",
         "description": "",
         "isPartOf": {
-          "@id": "https://officialdaman.com/#website"
-        }
+          "@id": "https://example.com/#website"
+        },
+        "about": {
+          "@id": "https://example.com/#organization"
+        },
+        "inLanguage": "en-US"
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://example.com/#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://example.com"
+          }
+        ]
       }
     ]
   },
   "shell": {
     "brand": {
-      "name": "Daman Game",
-      "shortName": "Daman Game",
+      "name": "",
+      "shortName": "",
       "tagline": "",
-      "logoUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-      "faviconUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-      "searchLogoUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-      "appleTouchIconUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-      "accentColor": "#EA580C",
-      "themeColor": "#EA580C",
-      "contactEmail": "support@officiladaman.com"
+      "logoUrl": "",
+      "faviconUrl": "",
+      "searchLogoUrl": "",
+      "appleTouchIconUrl": "",
+      "accentColor": "#EF4444",
+      "themeColor": "#EF4444",
+      "contactEmail": ""
     },
-    "brandName": "Daman Game",
-    "logoUrl": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-    "faviconUrl": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-    "accentColor": "#EA580C",
-    "buttonTextColor": "#FFFFFF",
     "uiConfig": {
       "maxContainerWidth": "768px",
-      "pageBackgroundColor": "#FFFBEB",
+      "pageBackgroundColor": "#F8FAFC",
       "surfaceBackgroundColor": "#FFFFFF",
       "headerBackgroundColor": "#FFFFFF",
-      "headerTextColor": "#1C1917",
-      "footerBackgroundColor": "#1C1917",
-      "footerTextColor": "#FEF3C7",
-      "borderColor": "#FDE68A",
+      "headerTextColor": "#111827",
+      "footerBackgroundColor": "#0F172A",
+      "footerTextColor": "#F8FAFC",
+      "borderColor": "#E2E8F0",
       "cardBorderRadius": "12px",
       "buttonTextColor": "#FFFFFF",
-      "textColor": "#292524",
-      "headingColor": "#1C1917",
+      "textColor": "#1F2937",
+      "headingColor": "#111827",
       "fontFamily": "system",
       "baseFontSize": "16px",
       "showHeaderNewsButton": true,
@@ -111,12 +117,12 @@
       ]
     },
     "heroCtas": {
-      "primaryCta": {
+      "secondaryCta": {
         "label": "",
         "url": "",
         "relSponsored": false
       },
-      "secondaryCta": {
+      "primaryCta": {
         "label": "",
         "url": "",
         "relSponsored": false
@@ -127,22 +133,24 @@
         "url": ""
       }
     },
+    "packageVersion": "",
+    "headerLinks": [],
+    "autoSectionLinks": [],
+    "recentNewsDrawerItems": [],
+    "headerPages": [],
     "footerPages": [],
-    "newsCount": 1,
+    "allSubpagePills": [],
+    "newsCount": 0,
     "navigation": {
-      "headerLinks": [],
       "footerSummary": "",
       "showFooterBrandSummary": true,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "Legal Disclaimer",
-      "disclaimerMetaTitle": "",
-      "disclaimerMetaDescription": "",
+      "disclaimerHeading": "",
       "disclaimer": "",
-      "siteLinksHeading": "Legal & Support Pages",
-      "copyright": "",
-      "showAdminLink": false
+      "siteLinksHeading": "",
+      "copyright": ""
     }
   },
-  "compiledAt": 1794973130379
+  "updatedAt": 1794929121834
 }

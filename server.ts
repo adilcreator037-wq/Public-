@@ -947,6 +947,18 @@ function requireAdminAuth(req: express.Request, res: express.Response, next: exp
     return;
   }
 
+  const rawFbHeader = req.headers['x-firebase-config'];
+  if (typeof rawFbHeader === 'string' && rawFbHeader.trim()) {
+    try {
+      const parsedFb = normalizeFirebaseClientConfig(JSON.parse(rawFbHeader));
+      if (isValidFirebaseClientConfig(parsedFb)) {
+        runtimeFirebaseOverride = parsedFb;
+      }
+    } catch {
+      // Ignore malformed X-Firebase-Config header
+    }
+  }
+
   (req as any).adminEmail = verification.email;
   (req as any).adminJti = verification.jti;
   (req as any).adminExp = verification.exp;

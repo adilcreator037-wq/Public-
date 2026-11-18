@@ -32,6 +32,7 @@ import {
   pushStaticFilesToGitHubEdge,
   buildEdgeStaticFiles
 } from '../_shared/github.js';
+import { buildPartialRoutePayloadEdge } from '../_shared/static-compiler.js';
 
 async function loadEdgeTemplates(env, reqUrl) {
   const fetchAsset = async (assetPath) => {
@@ -67,6 +68,32 @@ export async function onRequest(context) {
   const path = Array.isArray(params.catchall)
     ? params.catchall.join('/')
     : params.catchall || '';
+
+  // 0. Public Per-URL Route Payload Endpoint (`GET /api/route?path=/news&cat=ALL`)
+  if (path === 'route' && request.method === 'GET') {
+    const reqUrl = new URL(request.url);
+    const rawPath = String(reqUrl.searchParams.get('path') || '/').trim() || '/';
+    const newsCategory = String(reqUrl.searchParams.get('cat') || 'ALL').trim() || 'ALL';
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    let cfg = EMPTY_ADMIN_CONFIG;
+    if (fbEnv.isConfigured) {
+      const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+      if (readRes.status === 'ok' && readRes.config) {
+        cfg = readRes.config;
+      }
+    }
+    const payload = buildPartialRoutePayloadEdge(rawPath, cfg, newsCategory);
+    return jsonResponse(
+      {
+        success: true,
+        payload
+      },
+      200,
+      { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=120' },
+      request,
+      false
+    );
+  }
 
   // 0a. Authenticated Admin Studio Workspace HTML Loader (`GET /api/admin/workspace`)
   if (path === 'admin/workspace' && request.method === 'GET') {
@@ -639,9 +666,25 @@ export async function onRequest(context) {
     const existing = readRes.config || JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
 
     const body = await readJsonBodySafe(request);
-    const { title, date, category, excerpt, bodyHtml, coverImage, featured, readTime, author } = body || {};
-    if (!title || !excerpt) {
-      return jsonResponse({ success: false, error: 'Title and Excerpt are required.' }, 400, {}, request, true);
+    const {
+      title,
+      date,
+      category,
+      excerpt,
+      summary,
+      bodyHtml,
+      htmlContent,
+      coverImage,
+      coverImageUrl,
+      featured,
+      readTime,
+      author
+    } = body || {};
+    const finalSummary = String(summary || excerpt || '').trim();
+    const finalHtml = String(htmlContent || bodyHtml || '').trim();
+    const finalCover = String(coverImageUrl || coverImage || '').trim();
+    if (!title || !finalSummary) {
+      return jsonResponse({ success: false, error: 'Title and Summary are required.' }, 400, {}, request, true);
     }
 
     const cleanSlug =
@@ -656,21 +699,21 @@ export async function onRequest(context) {
       title: String(title).trim(),
       date: date ? String(date).trim() : new Date().toISOString().slice(0, 10),
       category: category ? String(category).trim() : 'Release',
-      excerpt: String(excerpt).trim(),
-      bodyHtml: bodyHtml ? String(bodyHtml).trim() : `<p>${String(excerpt).trim()}</p>`,
-      coverImage: coverImage ? String(coverImage).trim() : '',
+      summary: finalSummary,
+      htmlContent: finalHtml || `<p>${finalSummary}</p>`,
+      coverImageUrl: finalCover,
       featured: Boolean(featured),
       readTime: readTime ? String(readTime).trim() : '2 min read',
       author: author ? String(author).trim() : 'Editorial Team'
     };
 
     if (!existing.newsSection) {
-      existing.newsSection = { heading: '', subheading: '', layout: 'featured-grid', posts: [] };
+      existing.newsSection = { heading: '', subheading: '', layout: 'featured-grid', articles: [] };
     }
-    if (!Array.isArray(existing.newsSection.posts)) {
-      existing.newsSection.posts = [];
+    if (!Array.isArray(existing.newsSection.articles)) {
+      existing.newsSection.articles = [];
     }
-    existing.newsSection.posts.unshift(newPost);
+    existing.newsSection.articles.unshift(newPost);
 
     const patched = applyModulePatchEdge(existing, 'newsSection', existing.newsSection);
     const nextConfig = appendSyncLogEntryEdge(

@@ -1,19 +1,12 @@
 {
-  "name": "Daman Game",
-  "short_name": "Daman Game",
+  "name": "",
+  "short_name": "",
   "description": "",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#FFFFFF",
-  "theme_color": "#EA580C",
-  "icons": [
-    {
-      "src": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    }
-  ]
+  "theme_color": "#EF4444",
+  "icons": []
 }

@@ -1,10 +1,27 @@
 /**
  * Cloudflare Pages Functions Global Middleware
  * Enforces scoped CORS, hardened security headers (X-Frame-Options: DENY on Admin),
- * Gate G1 edge bot blocking & noindex on /moreinfo and /admin.
+ * Gate G1 edge bot blocking & noindex on /moreinfo and /admin,
+ * and dynamic per-URL fallback resolution from Firestore when a static route
+ * or SEO artifact is requested before GitHub re-build completes.
  */
 
-import { evaluateGateG1Edge } from './_shared/auth.js';
+import {
+  evaluateGateG1Edge,
+  getFirebaseEnvFromEnv,
+  readSiteConfigWithStatusEdge,
+  EMPTY_ADMIN_CONFIG,
+  jsonResponse
+} from './_shared/auth.js';
+import {
+  resolveRouteEdge,
+  buildPartialRoutePayloadEdge,
+  renderCompleteStaticPageHtmlEdge,
+  generateSitemapXmlEdge,
+  generateRobotsTxtEdge,
+  generateRssFeedXmlEdge,
+  generateWebManifestJsonEdge
+} from './_shared/static-compiler.js';
 
 function isSensitiveAdminPath(pathname) {
   const p = pathname.toLowerCase();
@@ -18,6 +35,170 @@ function isSensitiveAdminPath(pathname) {
     p === '/api/upload-image' ||
     p === '/api/news'
   );
+}
+
+const STATIC_ASSET_EXT_RE = /\.(?:js|mjs|css|png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|eot|map|txt|xml|json|webmanifest|pdf|zip|apk)$/i;
+
+function isDynamicPublicPageCandidate(pathname) {
+  const lower = pathname.toLowerCase();
+  if (
+    lower.startsWith('/api/') ||
+    lower.startsWith('/admin') ||
+    lower.startsWith('/moreinfo') ||
+    lower.startsWith('/download') ||
+    lower.startsWith('/assets/') ||
+    lower.startsWith('/uploads/') ||
+    lower.startsWith('/static-routes/')
+  ) {
+    return false;
+  }
+  if (lower.endsWith('.html')) return true;
+  return !STATIC_ASSET_EXT_RE.test(lower);
+}
+
+function staticJsonNameToRoutePath(fileName) {
+  const clean = String(fileName || '').replace(/\.json$/i, '');
+  if (!clean || clean === 'index') return '/';
+  return `/${clean.replace(/--/g, '/')}`;
+}
+
+async function resolveDynamicFallback(request, env, url, initialResponse) {
+  if (request.method !== 'GET') return initialResponse;
+
+  const pathname = url.pathname || '/';
+  const lower = pathname.toLowerCase();
+  const cleanPath = (lower.endsWith('/index.html') ? lower.slice(0, -'/index.html'.length) : lower).replace(/\/+$/, '') || '/';
+  const contentType = (initialResponse.headers.get('content-type') || '').toLowerCase();
+
+  // 1. Dynamic `/static-routes/<route>.json` fallback if static JSON file wasn't pre-built or fell through to HTML SPA fallback
+  if (lower.startsWith('/static-routes/') && lower.endsWith('.json')) {
+    if (initialResponse.ok && contentType.includes('application/json')) {
+      return initialResponse;
+    }
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    if (!fbEnv.isConfigured) return initialResponse;
+
+    const jsonName = pathname.slice('/static-routes/'.length);
+    const targetRoute = staticJsonNameToRoutePath(jsonName);
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+    const cfg = readRes.status === 'ok' && readRes.config ? readRes.config : EMPTY_ADMIN_CONFIG;
+    const route = resolveRouteEdge(targetRoute, cfg);
+    if (!route.matched) {
+      return jsonResponse({ success: false, error: 'Route not found' }, 404, {}, request, false);
+    }
+    const payload = buildPartialRoutePayloadEdge(targetRoute, cfg);
+    return new Response(JSON.stringify(payload, null, 2), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=30, stale-while-revalidate=120'
+      }
+    });
+  }
+
+  // 2. Dynamic SEO artifacts fallback (`/sitemap.xml`, `/robots.txt`, `/feed.xml`, `/manifest.webmanifest`)
+  const isSeoArtifact =
+    lower === '/sitemap.xml' ||
+    lower === '/robots.txt' ||
+    lower === '/feed.xml' ||
+    lower === '/manifest.webmanifest';
+  if (isSeoArtifact) {
+    const expectedOk =
+      initialResponse.ok &&
+      !contentType.includes('text/html');
+    if (expectedOk) return initialResponse;
+
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    if (!fbEnv.isConfigured) return initialResponse;
+
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+    const cfg = readRes.status === 'ok' && readRes.config ? readRes.config : EMPTY_ADMIN_CONFIG;
+    if (lower === '/sitemap.xml') {
+      const xml = generateSitemapXmlEdge(cfg);
+      if (!xml) return new Response('XML Sitemap disabled', { status: 404 });
+      return new Response(xml, { status: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
+    }
+    if (lower === '/robots.txt') {
+      return new Response(generateRobotsTxtEdge(cfg), {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+      });
+    }
+    if (lower === '/feed.xml') {
+      const rss = generateRssFeedXmlEdge(cfg);
+      if (!rss) return new Response('RSS Feed disabled', { status: 404 });
+      return new Response(rss, { status: 200, headers: { 'Content-Type': 'application/rss+xml; charset=utf-8' } });
+    }
+    if (lower === '/manifest.webmanifest') {
+      return new Response(generateWebManifestJsonEdge(cfg), {
+        status: 200,
+        headers: { 'Content-Type': 'application/manifest+json; charset=utf-8' }
+      });
+    }
+  }
+
+  // 3. Dynamic Public HTML Page Fallback for `/`, `/news`, `/news/:slug`, `/:pageSlug`
+  if (!isDynamicPublicPageCandidate(pathname)) {
+    return initialResponse;
+  }
+
+  let htmlBody = '';
+  if (initialResponse.ok && contentType.includes('text/html')) {
+    htmlBody = await initialResponse.text();
+    const ssrMatch = htmlBody.match(/<main[^>]*\bdata-ssr-path="([^"]*)"/i);
+    if (ssrMatch && ssrMatch[1] === cleanPath) {
+      // Pre-built static CDN HTML matches requested URL -> return immediately at CDN speed
+      return new Response(htmlBody, {
+        status: initialResponse.status,
+        statusText: initialResponse.statusText,
+        headers: initialResponse.headers
+      });
+    }
+  }
+
+  const fbEnv = getFirebaseEnvFromEnv(env);
+  if (!fbEnv.isConfigured) {
+    return htmlBody
+      ? new Response(htmlBody, {
+          status: initialResponse.status,
+          statusText: initialResponse.statusText,
+          headers: initialResponse.headers
+        })
+      : initialResponse;
+  }
+
+  const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+  const cfg = readRes.status === 'ok' && readRes.config ? readRes.config : EMPTY_ADMIN_CONFIG;
+  const route = resolveRouteEdge(cleanPath, cfg);
+
+  if (!route.matched) {
+    return new Response('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>404 Not Found</title><meta name="robots" content="noindex, nofollow"></head><body style="font-family:system-ui,sans-serif;padding:48px 20px;text-align:center;"><h1>Page Not Found</h1><p><a href="/">Return Home</a></p></body></html>', {
+      status: 404,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'X-Robots-Tag': 'noindex, nofollow'
+      }
+    });
+  }
+
+  let templateHtml = htmlBody;
+  if (!templateHtml && env?.ASSETS?.fetch) {
+    try {
+      const tplRes = await env.ASSETS.fetch(new Request(new URL('/index.html', url).toString()));
+      if (tplRes && tplRes.ok) templateHtml = await tplRes.text();
+    } catch {
+      // use fallback internal template
+    }
+  }
+
+  const renderedHtml = renderCompleteStaticPageHtmlEdge(templateHtml || undefined, cfg, cleanPath);
+  return new Response(renderedHtml, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=30, stale-while-revalidate=120'
+    }
+  });
 }
 
 export async function onRequest(context) {
@@ -68,7 +249,9 @@ export async function onRequest(context) {
     }
   }
 
-  const response = await next();
+  const rawResponse = await next();
+  const response = await resolveDynamicFallback(request, env, url, rawResponse);
+
   const newHeaders = new Headers(response.headers);
   newHeaders.set('X-Content-Type-Options', 'nosniff');
 

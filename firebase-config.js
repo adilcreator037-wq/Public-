@@ -17,7 +17,8 @@ import {
   cleanFirebaseEnvString,
   normalizeFirebaseClientConfig,
   isValidFirebaseClientConfig,
-  parseFirebaseConfigSnippet
+  parseFirebaseConfigSnippet,
+  calculateTargetImageDimensions
 } from './src/utils/cms-engine.ts';
 
 export const FIREBASE_OVERRIDE_STORAGE_KEY = 'cms_firebase_custom_config_v3';
@@ -172,6 +173,28 @@ export const saveCustomFirebaseConfig = saveActiveFirebaseConfig;
 export const clearCustomFirebaseConfig = clearActiveFirebaseConfig;
 
 /**
+ * Build standard Admin API headers, attaching X-Firebase-Config whenever the user
+ * has connected custom Firebase credentials in Admin Studio so stateless Edge Workers
+ * and restarted Node servers always route reads/writes to the user's live Firestore.
+ */
+function buildAdminRequestHeaders(extraHeaders = {}) {
+  const headers = { ...extraHeaders };
+  try {
+    const saved = localStorage.getItem(FIREBASE_OVERRIDE_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const cleaned = normalizeFirebaseClientConfig(parsed);
+      if (isValidFirebaseClientConfig(cleaned)) {
+        headers['X-Firebase-Config'] = JSON.stringify(cleaned);
+      }
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+  return headers;
+}
+
+/**
  * Test live Firestore connectivity via authenticated server endpoint `/api/firebase/test`
  */
 export async function testFirebaseConnectionRemote(customConfig = null) {
@@ -179,11 +202,11 @@ export async function testFirebaseConnectionRemote(customConfig = null) {
     const res = await fetch('/api/firebase/test', {
       method: 'POST',
       credentials: 'include',
-      headers: {
+      headers: buildAdminRequestHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Admin-CSRF': '1'
-      },
+      }),
       body: JSON.stringify(customConfig ? { firebaseConfig: customConfig } : {})
     });
     const data = await res.json().catch(() => null);
@@ -216,10 +239,10 @@ export async function getSiteConfigRemote() {
     const res = await fetch('/api/config', {
       method: 'GET',
       credentials: 'include',
-      headers: {
+      headers: buildAdminRequestHeaders({
         Accept: 'application/json',
         'Cache-Control': 'no-cache'
-      }
+      })
     });
     if (res.status === 401) {
       notifyAdminUnauthorized();
@@ -257,11 +280,11 @@ export async function saveSiteConfigRemote(config, editedModules = []) {
   const res = await fetch('/api/config', {
     method: 'POST',
     credentials: 'include',
-    headers: {
+    headers: buildAdminRequestHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'X-Admin-CSRF': '1'
-    },
+    }),
     body: JSON.stringify(payload)
   });
   const data = await res.json().catch(() => null);
@@ -293,11 +316,11 @@ export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
   const res = await fetch('/api/config/module', {
     method: 'PATCH',
     credentials: 'include',
-    headers: {
+    headers: buildAdminRequestHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'X-Admin-CSRF': '1'
-    },
+    }),
     body: JSON.stringify({
       moduleKey,
       module: moduleKey,
@@ -334,11 +357,11 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
   const res = await fetch('/api/config/modules', {
     method: 'PATCH',
     credentials: 'include',
-    headers: {
+    headers: buildAdminRequestHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'X-Admin-CSRF': '1'
-    },
+    }),
     body: JSON.stringify({
       modules: modulesMap,
       editedModules
@@ -373,11 +396,11 @@ export async function resetSiteConfigRemote() {
   const res = await fetch('/api/config/reset', {
     method: 'POST',
     credentials: 'include',
-    headers: {
+    headers: buildAdminRequestHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'X-Admin-CSRF': '1'
-    },
+    }),
     body: JSON.stringify({})
   });
   const data = await res.json().catch(() => null);
@@ -395,17 +418,130 @@ export async function resetSiteConfigRemote() {
   return inMemoryCachedConfig;
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function replaceExtWithWebp(fileName) {
+  const base = String(fileName || `upload-${Date.now()}`).replace(/\.[^/.]+$/, '');
+  return `${base || 'asset'}.webp`;
+}
+
+/**
+ * Client-side Canvas Resize & WebP Compression before uploading.
+ * Keeps SVGs, animated GIFs, and tiny (<18KB) files untouched; falls back safely
+ * if canvas/WebP is unavailable or produces a larger payload.
+ */
+export async function optimizeImageFileForUpload(file, options = {}) {
+  const rawDataUrl = await readFileAsDataUrl(file);
+  const mime = String(file?.type || '').toLowerCase();
+  const maxWidth = Math.max(64, Number(options.maxWidth) || 1400);
+  const maxHeight = Math.max(64, Number(options.maxHeight) || 1400);
+  const quality = Math.min(0.95, Math.max(0.45, Number(options.quality) || 0.82));
+  const originalBytes = Number(file?.size) || Math.floor((rawDataUrl.length * 3) / 4);
+
+  if (
+    !mime.startsWith('image/') ||
+    mime === 'image/svg+xml' ||
+    mime === 'image/gif' ||
+    (originalBytes > 0 && originalBytes < 18 * 1024) ||
+    typeof document === 'undefined'
+  ) {
+    return {
+      fileName: file?.name || `upload-${Date.now()}.png`,
+      contentType: file?.type || 'image/png',
+      dataUrl: rawDataUrl,
+      originalBytes,
+      optimizedBytes: originalBytes,
+      compressed: false
+    };
+  }
+
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('Decode failed'));
+      el.src = rawDataUrl;
+    });
+
+    const target = calculateTargetImageDimensions(
+      img.naturalWidth || img.width || 0,
+      img.naturalHeight || img.height || 0,
+      maxWidth,
+      maxHeight
+    );
+
+    if (target.width <= 0 || target.height <= 0) {
+      throw new Error('Zero dimensions');
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = target.width;
+    canvas.height = target.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, target.width, target.height);
+
+    let optimizedUrl = canvas.toDataURL('image/webp', quality);
+    let outMime = 'image/webp';
+    let outName = replaceExtWithWebp(file?.name);
+
+    if (!optimizedUrl || !optimizedUrl.startsWith('data:image/webp')) {
+      optimizedUrl = canvas.toDataURL('image/jpeg', quality);
+      outMime = 'image/jpeg';
+      outName = `${String(file?.name || 'asset').replace(/\.[^/.]+$/, '') || 'asset'}.jpg`;
+    }
+
+    const optimizedBytes = Math.floor(((optimizedUrl.split(',')[1] || '').length * 3) / 4);
+    const shouldKeepRaw = !target.resized && optimizedUrl.length >= rawDataUrl.length;
+
+    if (shouldKeepRaw) {
+      return {
+        fileName: file?.name || `upload-${Date.now()}.png`,
+        contentType: file?.type || 'image/png',
+        dataUrl: rawDataUrl,
+        originalBytes,
+        optimizedBytes: originalBytes,
+        compressed: false
+      };
+    }
+
+    return {
+      fileName: outName,
+      contentType: outMime,
+      dataUrl: optimizedUrl,
+      originalBytes,
+      optimizedBytes,
+      compressed: true
+    };
+  } catch {
+    return {
+      fileName: file?.name || `upload-${Date.now()}.png`,
+      contentType: file?.type || 'image/png',
+      dataUrl: rawDataUrl,
+      originalBytes,
+      optimizedBytes: originalBytes,
+      compressed: false
+    };
+  }
+}
+
 /**
  * Upload an image file from smartphone/desktop via `/api/upload-image`
+ * (Automatically resizes & compresses raster images to lightweight WebP first!)
  */
-export async function uploadImageRemote(file) {
+export async function uploadImageRemote(file, options = {}) {
   try {
-    const reader = new FileReader();
-    const dataUrl = await new Promise((resolve, reject) => {
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Failed to read image file'));
-      reader.readAsDataURL(file);
-    });
+    const prepared = await optimizeImageFileForUpload(file, options);
 
     const res = await fetch('/api/upload-image', {
       method: 'POST',
@@ -416,15 +552,22 @@ export async function uploadImageRemote(file) {
         'X-Admin-CSRF': '1'
       },
       body: JSON.stringify({
-        fileName: file.name || `upload-${Date.now()}.png`,
-        contentType: file.type || 'image/png',
-        dataUrl
+        fileName: prepared.fileName,
+        contentType: prepared.contentType,
+        dataUrl: prepared.dataUrl
       })
     });
     const data = await res.json().catch(() => null);
     if (res.status === 401) notifyAdminUnauthorized(data?.error);
     if (res.ok && data?.success && data?.url) {
-      return { success: true, url: data.url };
+      return {
+        success: true,
+        url: data.url,
+        fileName: prepared.fileName,
+        originalBytes: prepared.originalBytes,
+        optimizedBytes: data.sizeBytes || prepared.optimizedBytes,
+        compressed: prepared.compressed
+      };
     }
     return { success: false, status: res.status, error: data?.error || 'Image upload failed.' };
   } catch (err) {
@@ -440,11 +583,11 @@ export async function verifyGitHubRepoRemote(ghPayload) {
     const res = await fetch('/api/github/verify', {
       method: 'POST',
       credentials: 'include',
-      headers: {
+      headers: buildAdminRequestHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Admin-CSRF': '1'
-      },
+      }),
       body: JSON.stringify(ghPayload || {})
     });
     const data = await res.json().catch(() => null);
@@ -481,11 +624,11 @@ export async function publishStaticSiteToGitHubRemote(
     const res = await fetch('/api/github/publish', {
       method: 'POST',
       credentials: 'include',
-      headers: {
+      headers: buildAdminRequestHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Admin-CSRF': '1'
-      },
+      }),
       body: JSON.stringify(bodyObj)
     });
     const data = await res.json().catch(() => null);

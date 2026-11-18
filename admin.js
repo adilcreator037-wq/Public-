@@ -44,6 +44,7 @@ let pendingClearTurnstileSecret = false;
 
 // State for Global Image Upload, Insert Image Modal, Link Modal & Visual Block Builder Modal
 let pendingUploadCallback = null;
+let pendingUploadOptions = {};
 let activeImageModalTarget = null;
 let activeVisualBlockTarget = null;
 let activeLinkModalTarget = null;
@@ -197,10 +198,11 @@ function markClean(message = 'All changes published and compiled to static publi
 /**
  * Trigger Device Image File Picker & Upload to `/api/upload-image`
  */
-function triggerDeviceImageUpload(onUploadedUrl) {
+function triggerDeviceImageUpload(onUploadedUrl, uploadOptions = {}) {
   const fileInput = $('global-image-file-picker');
   if (!fileInput) return;
   pendingUploadCallback = onUploadedUrl;
+  pendingUploadOptions = uploadOptions || {};
   fileInput.value = '';
   fileInput.click();
 }
@@ -455,7 +457,7 @@ function confirmInsertImageFromModal() {
     return;
   }
 
-  const figureHtml = `\n<figure class="media-figure">\n  <img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" width="1200" height="675" loading="lazy" />\n${
+  const figureHtml = `\n<figure class="media-figure">\n  <img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" width="1200" height="675" loading="lazy" fetchpriority="low" decoding="async" referrerpolicy="no-referrer" />\n${
     caption ? `  <figcaption class="media-caption">${escapeHtml(caption)}</figcaption>\n` : ''
   }</figure>`;
 
@@ -4839,16 +4841,23 @@ function initAuthEvents() {
     const file = e.target.files?.[0];
     if (!file || !pendingUploadCallback) return;
 
-    showToast('Uploading image...', 'default');
-    const result = await uploadImageRemote(file);
+    const uploadOpts = pendingUploadOptions || {};
+    showToast('Optimizing & uploading image...', 'default');
+    const result = await uploadImageRemote(file, uploadOpts);
     if (result.success && result.url) {
       const uploadedMod = pendingUploadCallback(result.url);
       markDirty('Image uploaded — tap Publish or Save Section to persist', isCmsModuleKey(uploadedMod) ? uploadedMod : getPrimaryModuleForActiveTab());
-      showToast('Image uploaded and linked!', 'success');
+      const kb = result.optimizedBytes ? Math.max(1, Math.round(result.optimizedBytes / 1024)) : 0;
+      const msg =
+        result.compressed && kb > 0
+          ? `Image optimized (${kb} KB) & linked!`
+          : 'Image uploaded and linked!';
+      showToast(msg, 'success');
     } else {
       showToast(result.error || 'Image upload failed.', 'error');
     }
     pendingUploadCallback = null;
+    pendingUploadOptions = {};
   });
 
   // Auth mode tabs (supports both data-auth-mode buttons and legacy IDs)
@@ -4921,8 +4930,12 @@ function initAuthEvents() {
     const scalarUploadBtn = target.closest('[data-upload-target]');
     if (scalarUploadBtn) {
       e.preventDefault();
-      const inputId = scalarUploadBtn.getAttribute('data-upload-target');
+      const inputId = scalarUploadBtn.getAttribute('data-upload-target') || '';
       const previewId = scalarUploadBtn.getAttribute('data-preview-target');
+      const isIconTarget = /logo|favicon|touch/i.test(inputId);
+      const uploadOpts = isIconTarget
+        ? { maxWidth: 512, maxHeight: 512, quality: 0.85 }
+        : { maxWidth: 1400, maxHeight: 1400, quality: 0.82 };
       triggerDeviceImageUpload((uploadedUrl) => {
         if (inputId && $(inputId)) {
           $(inputId).value = uploadedUrl;
@@ -4932,7 +4945,7 @@ function initAuthEvents() {
           setImagePreview($(previewId), uploadedUrl);
         }
         return inferModuleKeyFromElement(inputId ? $(inputId) : null);
-      });
+      }, uploadOpts);
       return;
     }
 
@@ -4943,14 +4956,17 @@ function initAuthEvents() {
       const collection = collUploadBtn.getAttribute('data-upload-collection');
       const index = Number(collUploadBtn.getAttribute('data-index'));
       const key = collUploadBtn.getAttribute('data-key');
-      triggerDeviceImageUpload((uploadedUrl) => {
-        const list = getCollectionRef(collection);
-        if (list && list[index]) {
-          list[index][key] = uploadedUrl;
-          rerenderCollection(collection);
-        }
-        return inferModuleKeyFromElement({ dataset: { collection } });
-      });
+      triggerDeviceImageUpload(
+        (uploadedUrl) => {
+          const list = getCollectionRef(collection);
+          if (list && list[index]) {
+            list[index][key] = uploadedUrl;
+            rerenderCollection(collection);
+          }
+          return inferModuleKeyFromElement({ dataset: { collection } });
+        },
+        { maxWidth: 1400, maxHeight: 1400, quality: 0.82 }
+      );
       return;
     }
 

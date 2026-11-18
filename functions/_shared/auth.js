@@ -729,6 +729,35 @@ export function verifyCsrfEdge(request, env = {}) {
   return { ok: true };
 }
 
+let runtimeEdgeFirebaseOverride = null;
+
+export function setRuntimeEdgeFirebaseOverride(cfg) {
+  if (!cfg || typeof cfg !== 'object') {
+    runtimeEdgeFirebaseOverride = null;
+    return;
+  }
+  const apiKey = cleanEnvVal(cfg.apiKey);
+  const projectId = cleanEnvVal(cfg.projectId);
+  if (
+    apiKey &&
+    projectId &&
+    !apiKey.includes('DummyKey') &&
+    !apiKey.includes('YOUR_') &&
+    !projectId.includes('my-single-domain-cms') &&
+    !projectId.includes('replace-with')
+  ) {
+    runtimeEdgeFirebaseOverride = {
+      apiKey,
+      projectId,
+      authDomain: cleanEnvVal(cfg.authDomain) || `${projectId}.firebaseapp.com`,
+      storageBucket: cleanEnvVal(cfg.storageBucket) || `${projectId}.appspot.com`,
+      messagingSenderId: cleanEnvVal(cfg.messagingSenderId) || '',
+      appId: cleanEnvVal(cfg.appId) || '',
+      databaseId: cleanEnvVal(cfg.databaseId) || '(default)'
+    };
+  }
+}
+
 export async function verifyAdminRequest(request, env = {}, ignoreExpiryForLogout = false) {
   const reqHost = (request.headers.get('host') || new URL(request.url).host || '').toLowerCase();
   const adminCreds = getAdminCredentials(env, reqHost);
@@ -758,6 +787,18 @@ export async function verifyAdminRequest(request, env = {}, ignoreExpiryForLogou
     credVersion,
     fromCookie
   );
+
+  if (verification?.valid) {
+    const rawFbHeader = request.headers.get('x-firebase-config');
+    if (rawFbHeader) {
+      try {
+        setRuntimeEdgeFirebaseOverride(JSON.parse(rawFbHeader));
+      } catch {
+        // Ignore malformed header
+      }
+    }
+  }
+
   return { verification, adminCreds };
 }
 
@@ -789,7 +830,7 @@ export function jsonResponse(data, status = 200, extraHeaders = {}, request = nu
   }
 
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-api-key, x-admin-csrf, x-requested-with');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-api-key, x-admin-csrf, x-requested-with, x-firebase-config');
 
   for (const [k, v] of Object.entries(extraHeaders || {})) {
     if (Array.isArray(v)) {
@@ -1035,6 +1076,13 @@ export function sanitizeFirebaseConfigForClientEdge(fbCfg) {
 // ============================================================================
 
 export function getFirebaseEnvFromEnv(env = {}) {
+  if (runtimeEdgeFirebaseOverride?.apiKey && runtimeEdgeFirebaseOverride?.projectId) {
+    return {
+      isConfigured: true,
+      config: { ...runtimeEdgeFirebaseOverride }
+    };
+  }
+
   let jsonEnv = {};
   const rawJson = cleanEnvVal(env.FIREBASE_CONFIG_JSON || env.VITE_FIREBASE_CONFIG_JSON);
   if (rawJson) {
