@@ -1,0 +1,12 @@
+{
+  "name": "Daman Game",
+  "short_name": "Daman Game",
+  "description": "",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#EF4444",
+  "icons": []
+}

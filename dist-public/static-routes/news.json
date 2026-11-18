@@ -1,77 +1,50 @@
 {
-  "path": "/news",
-  "canonicalPath": "/news",
   "viewType": "news-hub",
-  "isConfigured": false,
-  "metaTitle": "Daily News & Updates",
-  "metaDescription": "Browse published news updates and announcements.",
+  "isConfigured": true,
+  "canonicalPath": "/news",
+  "canonicalUrl": "https://example.com/news",
+  "metaTitle": "Daily News & Updates | Daman Game",
+  "metaDescription": "",
   "ogImage": "",
-  "heroH1": "Latest News & Updates",
+  "heroH1": "Daman Game",
   "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "\n    <p class=\"news-summary-text\">\n      Official daily news updates, software changelogs, and announcements from our team.\n    </p>\n    <div class=\"news-filter-bar\">\n      <button type=\"button\" class=\"news-filter-btn active\" data-news-cat=\"ALL\">\n        All News (0)\n      </button>\n    </div>\n    <div id=\"news-hub-articles-container\"><p>No news articles found in this category.</p></div>\n  ",
+  "renderedMainHtml": "<section><h1>Latest News &amp; Updates</h1><article class=\"news-item-block\"><div class=\"news-meta-line\"><span class=\"news-category-tag\">Daily Updatesb</span><span>·</span><span></span></div><h3><a class=\"news-title-link\" href=\"/news/adil\" data-spa-link>Adil</a></h3><p class=\"news-summary-text\">Fc Barcelona vs real Madrid</p><a class=\"news-read-more\" href=\"/news/adil\" data-spa-link>Read full update →</a></article></section>",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
         "@id": "https://example.com/#website",
-        "url": "https://example.com",
-        "name": "Website",
-        "alternateName": "Website",
-        "description": "",
+        "url": "https://example.com/",
+        "name": "Daman Game",
+        "alternateName": "Daman Game",
         "publisher": {
           "@id": "https://example.com/#organization"
-        },
-        "inLanguage": "en-US"
+        }
       },
       {
         "@type": "Organization",
         "@id": "https://example.com/#organization",
-        "name": "Organization",
-        "url": "https://example.com"
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://example.com/news/#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Home",
-            "item": "https://example.com"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Latest News & Updates",
-            "item": "https://example.com/news"
-          }
-        ]
+        "name": "Daman Game",
+        "url": "https://example.com/"
       },
       {
         "@type": "CollectionPage",
-        "@id": "https://example.com/news/#news-collection",
+        "@id": "https://example.com/news#webpage",
         "url": "https://example.com/news",
-        "name": "Daily News & Updates",
-        "description": "Browse published news updates and announcements.",
+        "name": "Daily News & Updates | Daman Game",
+        "description": "",
         "isPartOf": {
           "@id": "https://example.com/#website"
-        },
-        "breadcrumb": {
-          "@id": "https://example.com/news/#breadcrumb"
-        },
-        "mainEntity": {
-          "@type": "ItemList",
-          "itemListElement": []
         }
       }
     ]
   },
   "shell": {
     "brand": {
-      "name": "",
-      "shortName": "",
+      "name": "Daman Game",
+      "shortName": "Daman Game",
       "tagline": "",
       "logoUrl": "",
       "faviconUrl": "",
@@ -79,8 +52,13 @@
       "appleTouchIconUrl": "",
       "accentColor": "#EF4444",
       "themeColor": "#EF4444",
-      "contactEmail": ""
+      "contactEmail": "support@officiladaman.com"
     },
+    "brandName": "Daman Game",
+    "logoUrl": "",
+    "faviconUrl": "",
+    "accentColor": "#EF4444",
+    "buttonTextColor": "#FFFFFF",
     "uiConfig": {
       "maxContainerWidth": "768px",
       "pageBackgroundColor": "#F8FAFC",
@@ -126,12 +104,12 @@
       ]
     },
     "heroCtas": {
-      "secondaryCta": {
+      "primaryCta": {
         "label": "",
         "url": "",
         "relSponsored": false
       },
-      "primaryCta": {
+      "secondaryCta": {
         "label": "",
         "url": "",
         "relSponsored": false
@@ -142,24 +120,22 @@
         "url": ""
       }
     },
-    "packageVersion": "",
-    "headerLinks": [],
-    "autoSectionLinks": [],
-    "recentNewsDrawerItems": [],
-    "headerPages": [],
     "footerPages": [],
-    "allSubpagePills": [],
-    "newsCount": 0,
+    "newsCount": 1,
     "navigation": {
+      "headerLinks": [],
       "footerSummary": "",
       "showFooterBrandSummary": true,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "",
+      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimerMetaTitle": "",
+      "disclaimerMetaDescription": "",
       "disclaimer": "",
-      "siteLinksHeading": "",
-      "copyright": ""
+      "siteLinksHeading": "Legal & Support Pages",
+      "copyright": "",
+      "showAdminLink": false
     }
   },
-  "updatedAt": 1794929121834
+  "compiledAt": 1794971439231
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Daman Game News</title>
+    <link>https://example.com</link>
+    <description></description>
+    <item>
+      <title>Adil</title>
+      <link>https://example.com/news/adil</link>
+      <guid isPermaLink="true">https://example.com/news/adil</guid>
+      <description>Fc Barcelona vs real Madrid</description>
+    </item>
+  </channel>
+</rss>

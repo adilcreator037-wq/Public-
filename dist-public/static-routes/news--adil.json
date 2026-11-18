@@ -1,0 +1,141 @@
+{
+  "viewType": "news-article",
+  "isConfigured": true,
+  "canonicalPath": "/news/adil",
+  "canonicalUrl": "https://example.com/news/adil",
+  "metaTitle": "V call me at the end of the website is not working properly the sync system is not working properly",
+  "metaDescription": "G oy vey much for your website and the website is not",
+  "ogImage": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1793953823/rummydex_uploads/ebnmtsj4m6sv22jcxnum.webp",
+  "heroH1": "Daman Game",
+  "showHeroSection": true,
+  "showHeroCtaGrid": false,
+  "renderedMainHtml": "<article><h1>Adil</h1><p class=\"news-meta-line\">Daily Updatesb ·  · Daman Game Team</p><figure class=\"media-figure\"><img src=\"https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1793953823/rummydex_uploads/ebnmtsj4m6sv22jcxnum.webp\" alt=\"Adil\" loading=\"eager\" referrerpolicy=\"no-referrer\" /></figure>Hello sir I am going to be work very properly and the website is not working properly the sync system is not</article>",
+  "jsonLd": {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://example.com/#website",
+        "url": "https://example.com/",
+        "name": "Daman Game",
+        "alternateName": "Daman Game",
+        "publisher": {
+          "@id": "https://example.com/#organization"
+        }
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://example.com/#organization",
+        "name": "Daman Game",
+        "url": "https://example.com/"
+      },
+      {
+        "@type": "NewsArticle",
+        "@id": "https://example.com/news/adil#webpage",
+        "url": "https://example.com/news/adil",
+        "name": "V call me at the end of the website is not working properly the sync system is not working properly",
+        "description": "G oy vey much for your website and the website is not",
+        "isPartOf": {
+          "@id": "https://example.com/#website"
+        }
+      }
+    ]
+  },
+  "shell": {
+    "brand": {
+      "name": "Daman Game",
+      "shortName": "Daman Game",
+      "tagline": "",
+      "logoUrl": "",
+      "faviconUrl": "",
+      "searchLogoUrl": "",
+      "appleTouchIconUrl": "",
+      "accentColor": "#EF4444",
+      "themeColor": "#EF4444",
+      "contactEmail": "support@officiladaman.com"
+    },
+    "brandName": "Daman Game",
+    "logoUrl": "",
+    "faviconUrl": "",
+    "accentColor": "#EF4444",
+    "buttonTextColor": "#FFFFFF",
+    "uiConfig": {
+      "maxContainerWidth": "768px",
+      "pageBackgroundColor": "#F8FAFC",
+      "surfaceBackgroundColor": "#FFFFFF",
+      "headerBackgroundColor": "#FFFFFF",
+      "headerTextColor": "#111827",
+      "footerBackgroundColor": "#0F172A",
+      "footerTextColor": "#F8FAFC",
+      "borderColor": "#E2E8F0",
+      "cardBorderRadius": "12px",
+      "buttonTextColor": "#FFFFFF",
+      "textColor": "#1F2937",
+      "headingColor": "#111827",
+      "fontFamily": "system",
+      "baseFontSize": "16px",
+      "showHeaderNewsButton": true,
+      "headerNewsButtonLabel": "News",
+      "showNewsCountInHeader": true,
+      "autoIncludeSectionsInDrawer": true,
+      "showNewsInDrawer": true,
+      "showLegalLinksInDrawer": true,
+      "showCtaInDrawer": true,
+      "showHeroSection": true,
+      "showHeroCtaButtons": true,
+      "homepageNewsLimit": 5,
+      "newsReadMoreLabel": "Read Full Article →",
+      "newsViewAllLabel": "View All News →",
+      "backToHomeLabel": "← Back to Home",
+      "allNewsBreadcrumbLabel": "All News →",
+      "showSubpageSwitcherPills": true,
+      "showFooterDisclaimer": true,
+      "showFooterLinksHeading": true,
+      "stickyHeader": true,
+      "showBreadcrumbs": true,
+      "enableFaqAccordion": true,
+      "showTocJumpBar": true,
+      "homepageSectionOrder": [
+        "specs",
+        "sections",
+        "rawHtml",
+        "news",
+        "faqs"
+      ]
+    },
+    "heroCtas": {
+      "primaryCta": {
+        "label": "",
+        "url": "",
+        "relSponsored": false
+      },
+      "secondaryCta": {
+        "label": "",
+        "url": "",
+        "relSponsored": false
+      },
+      "floatingCta": {
+        "enabled": false,
+        "label": "",
+        "url": ""
+      }
+    },
+    "footerPages": [],
+    "newsCount": 1,
+    "navigation": {
+      "headerLinks": [],
+      "footerSummary": "",
+      "showFooterBrandSummary": true,
+      "showFooterContactEmail": true,
+      "footerQuickLinks": [],
+      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimerMetaTitle": "",
+      "disclaimerMetaDescription": "",
+      "disclaimer": "",
+      "siteLinksHeading": "Legal & Support Pages",
+      "copyright": "",
+      "showAdminLink": false
+    }
+  },
+  "compiledAt": 1794971439231
+}

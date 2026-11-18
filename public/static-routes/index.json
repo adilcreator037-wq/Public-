@@ -1,68 +1,50 @@
 {
-  "path": "/",
-  "canonicalPath": "/",
   "viewType": "home",
-  "isConfigured": false,
-  "metaTitle": "Coming Soon",
+  "isConfigured": true,
+  "canonicalPath": "/",
+  "canonicalUrl": "https://example.com/",
+  "metaTitle": "Daman Game",
   "metaDescription": "",
   "ogImage": "",
-  "heroH1": "",
-  "showHeroSection": false,
+  "heroH1": "Daman Game",
+  "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "<section class=\"site-coming-soon\"><h1>Coming Soon</h1><p>This website is currently being prepared.</p></section>",
+  "renderedMainHtml": "",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
         "@id": "https://example.com/#website",
-        "url": "https://example.com",
-        "name": "Website",
-        "alternateName": "Website",
-        "description": "",
+        "url": "https://example.com/",
+        "name": "Daman Game",
+        "alternateName": "Daman Game",
         "publisher": {
           "@id": "https://example.com/#organization"
-        },
-        "inLanguage": "en-US"
+        }
       },
       {
         "@type": "Organization",
         "@id": "https://example.com/#organization",
-        "name": "Organization",
-        "url": "https://example.com"
+        "name": "Daman Game",
+        "url": "https://example.com/"
       },
       {
         "@type": "WebPage",
         "@id": "https://example.com/#webpage",
-        "url": "https://example.com",
-        "name": "Coming Soon",
+        "url": "https://example.com/",
+        "name": "Daman Game",
         "description": "",
         "isPartOf": {
           "@id": "https://example.com/#website"
-        },
-        "about": {
-          "@id": "https://example.com/#organization"
-        },
-        "inLanguage": "en-US"
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://example.com/#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Home",
-            "item": "https://example.com"
-          }
-        ]
+        }
       }
     ]
   },
   "shell": {
     "brand": {
-      "name": "",
-      "shortName": "",
+      "name": "Daman Game",
+      "shortName": "Daman Game",
       "tagline": "",
       "logoUrl": "",
       "faviconUrl": "",
@@ -70,8 +52,13 @@
       "appleTouchIconUrl": "",
       "accentColor": "#EF4444",
       "themeColor": "#EF4444",
-      "contactEmail": ""
+      "contactEmail": "support@officiladaman.com"
     },
+    "brandName": "Daman Game",
+    "logoUrl": "",
+    "faviconUrl": "",
+    "accentColor": "#EF4444",
+    "buttonTextColor": "#FFFFFF",
     "uiConfig": {
       "maxContainerWidth": "768px",
       "pageBackgroundColor": "#F8FAFC",
@@ -117,12 +104,12 @@
       ]
     },
     "heroCtas": {
-      "secondaryCta": {
+      "primaryCta": {
         "label": "",
         "url": "",
         "relSponsored": false
       },
-      "primaryCta": {
+      "secondaryCta": {
         "label": "",
         "url": "",
         "relSponsored": false
@@ -133,24 +120,22 @@
         "url": ""
       }
     },
-    "packageVersion": "",
-    "headerLinks": [],
-    "autoSectionLinks": [],
-    "recentNewsDrawerItems": [],
-    "headerPages": [],
     "footerPages": [],
-    "allSubpagePills": [],
-    "newsCount": 0,
+    "newsCount": 1,
     "navigation": {
+      "headerLinks": [],
       "footerSummary": "",
       "showFooterBrandSummary": true,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "",
+      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimerMetaTitle": "",
+      "disclaimerMetaDescription": "",
       "disclaimer": "",
-      "siteLinksHeading": "",
-      "copyright": ""
+      "siteLinksHeading": "Legal & Support Pages",
+      "copyright": "",
+      "showAdminLink": false
     }
   },
-  "updatedAt": 1794929121834
+  "compiledAt": 1794971439231
 }
