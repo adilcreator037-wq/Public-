@@ -140,24 +140,34 @@
       }
     ],
     "headerPages": [],
-    "footerPages": [],
+    "footerPages": [
+      {
+        "label": "Privacy Policy",
+        "slug": "privacy-policy",
+        "metaTitle": "Privacy Policy – Daman Game Official Portal | Daman"
+      }
+    ],
     "allSubpagePills": [
       {
         "label": "News",
         "href": "/news"
+      },
+      {
+        "label": "Privacy Policy",
+        "href": "/privacy-policy"
       }
     ],
     "newsCount": 1,
     "navigation": {
       "footerSummary": "",
       "showFooterBrandSummary": false,
-      "showFooterContactEmail": false,
+      "showFooterContactEmail": true,
       "footerQuickLinks": [],
       "disclaimerHeading": "Legal Disclaimer",
       "disclaimer": "",
       "siteLinksHeading": "Legal & Support Pages",
-      "copyright": ""
+      "copyright": "2026 officialdaman. All rights reserved."
     }
   },
-  "updatedAt": 1794983838762
+  "updatedAt": 1794985742290
 }
