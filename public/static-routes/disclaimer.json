@@ -147,14 +147,7 @@
         "metaTitle": "New Content Section 3 | Daman"
       }
     ],
-    "recentNewsDrawerItems": [
-      {
-        "title": "Adil",
-        "slug": "adil",
-        "category": "Daily Updatesb",
-        "date": "November 18, 2026"
-      }
-    ],
+    "recentNewsDrawerItems": [],
     "headerPages": [],
     "footerPages": [
       {
@@ -182,7 +175,7 @@
         "href": "/disclaimer"
       }
     ],
-    "newsCount": 1,
+    "newsCount": 0,
     "navigation": {
       "footerSummary": "",
       "showFooterBrandSummary": false,
@@ -194,5 +187,5 @@
       "copyright": "© 2026 officialdaman. All rights reserved."
     }
   },
-  "updatedAt": 1794993184417
+  "updatedAt": 1794993289556
 }

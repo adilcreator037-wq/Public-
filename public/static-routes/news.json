@@ -10,7 +10,7 @@
   "heroH1": "Latest News & Updates",
   "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "\n    <p class=\"news-summary-text\">\n      Official daily news updates, software changelogs, and announcements from Daman.\n    </p>\n    <div class=\"news-filter-bar\">\n      <button type=\"button\" class=\"news-filter-btn active\" data-news-cat=\"ALL\">\n        All News (1)\n      </button>\n    \n      <button type=\"button\" class=\"news-filter-btn \" data-news-cat=\"Daily Updatesb\">\n        Daily Updatesb\n      </button>\n    </div>\n    <div id=\"news-hub-articles-container\">\n              <article class=\"news-item-block\">\n                <a href=\"/news/adil\" data-spa-link class=\"news-card-media-link\">\n                  <img src=\"https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto,w_768,c_limit/v1793953823/rummydex_uploads/ebnmtsj4m6sv22jcxnum.webp\" srcset=\"https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto,w_400,c_limit/v1793953823/rummydex_uploads/ebnmtsj4m6sv22jcxnum.webp 400w, https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto,w_768,c_limit/v1793953823/rummydex_uploads/ebnmtsj4m6sv22jcxnum.webp 768w\" sizes=\"(max-width: 768px) 100vw, 720px\" alt=\"Snnanana\" width=\"1200\" height=\"675\" loading=\"lazy\" fetchpriority=\"low\" decoding=\"async\" referrerpolicy=\"no-referrer\" class=\"news-card-cover-img\" />\n                </a>\n                <div class=\"news-meta-line\">\n                  <span class=\"news-category-tag\">Daily Updatesb</span>\n                  \n                  <span aria-hidden=\"true\">·</span><span>November 18, 2026</span>\n                  <span aria-hidden=\"true\">·</span><span>By Daman Game Team</span>\n                  <span aria-hidden=\"true\">·</span><span>2 min read</span>\n                </div>\n                <h3>\n                  <a href=\"/news/adil\" data-spa-link class=\"news-title-link\">Adil</a>\n                </h3>\n                <p class=\"news-summary-text\">Fc Barcelona vs real Madrid</p>\n                <a href=\"/news/adil\" data-spa-link class=\"news-read-more\">Read Full Article →</a>\n              </article>\n            </div>\n  ",
+  "renderedMainHtml": "\n    <p class=\"news-summary-text\">\n      Official daily news updates, software changelogs, and announcements from Daman.\n    </p>\n    <div class=\"news-filter-bar\">\n      <button type=\"button\" class=\"news-filter-btn active\" data-news-cat=\"ALL\">\n        All News (0)\n      </button>\n    </div>\n    <div id=\"news-hub-articles-container\"><p>No news articles found in this category.</p></div>\n  ",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
@@ -147,14 +147,7 @@
         "metaTitle": "New Content Section 3 | Daman"
       }
     ],
-    "recentNewsDrawerItems": [
-      {
-        "title": "Adil",
-        "slug": "adil",
-        "category": "Daily Updatesb",
-        "date": "November 18, 2026"
-      }
-    ],
+    "recentNewsDrawerItems": [],
     "headerPages": [],
     "footerPages": [
       {
@@ -182,7 +175,7 @@
         "href": "/disclaimer"
       }
     ],
-    "newsCount": 1,
+    "newsCount": 0,
     "navigation": {
       "footerSummary": "",
       "showFooterBrandSummary": false,
@@ -194,5 +187,5 @@
       "copyright": "© 2026 officialdaman. All rights reserved."
     }
   },
-  "updatedAt": 1794993184417
+  "updatedAt": 1794993289556
 }
