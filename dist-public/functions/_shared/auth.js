@@ -224,43 +224,31 @@ export function isCmsModuleKey(value) {
 }
 
 const PLACEHOLDER_PREFIX_RE = /^(replace-with-|your[-_]|changeme|example[-_])/i;
-const COMMON_WEAK_PASSWORDS_EDGE = new Set([
-  'password',
-  'password1',
-  'password123',
-  '12345678',
-  '123456789',
-  '1234567890',
-  'admin123',
-  'admin1234',
-  'administrator',
-  'qwerty123',
-  'qwertyui',
-  'letmein1',
-  'welcome1',
-  'passw0rd'
-]);
 
-function isWeakSecretOrPasswordEdge(val, email = '', minLen = 8) {
-  if (!val || val.length < minLen) return true;
+function isPlaceholderCredentialValueEdge(val) {
+  if (!val) return true;
   if (PLACEHOLDER_PREFIX_RE.test(val)) return true;
   const lowered = val.toLowerCase();
-  if (COMMON_WEAK_PASSWORDS_EDGE.has(lowered)) return true;
-  if (email && lowered === email.toLowerCase()) return true;
-  if (new Set(val).size < 4) return true;
+  if (lowered === 'replace-with-password' || lowered === 'replace-with-secret' || lowered === 'changeme') {
+    return true;
+  }
   return false;
 }
 
 export function resolveAdminSecurityPolicyEdge(env = {}, reqHost = '') {
   const rawEmail =
     cleanEnvVal(env.ADMIN_EMAIL) ||
+    cleanEnvVal(env.ADMIN_EMAIL_ID) ||
+    cleanEnvVal(env.ADMIN_ID) ||
     cleanEnvVal(env.ADMIN_USER) ||
     cleanEnvVal(env.ADMIN_USERNAME) ||
-    cleanEnvVal(env.CMS_ADMIN_EMAIL);
+    cleanEnvVal(env.CMS_ADMIN_EMAIL) ||
+    cleanEnvVal(env.CMS_ADMIN_EMAIL_ID);
 
   const rawPass =
     cleanEnvVal(env.ADMIN_PASSWORD) ||
     cleanEnvVal(env.ADMIN_PASS) ||
+    cleanEnvVal(env.ADMIN_PWD) ||
     cleanEnvVal(env.CMS_ADMIN_PASSWORD);
 
   const rawSecret =
@@ -276,23 +264,23 @@ export function resolveAdminSecurityPolicyEdge(env = {}, reqHost = '') {
   const isCfPages = Boolean(cleanEnvVal(env.CF_PAGES) || cleanEnvVal(env.CF_PAGES_URL));
   const isProduction = nodeEnvProd || (isCfPages && !isLocalHost) || (!isLocalHost && Boolean(hostOnly));
 
-  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !PLACEHOLDER_PREFIX_RE.test(rawEmail));
-  const hasValidPassword = !isWeakSecretOrPasswordEdge(rawPass, rawEmail, 8);
-  const hasExplicitSecret = !isWeakSecretOrPasswordEdge(rawSecret, rawEmail, 16);
-  const hasExplicitWeakSecret = Boolean(rawSecret) && !hasExplicitSecret;
-  const hasValidApiKey = !isWeakSecretOrPasswordEdge(rawApiKey, rawEmail, 16);
+  const hasValidEmail = Boolean(rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && !isPlaceholderCredentialValueEdge(rawEmail));
+  const hasValidPassword = Boolean(rawPass && rawPass.length >= 1 && !isPlaceholderCredentialValueEdge(rawPass));
+  const hasExplicitSecret = Boolean(rawSecret && rawSecret.length >= 1 && !isPlaceholderCredentialValueEdge(rawSecret));
+  const hasExplicitPlaceholderSecret = Boolean(rawSecret) && !hasExplicitSecret;
+  const hasValidApiKey = Boolean(rawApiKey && rawApiKey.length >= 8 && !isPlaceholderCredentialValueEdge(rawApiKey));
 
   const hasValidAuthMethod = (hasValidEmail && hasValidPassword) || hasValidApiKey;
-  const hasDerivedSecret = Boolean(!rawSecret && hasValidAuthMethod);
+  const hasDerivedSecret = Boolean(!hasExplicitSecret && hasValidAuthMethod);
   const hasCustomSecret = hasExplicitSecret || hasDerivedSecret;
 
-  if (!hasValidAuthMethod || hasExplicitWeakSecret) {
+  if (!hasValidAuthMethod || hasExplicitPlaceholderSecret) {
     const missingParts = [];
     if (!hasValidAuthMethod) {
-      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD (min 8 strong chars)');
+      missingParts.push('ADMIN_EMAIL + ADMIN_PASSWORD');
     }
-    if (hasExplicitWeakSecret) {
-      missingParts.push('valid ADMIN_SESSION_SECRET (min 16 strong chars)');
+    if (hasExplicitPlaceholderSecret) {
+      missingParts.push('non-placeholder ADMIN_SESSION_SECRET');
     }
     return {
       isProduction,
@@ -325,13 +313,17 @@ export function getAdminCredentials(env = {}, reqHost = '') {
 
   const email =
     cleanEnvVal(env.ADMIN_EMAIL) ||
+    cleanEnvVal(env.ADMIN_EMAIL_ID) ||
+    cleanEnvVal(env.ADMIN_ID) ||
     cleanEnvVal(env.ADMIN_USER) ||
     cleanEnvVal(env.ADMIN_USERNAME) ||
-    cleanEnvVal(env.CMS_ADMIN_EMAIL);
+    cleanEnvVal(env.CMS_ADMIN_EMAIL) ||
+    cleanEnvVal(env.CMS_ADMIN_EMAIL_ID);
 
   const password =
     cleanEnvVal(env.ADMIN_PASSWORD) ||
     cleanEnvVal(env.ADMIN_PASS) ||
+    cleanEnvVal(env.ADMIN_PWD) ||
     cleanEnvVal(env.CMS_ADMIN_PASSWORD);
 
   const apiKey =
@@ -845,36 +837,53 @@ export function sanitizeConfigForClientEdge(config, env = {}) {
 }
 
 export function preserveSecretsEdge(incoming, existing = {}) {
-  const next = JSON.parse(JSON.stringify(incoming || {}));
+  const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
   const prev = existing || {};
+  const next = {
+    ...base,
+    ...prev,
+    ...JSON.parse(JSON.stringify(incoming || {}))
+  };
 
   if (next.githubConfig && typeof next.githubConfig === 'object') {
-    const raw = cleanEnvVal(next.githubConfig.fineGrainedToken);
-    const clr = Boolean(next.githubConfig.clearFineGrainedToken);
+    next.githubConfig = {
+      ...base.githubConfig,
+      ...(prev.githubConfig || {}),
+      ...next.githubConfig
+    };
+    const raw = cleanEnvVal(incoming?.githubConfig?.fineGrainedToken);
+    const clr = Boolean(incoming?.githubConfig?.clearFineGrainedToken);
     if (clr) {
       next.githubConfig.fineGrainedToken = '';
       next.githubConfig.hasFineGrainedToken = false;
     } else if (!raw || raw === SECRET_MASK) {
       const prevTok = cleanEnvVal(prev.githubConfig?.fineGrainedToken);
       next.githubConfig.fineGrainedToken = prevTok;
-      next.githubConfig.hasFineGrainedToken = Boolean(prevTok);
+      next.githubConfig.hasFineGrainedToken = Boolean(prevTok || prev.githubConfig?.hasFineGrainedToken);
     } else {
+      next.githubConfig.fineGrainedToken = raw;
       next.githubConfig.hasFineGrainedToken = true;
     }
     delete next.githubConfig.clearFineGrainedToken;
   }
 
   if (next.securityGate && typeof next.securityGate === 'object') {
-    const raw = cleanEnvVal(next.securityGate.turnstileSecretKey);
-    const clr = Boolean(next.securityGate.clearTurnstileSecretKey);
+    next.securityGate = {
+      ...base.securityGate,
+      ...(prev.securityGate || {}),
+      ...next.securityGate
+    };
+    const raw = cleanEnvVal(incoming?.securityGate?.turnstileSecretKey);
+    const clr = Boolean(incoming?.securityGate?.clearTurnstileSecretKey);
     if (clr) {
       next.securityGate.turnstileSecretKey = '';
       next.securityGate.hasTurnstileSecretKey = false;
     } else if (!raw || raw === SECRET_MASK) {
       const prevTok = cleanEnvVal(prev.securityGate?.turnstileSecretKey);
       next.securityGate.turnstileSecretKey = prevTok;
-      next.securityGate.hasTurnstileSecretKey = Boolean(prevTok);
+      next.securityGate.hasTurnstileSecretKey = Boolean(prevTok || prev.securityGate?.hasTurnstileSecretKey);
     } else {
+      next.securityGate.turnstileSecretKey = raw;
       next.securityGate.hasTurnstileSecretKey = true;
     }
     delete next.securityGate.clearTurnstileSecretKey;
@@ -890,10 +899,35 @@ export function applyModulePatchEdge(existingConfig, moduleKey, moduleValue) {
     ...(existingConfig || {})
   };
 
+  const mergedSlice =
+    Array.isArray(moduleValue) || Array.isArray(base[moduleKey])
+      ? Array.isArray(moduleValue)
+        ? moduleValue
+        : mergedExisting[moduleKey] || []
+      : typeof moduleValue === 'object' && moduleValue !== null
+      ? {
+          ...(base[moduleKey] || {}),
+          ...(mergedExisting[moduleKey] || {}),
+          ...moduleValue
+        }
+      : moduleValue;
+
   const withSecrets = preserveSecretsEdge(
-    { ...mergedExisting, [moduleKey]: moduleValue },
+    { ...mergedExisting, [moduleKey]: mergedSlice },
     mergedExisting
   );
+
+  if (moduleKey === 'domainConfig' && moduleValue?.primaryDomain !== undefined) {
+    withSecrets.seo = {
+      ...(withSecrets.seo || base.seo),
+      canonicalUrl: withSecrets.domainConfig.primaryDomain
+    };
+  } else if (moduleKey === 'seo' && moduleValue?.canonicalUrl !== undefined) {
+    withSecrets.domainConfig = {
+      ...(withSecrets.domainConfig || base.domainConfig),
+      primaryDomain: withSecrets.seo.canonicalUrl
+    };
+  }
 
   const prevDirty = Array.isArray(mergedExisting.dirtyModulesSinceSync)
     ? mergedExisting.dirtyModulesSinceSync
@@ -1124,8 +1158,10 @@ function encodeFirestoreValue(val) {
   return { stringValue: String(val) };
 }
 
-export async function readSiteConfigFromFirestoreRest(fbCfg) {
-  if (!fbCfg?.projectId || !fbCfg?.apiKey) return null;
+export async function readSiteConfigWithStatusEdge(fbCfg) {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) {
+    return { status: 'error', config: null, error: 'Missing Firebase config' };
+  }
   const dbId = encodeURIComponent(fbCfg.databaseId || '(default)');
   const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
     fbCfg.projectId
@@ -1140,8 +1176,22 @@ export async function readSiteConfigFromFirestoreRest(fbCfg) {
     }).catch(() => null)
   ]);
 
+  if (!modulesRes || !mainRes) {
+    return { status: 'error', config: null, error: 'Network error reaching Firestore REST API' };
+  }
+
+  if (
+    (mainRes.status !== 200 && mainRes.status !== 404) ||
+    (modulesRes.status !== 200 && modulesRes.status !== 404)
+  ) {
+    const failedRes = mainRes.status !== 200 && mainRes.status !== 404 ? mainRes : modulesRes;
+    const errBody = await failedRes.json().catch(() => ({}));
+    const errMsg = errBody?.error?.message || `Firestore HTTP ${failedRes.status}`;
+    return { status: 'error', config: null, error: errMsg };
+  }
+
   let mainObj = null;
-  if (mainRes && mainRes.ok) {
+  if (mainRes.ok) {
     const docData = await mainRes.json().catch(() => null);
     if (docData?.fields) {
       mainObj = {};
@@ -1161,7 +1211,7 @@ export async function readSiteConfigFromFirestoreRest(fbCfg) {
     }
   }
 
-  if (modulesRes && modulesRes.ok) {
+  if (modulesRes.ok) {
     const listData = await modulesRes.json().catch(() => null);
     const docs = Array.isArray(listData?.documents) ? listData.documents : [];
     for (const docItem of docs) {
@@ -1180,9 +1230,14 @@ export async function readSiteConfigFromFirestoreRest(fbCfg) {
   }
 
   if (modulesCount === 0 && !mainObj) {
-    return null;
+    return { status: 'empty', config: null };
   }
-  return assembled;
+  return { status: 'ok', config: assembled };
+}
+
+export async function readSiteConfigFromFirestoreRest(fbCfg) {
+  const res = await readSiteConfigWithStatusEdge(fbCfg);
+  return res.status === 'ok' ? res.config : null;
 }
 
 /**
@@ -1279,7 +1334,25 @@ export async function writeSiteConfigToFirestoreRest(fbCfg, siteConfig, env = {}
       const errBody = await res.json().catch(() => ({}));
       return { ok: false, error: errBody?.error?.message || `HTTP ${res.status}` };
     }
-    return { ok: true };
+
+    // Keep modular cmsModules/* documents synchronized so readSiteConfigFromFirestoreRest never overwrites with stale module data
+    const allModulesMap = {};
+    for (const key of CMS_MODULE_KEYS) {
+      if (safeCopy[key] !== undefined) {
+        allModulesMap[key] = safeCopy[key];
+      }
+    }
+    const batchRes = await writeBatchToFirestoreRest(fbCfg, allModulesMap, {
+      updatedAt: safeCopy.updatedAt,
+      dirtyModulesSinceSync: Array.isArray(safeCopy.dirtyModulesSinceSync)
+        ? safeCopy.dirtyModulesSinceSync
+        : []
+    });
+    if (!batchRes.ok) {
+      return { ok: false, error: batchRes.error || 'Failed syncing modular Firestore docs' };
+    }
+
+    return { ok: true, writesCommitted: batchRes.writesCommitted };
   } catch (err) {
     return { ok: false, error: err?.message || 'Firestore write failed' };
   }

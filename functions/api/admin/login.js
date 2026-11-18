@@ -136,7 +136,7 @@ export async function onRequestPost(context) {
   const cookieHeader = buildSessionCookieHeader(token, isHttpsEdgeRequest(request));
 
   const fbEnv = getFirebaseEnvFromEnv(env);
-  const siteConfig = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config) : null;
+  const siteConfig = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config, env) : null;
 
   return jsonResponse(
     {

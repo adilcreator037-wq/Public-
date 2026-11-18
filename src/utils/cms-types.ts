@@ -132,7 +132,7 @@ export interface DomainSeoConfig {
 export interface GitHubDeployLogItem {
   id: string;
   timestamp: number;
-  status: 'success' | 'local-only' | 'error';
+  status: 'success' | 'saved' | 'local-only' | 'error';
   commitSha?: string;
   commitUrl?: string;
   filesCount: number;
@@ -343,7 +343,7 @@ export interface SiteConfig {
     id: string;
     timestamp: number;
     trigger: 'manual-push' | 'auto-push' | 'module-compile' | 'full-compile' | 'verify' | 'firebase-save';
-    status: 'success' | 'local-only' | 'error';
+    status: 'success' | 'saved' | 'local-only' | 'error';
     modulesChanged: string[];
     filesCount: number;
     addedCount?: number;

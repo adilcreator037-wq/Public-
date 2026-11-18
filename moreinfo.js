@@ -1,11 +1,125 @@
-import {
-  TURNSTILE_ACTION,
-  CLIENT_TAP_HOLD_MS,
-  TOKEN_V,
-  inspectClientGate,
-  collectEnv,
-  bytesToBase64Url
-} from './src/utils/cms-engine';
+const TURNSTILE_ACTION = 'session_clearance';
+const CLIENT_TAP_HOLD_MS = 650;
+const TOKEN_V = 12;
+
+function bytesToBase64Url(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function inspectClientGate(gpuRenderer = '', policyMode = 'universal_human') {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return { wb: 0, hl: 0, dk: 0, failed: false };
+  }
+  const host = (window.location?.hostname || '').toLowerCase();
+  const isLocalUniversal =
+    (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.run.app')) &&
+    policyMode === 'universal_human';
+
+  const ua = navigator.userAgent || '';
+  const wb = navigator.webdriver === true && !isLocalUniversal ? 1 : 0;
+
+  const win = window;
+  const hasAutomationGlobals = Boolean(
+    win.__nightmare ||
+      win._phantom ||
+      win.callPhantom ||
+      win.__selenium_unwrapped ||
+      win.__webdriver_evaluate ||
+      win.__driver_evaluate ||
+      win.domAutomation ||
+      win.domAutomationController ||
+      (!isLocalUniversal && (win.__playwright__binding__ || win.__pwInitScripts))
+  );
+
+  const isHeadlessUa = !isLocalUniversal && /HeadlessChrome|PhantomJS|SlimerJS| Electron\//i.test(ua);
+  const isBadGpu =
+    !isLocalUniversal &&
+    Boolean(gpuRenderer) &&
+    /SwiftShader|llvmpipe|Mesa OffScreen|Software Rasterizer|VirtualBox/i.test(gpuRenderer);
+
+  const hl = hasAutomationGlobals || isHeadlessUa || isBadGpu ? 1 : 0;
+
+  let dk = 0;
+  if (policyMode === 'strict_mobile_only') {
+    const isIpadOs = /Macintosh/.test(ua) && Number(navigator.maxTouchPoints || 0) >= 2;
+    const isMobileUa = /Android|iPhone|iPad|iPod/i.test(ua) || isIpadOs;
+    const isDesktopPlatform =
+      /^(Win32|Win64|Windows|MacIntel|Linux x86_64|Linux i686)$/i.test(navigator.platform || '') &&
+      !isIpadOs &&
+      !/Android/i.test(ua);
+    const noTouch = Number(navigator.maxTouchPoints || 0) < 1;
+    if (!isMobileUa || isDesktopPlatform || noTouch) {
+      dk = 1;
+    }
+  }
+
+  return {
+    wb,
+    hl,
+    dk,
+    failed: Boolean(wb || hl || dk)
+  };
+}
+
+function probeWebGlGpu() {
+  if (typeof document === 'undefined') return 'unknown-gpu';
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return 'no-webgl';
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (debugInfo) {
+      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+      if (renderer) return String(renderer).trim();
+    }
+    const fallbackRenderer = gl.getParameter(gl.RENDERER);
+    return fallbackRenderer ? String(fallbackRenderer).trim() : 'webgl-generic';
+  } catch {
+    return 'webgl-blocked';
+  }
+}
+
+async function sha256HexTruncated16(input) {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest).slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function collectEnv(policyMode = 'universal_human') {
+  const sw = typeof screen !== 'undefined' ? Number(screen.width || 390) : 390;
+  const sh = typeof screen !== 'undefined' ? Number(screen.height || 844) : 844;
+  const dpr =
+    typeof window !== 'undefined' ? Math.round(Number(window.devicePixelRatio || 2) * 100) / 100 : 2;
+  const cores = typeof navigator !== 'undefined' ? Number(navigator.hardwareConcurrency || 4) : 4;
+  const mem = typeof navigator !== 'undefined' ? Number(navigator.deviceMemory || 4) : 4;
+  const touchPts = typeof navigator !== 'undefined' ? Number(navigator.maxTouchPoints || 0) : 0;
+  const tz =
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      : 'UTC';
+  const lang = typeof navigator !== 'undefined' ? String(navigator.language || 'en-US') : 'en-US';
+  const gpu = probeWebGlGpu();
+
+  const hardStr = [Math.min(sw, sh), Math.max(sw, sh), dpr, cores, touchPts].join('|');
+  const softStr = [gpu, tz, lang, mem].join('|');
+  const hw = await sha256HexTruncated16(hardStr);
+  const gate = inspectClientGate(gpu, policyMode);
+
+  return {
+    hard: { sw, sh, dpr, cores, touchPts },
+    soft: { gpu, tz, lang, mem },
+    hardStr,
+    softStr,
+    hw,
+    gate
+  };
+}
 
 const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 

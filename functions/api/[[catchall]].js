@@ -1,7 +1,7 @@
 /**
  * Cloudflare Pages Function: Edge API Router & Catch-All (/api/[[catchall]])
- * Supports modular patch (/api/config/module), reset (/api/config/reset),
- * GitHub verify & publish (/api/github/verify, /api/github/publish),
+ * Supports modular patch (/api/config/module, /api/config/modules), news (/api/news),
+ * reset (/api/config/reset), GitHub verify & publish (/api/github/verify, /api/github/publish),
  * static bundle preview (/api/static-bundle), encrypt-url, and Firebase checks.
  */
 
@@ -13,7 +13,7 @@ import {
   getFirebaseEnvFromEnv,
   encryptVaultValueWeb,
   readSiteConfigFromFirestoreRest,
-  writeModuleToFirestoreRest,
+  readSiteConfigWithStatusEdge,
   writeBatchToFirestoreRest,
   writeSiteConfigToFirestoreRest,
   sanitizeConfigForClientEdge,
@@ -107,10 +107,36 @@ export async function onRequest(context) {
     if (!csrf.ok) return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
 
     const fbEnv = getFirebaseEnvFromEnv(env);
-    const existing = fbEnv.isConfigured
-      ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
-      : JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+    if (!fbEnv.isConfigured) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to clear logs.'
+        },
+        503,
+        {},
+        request,
+        true
+      );
+    }
 
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+    if (readRes.status === 'error') {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore read failed before clearing logs: ${readRes.error || 'Unknown error'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+
+    const existing = readRes.config || JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
     existing.syncLogs = [];
     if (existing.githubConfig) {
       existing.githubConfig.deployHistory = [];
@@ -118,23 +144,33 @@ export async function onRequest(context) {
     existing.updatedAt = Date.now();
     const sanitized = sanitizeConfigForClientEdge(existing, env);
 
-    let firestoreSaved = false;
-    if (fbEnv.isConfigured) {
-      const batchRes = await writeBatchToFirestoreRest(
-        fbEnv.config,
+    const batchRes = await writeBatchToFirestoreRest(
+      fbEnv.config,
+      {
+        syncLogs: [],
+        githubConfig: existing.githubConfig
+      },
+      { updatedAt: existing.updatedAt, dirtyModulesSinceSync: existing.dirtyModulesSinceSync || [] },
+      env
+    );
+    if (!batchRes.ok) {
+      return jsonResponse(
         {
-          syncLogs: [],
-          githubConfig: sanitized.githubConfig
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore rejected log clear: ${batchRes.error || 'Unknown error'}`
         },
-        { updatedAt: existing.updatedAt, dirtyModulesSinceSync: existing.dirtyModulesSinceSync || [] }
+        502,
+        {},
+        request,
+        true
       );
-      firestoreSaved = batchRes.ok;
     }
 
     return jsonResponse(
       {
         success: true,
-        firestoreSaved,
+        firestoreSaved: true,
         config: sanitized
       },
       200,
@@ -198,13 +234,26 @@ export async function onRequest(context) {
       databaseId
     };
 
-    const cloudConfig = await readSiteConfigFromFirestoreRest(candidateConfig);
+    const readRes = await readSiteConfigWithStatusEdge(candidateConfig, env);
+    if (readRes.status === 'error') {
+      return jsonResponse(
+        {
+          success: false,
+          error: `Unable to connect to Firestore (${projectId}): ${readRes.error || 'Connection failed'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+
     return jsonResponse(
       {
         success: true,
         isConfigured: true,
         config: sanitizeFirebaseConfigForClientEdge(candidateConfig),
-        siteConfig: cloudConfig ? sanitizeConfigForClientEdge(cloudConfig, env) : null
+        siteConfig: readRes.config ? sanitizeConfigForClientEdge(readRes.config, env) : null
       },
       200,
       {},
@@ -298,9 +347,35 @@ export async function onRequest(context) {
     }
 
     const fbEnv = getFirebaseEnvFromEnv(env);
-    const existing = fbEnv.isConfigured
-      ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
-      : EMPTY_ADMIN_CONFIG;
+    if (!fbEnv.isConfigured) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to persist changes.'
+        },
+        503,
+        {},
+        request,
+        true
+      );
+    }
+
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+    if (readRes.status === 'error') {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore read failed before save: ${readRes.error || 'Unable to read existing configuration'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+    const existing = readRes.config || EMPTY_ADMIN_CONFIG;
 
     const patched = applyModulePatchEdge(existing, moduleKey, data);
     if (moduleKey === 'securityGate' && patched.config.securityGate?.primaryDownloadUrl) {
@@ -314,14 +389,61 @@ export async function onRequest(context) {
       }
     }
 
-    const sanitized = sanitizeConfigForClientEdge(patched.config, env);
-    let firestoreSaved = false;
-    if (fbEnv.isConfigured) {
-      const res = await writeModuleToFirestoreRest(fbEnv.config, moduleKey, sanitized[moduleKey], {
-        updatedAt: sanitized.updatedAt,
-        dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync
-      });
-      firestoreSaved = res.ok;
+    let nextConfig = patched.config;
+    if (moduleKey !== 'syncLogs') {
+      nextConfig = appendSyncLogEntryEdge(
+        nextConfig,
+        {
+          trigger: 'firebase-save',
+          status: 'saved',
+          modulesChanged: [moduleKey],
+          filesCount: 1,
+          branch: nextConfig.githubConfig?.branch || 'main',
+          repo:
+            nextConfig.githubConfig?.repoOwner && nextConfig.githubConfig?.repoName
+              ? `${nextConfig.githubConfig.repoOwner}/${nextConfig.githubConfig.repoName}`
+              : '',
+          durationMs: 0,
+          steps: [
+            `Saved module "${moduleKey}" to Cloud Firestore (${fbEnv.config?.projectId})`,
+            'Staged for next GitHub static site deployment'
+          ],
+          message: `Saved "${moduleKey}" to Firebase Firestore.`
+        },
+        false
+      );
+    }
+
+    const sanitized = sanitizeConfigForClientEdge(nextConfig, env);
+    const batchModules = {
+      [moduleKey]: nextConfig[moduleKey],
+      syncLogs: nextConfig.syncLogs,
+      githubConfig: nextConfig.githubConfig
+    };
+    if (moduleKey === 'domainConfig') batchModules.seo = nextConfig.seo;
+    if (moduleKey === 'seo') batchModules.domainConfig = nextConfig.domainConfig;
+
+    const res = await writeBatchToFirestoreRest(
+      fbEnv.config,
+      batchModules,
+      {
+        updatedAt: nextConfig.updatedAt,
+        dirtyModulesSinceSync: nextConfig.dirtyModulesSinceSync
+      },
+      env
+    );
+    if (!res.ok) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore rejected module save: ${res.error || 'Unknown error'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
     }
 
     return jsonResponse(
@@ -331,7 +453,8 @@ export async function onRequest(context) {
         bytesSent: JSON.stringify(data ?? {}).length,
         dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync || [],
         config: sanitized,
-        firestoreSaved,
+        firestoreSaved: true,
+        firestoreNotice: null,
         savedAt: sanitized.updatedAt
       },
       200,
@@ -358,9 +481,35 @@ export async function onRequest(context) {
     }
 
     const fbEnv = getFirebaseEnvFromEnv(env);
-    const existing = fbEnv.isConfigured
-      ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
-      : EMPTY_ADMIN_CONFIG;
+    if (!fbEnv.isConfigured) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to persist changes.'
+        },
+        503,
+        {},
+        request,
+        true
+      );
+    }
+
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+    if (readRes.status === 'error') {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore read failed before batch save: ${readRes.error || 'Unable to read existing configuration'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+    const existing = readRes.config || EMPTY_ADMIN_CONFIG;
 
     const patched = applyMultiModulePatchEdge(existing, modulesMap);
     if (validKeys.includes('securityGate') && patched.config.securityGate?.primaryDownloadUrl) {
@@ -374,16 +523,62 @@ export async function onRequest(context) {
       }
     }
 
-    const sanitized = sanitizeConfigForClientEdge(patched.config, env);
-    let firestoreSaved = false;
-    if (fbEnv.isConfigured) {
-      const batchData = {};
-      for (const k of validKeys) batchData[k] = sanitized[k];
-      const res = await writeBatchToFirestoreRest(fbEnv.config, batchData, {
-        updatedAt: sanitized.updatedAt,
-        dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync
-      });
-      firestoreSaved = res.ok;
+    let nextConfig = patched.config;
+    const nonLogKeys = validKeys.filter((k) => k !== 'syncLogs');
+    if (nonLogKeys.length > 0) {
+      nextConfig = appendSyncLogEntryEdge(
+        nextConfig,
+        {
+          trigger: 'firebase-save',
+          status: 'saved',
+          modulesChanged: nonLogKeys,
+          filesCount: nonLogKeys.length,
+          branch: nextConfig.githubConfig?.branch || 'main',
+          repo:
+            nextConfig.githubConfig?.repoOwner && nextConfig.githubConfig?.repoName
+              ? `${nextConfig.githubConfig.repoOwner}/${nextConfig.githubConfig.repoName}`
+              : '',
+          durationMs: 0,
+          steps: [
+            `Batch-saved ${nonLogKeys.length} module(s) (${nonLogKeys.join(', ')}) to Cloud Firestore (${fbEnv.config?.projectId})`,
+            'Staged for next GitHub static site deployment'
+          ],
+          message: `Batch-saved ${nonLogKeys.length} module(s) to Firebase Firestore.`
+        },
+        false
+      );
+    }
+
+    const sanitized = sanitizeConfigForClientEdge(nextConfig, env);
+    const batchData = {
+      syncLogs: nextConfig.syncLogs,
+      githubConfig: nextConfig.githubConfig
+    };
+    for (const k of validKeys) batchData[k] = nextConfig[k];
+    if (validKeys.includes('domainConfig')) batchData.seo = nextConfig.seo;
+    if (validKeys.includes('seo')) batchData.domainConfig = nextConfig.domainConfig;
+
+    const res = await writeBatchToFirestoreRest(
+      fbEnv.config,
+      batchData,
+      {
+        updatedAt: nextConfig.updatedAt,
+        dirtyModulesSinceSync: nextConfig.dirtyModulesSinceSync
+      },
+      env
+    );
+    if (!res.ok) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore rejected batch save: ${res.error || 'Unknown error'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
     }
 
     return jsonResponse(
@@ -392,8 +587,149 @@ export async function onRequest(context) {
         savedModules: patched.savedModules,
         dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync || [],
         config: sanitized,
-        firestoreSaved,
+        firestoreSaved: true,
+        firestoreNotice: null,
         savedAt: sanitized.updatedAt
+      },
+      200,
+      {},
+      request,
+      true
+    );
+  }
+
+  // 2c. Publish News Post (`POST /api/news`)
+  if (path === 'news' && request.method === 'POST') {
+    const { verification } = await verifyAdminRequest(request, env);
+    if (!verification.valid) {
+      return jsonResponse({ success: false, error: 'Unauthorized.' }, 401, {}, request, true);
+    }
+    const csrf = verifyCsrfEdge(request, env);
+    if (!csrf.ok) return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
+
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    if (!fbEnv.isConfigured) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to publish news.'
+        },
+        503,
+        {},
+        request,
+        true
+      );
+    }
+
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+    if (readRes.status === 'error') {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore read failed before publishing news: ${readRes.error || 'Unknown error'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+    const existing = readRes.config || JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+
+    const body = await readJsonBodySafe(request);
+    const { title, date, category, excerpt, bodyHtml, coverImage, featured, readTime, author } = body || {};
+    if (!title || !excerpt) {
+      return jsonResponse({ success: false, error: 'Title and Excerpt are required.' }, 400, {}, request, true);
+    }
+
+    const cleanSlug =
+      String(title)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || `post-${Date.now()}`;
+
+    const newPost = {
+      id: `news-${Date.now()}`,
+      slug: cleanSlug,
+      title: String(title).trim(),
+      date: date ? String(date).trim() : new Date().toISOString().slice(0, 10),
+      category: category ? String(category).trim() : 'Release',
+      excerpt: String(excerpt).trim(),
+      bodyHtml: bodyHtml ? String(bodyHtml).trim() : `<p>${String(excerpt).trim()}</p>`,
+      coverImage: coverImage ? String(coverImage).trim() : '',
+      featured: Boolean(featured),
+      readTime: readTime ? String(readTime).trim() : '2 min read',
+      author: author ? String(author).trim() : 'Editorial Team'
+    };
+
+    if (!existing.newsSection) {
+      existing.newsSection = { heading: '', subheading: '', layout: 'featured-grid', posts: [] };
+    }
+    if (!Array.isArray(existing.newsSection.posts)) {
+      existing.newsSection.posts = [];
+    }
+    existing.newsSection.posts.unshift(newPost);
+
+    const patched = applyModulePatchEdge(existing, 'newsSection', existing.newsSection);
+    const nextConfig = appendSyncLogEntryEdge(
+      patched.config,
+      {
+        trigger: 'firebase-save',
+        status: 'saved',
+        modulesChanged: ['newsSection'],
+        filesCount: 1,
+        branch: patched.config.githubConfig?.branch || 'main',
+        repo:
+          patched.config.githubConfig?.repoOwner && patched.config.githubConfig?.repoName
+            ? `${patched.config.githubConfig.repoOwner}/${patched.config.githubConfig.repoName}`
+            : '',
+        durationMs: 0,
+        steps: [
+          `Saved news article "${newPost.title}" to Cloud Firestore (${fbEnv.config?.projectId})`,
+          'Staged for next GitHub static site deployment'
+        ],
+        message: `Published news article "${newPost.title}" to Firebase Firestore.`
+      },
+      false
+    );
+
+    const sanitized = sanitizeConfigForClientEdge(nextConfig, env);
+    const res = await writeBatchToFirestoreRest(
+      fbEnv.config,
+      {
+        newsSection: nextConfig.newsSection,
+        syncLogs: nextConfig.syncLogs,
+        githubConfig: nextConfig.githubConfig
+      },
+      {
+        updatedAt: nextConfig.updatedAt,
+        dirtyModulesSinceSync: nextConfig.dirtyModulesSinceSync
+      },
+      env
+    );
+    if (!res.ok) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore rejected news save: ${res.error || 'Unknown error'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+
+    return jsonResponse(
+      {
+        success: true,
+        post: newPost,
+        config: sanitized,
+        firestoreSaved: true,
+        firestoreNotice: null
       },
       200,
       {},
@@ -411,14 +747,44 @@ export async function onRequest(context) {
     const csrf = verifyCsrfEdge(request, env);
     if (!csrf.ok) return jsonResponse({ success: false, error: csrf.error }, 403, {}, request, true);
 
+    const fbEnv = getFirebaseEnvFromEnv(env);
+    if (!fbEnv.isConfigured) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to reset workspace.'
+        },
+        503,
+        {},
+        request,
+        true
+      );
+    }
+
     const emptyCopy = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
     emptyCopy.updatedAt = Date.now();
-    const fbEnv = getFirebaseEnvFromEnv(env);
-    if (fbEnv.isConfigured) {
-      await writeSiteConfigToFirestoreRest(fbEnv.config, emptyCopy, env);
+    const res = await writeSiteConfigToFirestoreRest(fbEnv.config, emptyCopy, env);
+    if (!res.ok) {
+      return jsonResponse(
+        {
+          success: false,
+          firestoreSaved: false,
+          error: `Firebase Firestore rejected workspace reset: ${res.error || 'Unknown error'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
     }
+
     return jsonResponse(
-      { success: true, config: sanitizeConfigForClientEdge(emptyCopy, env) },
+      {
+        success: true,
+        firestoreSaved: true,
+        config: sanitizeConfigForClientEdge(emptyCopy, env)
+      },
       200,
       {},
       request,
@@ -438,7 +804,7 @@ export async function onRequest(context) {
     const body = await readJsonBodySafe(request);
     const ghCfg = body?.githubConfig || body || {};
     const fbEnv = getFirebaseEnvFromEnv(env);
-    const persisted = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config) : null;
+    const persisted = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config, env) : null;
     const envToken = cleanEnvVal(env.GITHUB_FINE_GRAINED_TOKEN || env.GITHUB_TOKEN || env.GH_TOKEN);
     const incomingTok = cleanEnvVal(ghCfg.fineGrainedToken);
     const token =
@@ -446,12 +812,45 @@ export async function onRequest(context) {
         ? incomingTok
         : cleanEnvVal(persisted?.githubConfig?.fineGrainedToken) || envToken;
 
+    const repoOwner = ghCfg.repoOwner || persisted?.githubConfig?.repoOwner || cleanEnvVal(env.GITHUB_REPO_OWNER);
+    const repoName = ghCfg.repoName || persisted?.githubConfig?.repoName || cleanEnvVal(env.GITHUB_REPO_NAME);
+    const branch = ghCfg.branch || persisted?.githubConfig?.branch || cleanEnvVal(env.GITHUB_BRANCH) || 'main';
+
     const result = await verifyGitHubRepoAccessEdge({
-      repoOwner: ghCfg.repoOwner || persisted?.githubConfig?.repoOwner || cleanEnvVal(env.GITHUB_REPO_OWNER),
-      repoName: ghCfg.repoName || persisted?.githubConfig?.repoName || cleanEnvVal(env.GITHUB_REPO_NAME),
-      branch: ghCfg.branch || persisted?.githubConfig?.branch || cleanEnvVal(env.GITHUB_BRANCH) || 'main',
+      repoOwner,
+      repoName,
+      branch,
       fineGrainedToken: token
     });
+
+    if (result.ok && fbEnv.isConfigured && token) {
+      const baseCfg = persisted || JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+      const patched = applyModulePatchEdge(baseCfg, 'githubConfig', {
+        ...(baseCfg.githubConfig || {}),
+        repoOwner,
+        repoName,
+        branch: result.defaultBranch || branch,
+        fineGrainedToken: token,
+        hasFineGrainedToken: true
+      });
+      await writeBatchToFirestoreRest(
+        fbEnv.config,
+        { githubConfig: patched.config.githubConfig },
+        { updatedAt: patched.config.updatedAt, dirtyModulesSinceSync: patched.config.dirtyModulesSinceSync },
+        env
+      );
+      return jsonResponse(
+        {
+          ...result,
+          config: sanitizeConfigForClientEdge(patched.config, env)
+        },
+        200,
+        {},
+        request,
+        true
+      );
+    }
+
     return jsonResponse(result, 200, {}, request, true);
   }
 
@@ -463,7 +862,7 @@ export async function onRequest(context) {
     }
     const fbEnv = getFirebaseEnvFromEnv(env);
     const cfg = fbEnv.isConfigured
-      ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
+      ? (await readSiteConfigFromFirestoreRest(fbEnv.config, env)) || EMPTY_ADMIN_CONFIG
       : EMPTY_ADMIN_CONFIG;
     const templates = await loadEdgeTemplates(env, request.url);
     const files = buildEdgeStaticFiles(cfg, templates);
@@ -482,7 +881,7 @@ export async function onRequest(context) {
         success: true,
         compiledAt: Date.now(),
         totalFiles: files.length,
-                dirtyModulesSinceSync: cfg.dirtyModulesSinceSync || [],
+        dirtyModulesSinceSync: cfg.dirtyModulesSinceSync || [],
         contentSource: fbEnv.isConfigured ? 'Live Cloud Firestore' : 'Local Admin Workspace',
         brandSummary: {
           name: cfg.brand?.name || '',
@@ -522,13 +921,38 @@ export async function onRequest(context) {
     const startTime = Date.now();
     const body = await readJsonBodySafe(request);
     const fbEnv = getFirebaseEnvFromEnv(env);
-    const persisted = fbEnv.isConfigured
-      ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
-      : EMPTY_ADMIN_CONFIG;
+    let persisted = EMPTY_ADMIN_CONFIG;
+    if (fbEnv.isConfigured) {
+      const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
+      if (readRes.status === 'error') {
+        return jsonResponse(
+          {
+            success: false,
+            firestoreSaved: false,
+            error: `Firebase Firestore read failed before GitHub publish: ${readRes.error || 'Unable to load workspace configuration'}`
+          },
+          502,
+          {},
+          request,
+          true
+        );
+      }
+      if (readRes.config) persisted = readRes.config;
+    }
 
     let merged = body?.config
       ? preserveSecretsEdge(body.config, persisted)
       : JSON.parse(JSON.stringify(persisted));
+
+    const ghOverride =
+      body?.githubConfig && typeof body.githubConfig === 'object'
+        ? body.githubConfig
+        : !body?.config && (body?.repoOwner || body?.repoName || body?.fineGrainedToken)
+        ? body
+        : null;
+    if (ghOverride) {
+      merged = preserveSecretsEdge({ ...merged, githubConfig: ghOverride }, merged);
+    }
 
     const envToken = cleanEnvVal(env.GITHUB_FINE_GRAINED_TOKEN || env.GITHUB_TOKEN || env.GH_TOKEN);
     const effectiveGhCfg = {
@@ -571,6 +995,11 @@ export async function onRequest(context) {
         status: pushResult.status,
         modulesChanged,
         filesCount: pushResult.filesPushed ?? files.length,
+        addedCount: pushResult.addedCount,
+        updatedCount: pushResult.updatedCount,
+        deletedCount: pushResult.deletedCount,
+        unchangedCount: pushResult.unchangedCount,
+        skipped: pushResult.skipped,
         changedPaths: changedList,
         branch: effectiveGhCfg.branch,
         repo:
@@ -596,26 +1025,45 @@ export async function onRequest(context) {
 
     const sanitized = sanitizeConfigForClientEdge(merged, env);
     let firestoreSaved = false;
+    let firestoreNotice = null;
     if (fbEnv.isConfigured) {
       const batchRes = await writeBatchToFirestoreRest(
         fbEnv.config,
         {
-          syncLogs: sanitized.syncLogs,
-          githubConfig: sanitized.githubConfig
+          syncLogs: merged.syncLogs,
+          githubConfig: merged.githubConfig
         },
         {
-          updatedAt: sanitized.updatedAt,
-          dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync
-        }
+          updatedAt: merged.updatedAt,
+          dirtyModulesSinceSync: merged.dirtyModulesSinceSync
+        },
+        env
       );
       firestoreSaved = batchRes.ok;
+      if (!batchRes.ok) {
+        firestoreNotice = `GitHub publish completed, but Firestore sync log update failed: ${batchRes.error || 'Unknown error'}`;
+      }
+    } else {
+      firestoreNotice = 'Firebase is not configured; sync log was returned for this session only.';
     }
 
     return jsonResponse(
       {
         success: pushResult.ok,
         firestoreSaved,
+        firestoreNotice,
         publishResult: pushResult,
+        addedCount: pushResult.addedCount ?? 0,
+        updatedCount: pushResult.updatedCount ?? 0,
+        deletedCount: pushResult.deletedCount ?? 0,
+        unchangedCount: pushResult.unchangedCount ?? 0,
+        skipped: Boolean(pushResult.skipped),
+        filesCount: pushResult.filesPushed ?? files.length,
+        compiledLocalFiles: files.length,
+        commitSha: pushResult.commitSha,
+        commitUrl: pushResult.commitUrl,
+        message: pushResult.message,
+        ...(pushResult.ok ? {} : { error: pushResult.message }),
         syncLog: sanitized.syncLogs?.[0] || null,
         compiledBundle: {
           compiledAt: Date.now(),
@@ -658,7 +1106,11 @@ export async function onRequest(context) {
     const fbEnv = getFirebaseEnvFromEnv(env);
     const raw = body?.firebaseConfig || {};
     const projectId = cleanEnvVal(raw.projectId) || fbEnv.config?.projectId || '';
-    const apiKey = cleanEnvVal(raw.apiKey) || fbEnv.config?.apiKey || '';
+    const rawKey = cleanEnvVal(raw.apiKey);
+    const apiKey =
+      rawKey && rawKey !== '__SECRET_CONFIGURED__'
+        ? rawKey
+        : fbEnv.config?.apiKey || '';
     const databaseId = cleanEnvVal(raw.databaseId) || fbEnv.config?.databaseId || '(default)';
 
     if (!apiKey || !projectId) {
@@ -708,6 +1160,21 @@ export async function onRequest(context) {
             message: `Connected to Firestore (${projectId}). Database is empty and ready for live edits.`
           },
           200,
+          {},
+          request,
+          true
+        );
+      }
+      if (fbRes.status === 403 || statusText === 'PERMISSION_DENIED') {
+        return jsonResponse(
+          {
+            success: false,
+            code: 'permission-denied',
+            projectId,
+            databaseId,
+            error: 'Firestore Rules blocked access (403 PERMISSION_DENIED). Allow read/write on siteConfig/main and cmsModules/{module}.'
+          },
+          403,
           {},
           request,
           true

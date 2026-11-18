@@ -4,7 +4,66 @@
  * Ensures zero internal CMS schema, field IDs, or admin controls appear in unauthenticated /admin HTML.
  */
 
-export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header with Responsive Hamburger Menu -->
+type ColorChoice = { hex: string; name: string };
+
+const ACCENT_COLOR_CHOICES: ColorChoice[] = [
+  { hex: '#EF4444', name: 'Crimson Red' },
+  { hex: '#2563EB', name: 'Royal Blue' },
+  { hex: '#059669', name: 'Emerald Green' },
+  { hex: '#7C3AED', name: 'Violet' },
+  { hex: '#EA580C', name: 'Warm Orange' },
+  { hex: '#0F172A', name: 'Slate Ink' }
+];
+
+const SURFACE_COLOR_CHOICES: ColorChoice[] = [
+  { hex: '#FFFFFF', name: 'Pure White' },
+  { hex: '#F8FAFC', name: 'Soft Slate' },
+  { hex: '#EFF6FF', name: 'Ice Blue' },
+  { hex: '#ECFDF5', name: 'Mint Tint' },
+  { hex: '#FAF5FF', name: 'Soft Lavender' },
+  { hex: '#0B0F19', name: 'Midnight Dark' }
+];
+
+const TEXT_COLOR_CHOICES: ColorChoice[] = [
+  { hex: '#0F172A', name: 'Deep Slate' },
+  { hex: '#111827', name: 'Charcoal Black' },
+  { hex: '#1F2937', name: 'Body Gray' },
+  { hex: '#475569', name: 'Muted Slate' },
+  { hex: '#E2E8F0', name: 'Light Silver' },
+  { hex: '#FFFFFF', name: 'Crisp White' }
+];
+
+const BORDER_COLOR_CHOICES: ColorChoice[] = [
+  { hex: '#E2E8F0', name: 'Cool Hairline' },
+  { hex: '#CBD5E1', name: 'Medium Slate' },
+  { hex: '#BFDBFE', name: 'Soft Blue' },
+  { hex: '#A7F3D0', name: 'Soft Green' },
+  { hex: '#E9D5FF', name: 'Soft Purple' },
+  { hex: '#1E293B', name: 'Dark Border' }
+];
+
+function renderVisualColorControl(id: string, label: string, defaultHex: string, choices: ColorChoice[]): string {
+  const dots = choices
+    .map(
+      (c) =>
+        `<button type="button" class="color-choice-dot" data-color-choice-for="${id}" data-color="${c.hex}" title="${c.name}" aria-label="${label}: ${c.name}" style="background:${c.hex}"></button>`
+    )
+    .join('');
+
+  return `<div class="visual-color-control" data-color-control-for="${id}">
+    <input type="hidden" id="${id}" value="${defaultHex}" />
+    <div class="color-dots-row" role="group" aria-label="${label}">
+      ${dots}
+      <label class="color-custom-swatch" title="Pick a custom color">
+        <input type="color" class="color-swatch-picker" data-color-sync="${id}" value="${defaultHex}" aria-label="Custom ${label}" />
+        <span class="color-preview-chip" data-color-chip-for="${id}" style="background:${defaultHex}"></span>
+        <span class="color-custom-swatch-label">Custom</span>
+      </label>
+    </div>
+  </div>`;
+}
+
+export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Top Header Bar -->
       <header class="topbar">
         <div class="topbar-inner">
           <div class="topbar-left">
@@ -12,724 +71,466 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
               type="button"
               id="admin-hamburger-btn"
               class="admin-hamburger-btn"
-              aria-label="Open Admin Navigation Menu"
+              aria-label="Open Navigation Menu"
               aria-expanded="false"
             >
               <span class="admin-hamburger-bar"></span>
               <span class="admin-hamburger-bar"></span>
               <span class="admin-hamburger-bar"></span>
             </button>
-            <img id="topbar-logo" class="topbar-logo" alt="Logo" width="26" height="26" hidden />
-            <div style="min-width: 0">
-              <div class="topbar-title" id="topbar-brand-title">Master CMS Studio</div>
+            <img id="topbar-logo" class="topbar-logo" alt="Logo" width="24" height="24" hidden />
+            <div class="topbar-brand-stack">
+              <div class="topbar-title" id="topbar-brand-title">Workspace Studio</div>
               <div class="topbar-status">
-                <span class="status-dot" id="storage-dot"></span>
-                <span id="storage-status-text">Live Admin + Static Ready</span>
+                <span class="status-dot" id="storage-dot" aria-hidden="true"></span>
+                <span id="storage-status-text">Live Admin Workspace</span>
               </div>
             </div>
           </div>
 
           <div class="topbar-actions">
             <button type="button" id="btn-open-preview-modal" class="btn btn-sm">Preview</button>
-            <a href="/" target="_blank" rel="noopener" class="btn btn-sm">Public Site ↗</a>
-            <button type="button" id="btn-top-save" class="btn btn-primary btn-sm">Publish Changes</button>
+            <a href="/" target="_blank" rel="noopener" class="btn btn-sm topbar-public-link">Public Site ↗</a>
+            <button type="button" id="btn-top-save" class="btn btn-primary btn-sm">Publish</button>
             <button type="button" id="btn-logout" class="btn btn-sm">Sign Out</button>
           </div>
         </div>
       </header>
 
-      <!-- Mobile / Tablet 1-Tap Horizontal Quick-Tab Strip -->
-      <nav class="mobile-quick-tabs" aria-label="Quick Mobile Workspace Switcher">
-        <button type="button" class="nav-tab active" data-tab="overview">1. Overview</button>
-        <button type="button" class="nav-tab" data-tab="brand">2. Brand &amp; Hero</button>
-        <button type="button" class="nav-tab" data-tab="specs">3. Specs</button>
-        <button type="button" class="nav-tab" data-tab="sections">4. Sections</button>
-        <button type="button" class="nav-tab" data-tab="news">5. News</button>
-        <button type="button" class="nav-tab" data-tab="faqs">6. FAQs</button>
-        <button type="button" class="nav-tab" data-tab="pages">7. Legal Pages</button>
-        <button type="button" class="nav-tab" data-tab="domain">8. Deploy &amp; SEO</button>
+      <!-- Non-Sticky Horizontal Mobile Quick-Tab Strip (1-Tap Smartphone Switcher) -->
+      <nav class="mobile-quick-tabs" aria-label="Workspace Switcher">
+        <button type="button" class="nav-tab active" data-tab="overview">Overview</button>
+        <button type="button" class="nav-tab" data-tab="brand">Brand &amp; Colors</button>
+        <button type="button" class="nav-tab" data-tab="hero">Hero &amp; Buttons</button>
+        <button type="button" class="nav-tab" data-tab="specs">Package Table</button>
+        <button type="button" class="nav-tab" data-tab="sections">Page Sections</button>
+        <button type="button" class="nav-tab" data-tab="news">Daily News</button>
+        <button type="button" class="nav-tab" data-tab="faqs">FAQs</button>
+        <button type="button" class="nav-tab" data-tab="pages">Menu &amp; Pages</button>
+        <button type="button" class="nav-tab" data-tab="security">MoreInfo Gate</button>
+        <button type="button" class="nav-tab" data-tab="links">Internal Links</button>
+        <button type="button" class="nav-tab" data-tab="domain">Domain &amp; SEO</button>
+        <button type="button" class="nav-tab" data-tab="deploy">GitHub &amp; Firebase</button>
       </nav>
 
-      <!-- Mobile / Tablet Hamburger Slide-Out Navigation Drawer -->
+      <!-- Mobile / Tablet Categorized Navigation Drawer -->
       <div id="admin-nav-backdrop" class="admin-nav-backdrop"></div>
-      <nav id="admin-nav-drawer" class="admin-nav-drawer" aria-label="Admin Hamburger Menu">
-        <div class="sidebar-group-label" style="display:flex; justify-content:space-between; align-items:center;">
-          <span>Workspaces (1–8)</span>
-          <button type="button" id="admin-drawer-close" class="btn btn-sm" aria-label="Close menu">✕</button>
+      <nav id="admin-nav-drawer" class="admin-nav-drawer" aria-label="Admin Navigation Drawer">
+        <div class="drawer-header-row">
+          <span class="sidebar-group-label" style="padding:0;">Workspace Sections</span>
+          <button type="button" id="admin-drawer-close" class="btn btn-sm" aria-label="Close menu">Close</button>
         </div>
+
+        <div class="sidebar-group-label">Start</div>
         <button type="button" class="nav-tab active" data-tab="overview">
-          <span>1. Website Map &amp; Audit</span>
+          <span>Overview &amp; Quick Setup</span>
           <span class="nav-count" id="drawer-count-seo">0%</span>
         </button>
+
+        <div class="sidebar-group-label">Look &amp; First Screen</div>
         <button type="button" class="nav-tab" data-tab="brand">
-          <span>2. Brand, Hero &amp; Colors</span>
+          <span>Brand, Logos &amp; Colors</span>
         </button>
+        <button type="button" class="nav-tab" data-tab="hero">
+          <span>Hero &amp; Download Buttons</span>
+        </button>
+
+        <div class="sidebar-group-label">Homepage Blocks</div>
         <button type="button" class="nav-tab" data-tab="specs">
-          <span>3. Package Specs Table</span>
+          <span>Package Info Table</span>
         </button>
         <button type="button" class="nav-tab" data-tab="sections">
-          <span>4. Content Sections</span>
+          <span>Page Sections</span>
         </button>
         <button type="button" class="nav-tab" data-tab="news">
-          <span>5. Daily News Publisher</span>
+          <span>Daily News</span>
         </button>
         <button type="button" class="nav-tab" data-tab="faqs">
-          <span>6. FAQs Manager</span>
+          <span>FAQs Manager</span>
         </button>
+
+        <div class="sidebar-group-label">Pages &amp; Menus</div>
         <button type="button" class="nav-tab" data-tab="pages">
-          <span>7. Footer &amp; Legal Pages</span>
+          <span>Menu &amp; Legal Pages</span>
         </button>
+
+        <div class="sidebar-group-label">Protection &amp; Linking</div>
+        <button type="button" class="nav-tab" data-tab="security">
+          <span>MoreInfo Security Gate</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="links">
+          <span>Internal Linking System</span>
+        </button>
+
+        <div class="sidebar-group-label">SEO &amp; Publishing</div>
         <button type="button" class="nav-tab" data-tab="domain">
-          <span>8. Security, SEO &amp; Deploy</span>
+          <span>Domain &amp; SEO Settings</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="deploy">
+          <span>Firebase, GitHub &amp; Logs</span>
         </button>
       </nav>
 
       <div class="studio-body">
-        <!-- Desktop Left Sidebar Navigation (Sequential Order 1 to 8) -->
+        <!-- Desktop Left Sidebar Navigation (12 Clear Dedicated Workspaces) -->
         <aside class="studio-sidebar" aria-label="Admin Workspaces">
-          <div class="sidebar-group-label">Top-to-Bottom Setup</div>
+          <div class="sidebar-group-label">Start</div>
           <button type="button" class="nav-tab active" data-tab="overview">
-            <span>1. Website Map &amp; Audit</span>
+            <span>Overview &amp; Quick Setup</span>
             <span class="nav-count" id="count-seo-score">0%</span>
           </button>
+
+          <div class="sidebar-group-label">Look &amp; First Screen</div>
           <button type="button" class="nav-tab" data-tab="brand">
-            <span>2. Brand, Hero &amp; Colors</span>
+            <span>Brand, Logos &amp; Colors</span>
           </button>
+          <button type="button" class="nav-tab" data-tab="hero">
+            <span>Hero &amp; Download Buttons</span>
+          </button>
+
+          <div class="sidebar-group-label">Homepage Blocks</div>
           <button type="button" class="nav-tab" data-tab="specs">
-            <span>3. Package Specs Table</span>
+            <span>Package Info Table</span>
           </button>
           <button type="button" class="nav-tab" data-tab="sections">
-            <span>4. Content Sections</span>
+            <span>Page Sections</span>
             <span class="nav-count" id="count-sections">0</span>
           </button>
           <button type="button" class="nav-tab" data-tab="news">
-            <span>5. Daily News Publisher</span>
+            <span>Daily News</span>
             <span class="nav-count" id="count-news">0</span>
           </button>
           <button type="button" class="nav-tab" data-tab="faqs">
-            <span>6. FAQs Manager</span>
+            <span>FAQs Manager</span>
             <span class="nav-count" id="count-faqs">0</span>
           </button>
+
+          <div class="sidebar-group-label">Pages &amp; Menus</div>
           <button type="button" class="nav-tab" data-tab="pages">
-            <span>7. Footer &amp; Legal Pages</span>
+            <span>Menu &amp; Legal Pages</span>
             <span class="nav-count" id="count-pages">0</span>
           </button>
+
+          <div class="sidebar-group-label">Protection &amp; Linking</div>
+          <button type="button" class="nav-tab" data-tab="security">
+            <span>MoreInfo Security Gate</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="links">
+            <span>Internal Linking System</span>
+          </button>
+
+          <div class="sidebar-group-label">SEO &amp; Publishing</div>
           <button type="button" class="nav-tab" data-tab="domain">
-            <span>8. Security, SEO &amp; Deploy</span>
+            <span>Domain &amp; SEO Settings</span>
+          </button>
+          <button type="button" class="nav-tab" data-tab="deploy">
+            <span>Firebase, GitHub &amp; Logs</span>
           </button>
         </aside>
 
-        <!-- Main Workspace Area -->
+        <!-- Main Workspace Content Area -->
         <main class="cms-main">
-          <!-- Context Bar: Shows Current Workspace + Affected Public Route -->
+          <!-- Context Banner: Shows Current Workspace + Which Public Page Updates -->
           <div class="workspace-context-banner">
             <div class="editing-context-row">
-              <span class="editing-context-badge" id="editing-now-label">1. Website Map &amp; Audit</span>
-              <span class="editing-context-target" id="editing-now-target">Public Site: Live Status &amp; SEO Health Audit</span>
+              <span class="editing-context-title" id="editing-now-label">Overview &amp; Quick Setup</span>
+              <span class="editing-context-sep" aria-hidden="true">/</span>
+              <span class="editing-context-target" id="editing-now-target">Public Site Summary &amp; Readiness Check</span>
             </div>
           </div>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 1: OVERVIEW, VISUAL PAGE MAP & LIVE SEO HEALTH AUDIT
+               1. OVERVIEW & QUICK SETUP
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel active" id="panel-overview">
             <div class="panel-header">
               <div>
-                <h2>Website Overview, Page Map &amp; Technical SEO Health</h2>
-                <p>Edit live content in Firebase and compile standalone static HTML, JSON routes, and SEO files for your public site.</p>
+                <h2>Overview &amp; Quick Website Setup</h2>
+                <p>Manage live content in Firebase and publish a fast static website to your domain without touching code.</p>
               </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button type="button" class="btn btn-dark" data-jump-tab="domain">Deploy Static Site</button>
-                <button type="button" class="btn btn-primary" data-jump-tab="news">+ Publish News Post</button>
+              <div class="panel-header-actions">
+                <button type="button" class="btn btn-dark" data-jump-tab="deploy">Publish to GitHub</button>
+                <button type="button" class="btn btn-primary" data-jump-tab="news">+ Write News Post</button>
               </div>
             </div>
 
             <div class="quick-add-bar" aria-label="Quick Content Actions">
-              <span class="quick-add-label">Quick Actions:</span>
-              <button type="button" id="btn-quick-add-news" class="btn btn-sm btn-primary">+ New News Post</button>
-              <button type="button" id="btn-quick-add-section" class="btn btn-sm">+ New Section</button>
-              <button type="button" id="btn-quick-add-faq" class="btn btn-sm">+ New FAQ</button>
-              <button type="button" id="btn-quick-add-page" class="btn btn-sm">+ New Page</button>
-              <button type="button" id="btn-quick-jump-logs" class="btn btn-sm btn-dark" data-jump-tab="domain">Sync &amp; Deploy Logs →</button>
+              <span class="quick-add-label">Quick Shortcuts:</span>
+              <button type="button" id="btn-quick-add-news" class="btn btn-sm btn-primary">+ News Post</button>
+              <button type="button" id="btn-quick-add-section" class="btn btn-sm">+ Page Section</button>
+              <button type="button" id="btn-quick-add-faq" class="btn btn-sm">+ FAQ Item</button>
+              <button type="button" id="btn-quick-add-page" class="btn btn-sm">+ Legal Page</button>
+              <button type="button" id="btn-quick-jump-logs" class="btn btn-sm btn-dark" data-jump-tab="deploy">Sync Logs →</button>
             </div>
 
-            <!-- Empty Live Firebase Onboarding Guide (Shown ONLY when DB has 0 sections/articles/FAQs/brand) -->
             <div id="empty-db-workspace-guide" class="empty-db-banner" hidden>
               <div>
-                <strong style="font-size:0.86rem; color:#0f172a;">Clean Workspace Ready — Zero Demo Content Loaded</strong>
-                <div style="font-size:0.75rem; color:#475569; margin-top:3px;">
-                  Start by filling out the 1-Tap Brand Switcher below, or jump directly into each workspace section to configure and publish your public website:
+                <strong style="font-size:0.88rem; color:var(--text-main);">Fresh Workspace Ready — No Content Added Yet</strong>
+                <div style="font-size:0.78rem; color:var(--text-sub); margin-top:3px;">
+                  Fill out Quick Setup below to brand your site in seconds, or open any section from the menu to start building.
                 </div>
                 <div class="empty-guide-steps">
-                  <button type="button" class="btn btn-sm btn-primary" data-jump-tab="brand">1. Brand &amp; Hero</button>
-                  <button type="button" class="btn btn-sm" data-jump-tab="specs">2. Package Specs</button>
-                  <button type="button" class="btn btn-sm" data-jump-tab="news">3. Add News Post</button>
-                  <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">4. Connect GitHub &amp; Push →</button>
+                  <button type="button" class="btn btn-sm btn-primary" data-jump-tab="brand">1. Brand &amp; Colors</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="hero">2. Hero &amp; Buttons</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="specs">3. Package Table</button>
+                  <button type="button" class="btn btn-sm btn-dark" data-jump-tab="deploy">4. Connect GitHub →</button>
                 </div>
               </div>
             </div>
 
-            <!-- Quick 1-Tap Master Clone Setup Card -->
             <div class="card">
               <div class="card-title">
-                <span>1-Tap Master Clone &amp; Brand Switcher</span>
+                <span>1-Tap Website Clone &amp; Brand Setup</span>
               </div>
-              <div class="card-affects">Affects on Public Site: Header brand, Hero H1, Package Specs name/version, Canonical Domain, Robots.txt, Copyright &amp; Legal pages.</div>
+              <div class="card-affects">Updates across the whole site: Header title, Hero headline, Package table name, Domain URL, Contact email, and Legal pages.</div>
               <div class="card-desc">
-                Setting up a new brand or domain? Enter the core details once and click
-                <strong>Apply to Entire Website</strong> to populate defaults across every module without erasing custom sections or news posts.
+                Launching a new site? Fill in these details once and tap <strong>Apply to Entire Website</strong>. Existing articles and custom sections stay safe.
               </div>
-              <div class="form-grid cols-3">
+              <div class="form-grid cols-2">
                 <div class="field">
-                  <label class="field-label" for="qc-brand-name">Brand / App Name</label>
+                  <label class="field-label" for="qc-brand-name">Website / App Name</label>
                   <input type="text" id="qc-brand-name" class="input" placeholder="e.g., NovaPlayer" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="qc-version">Latest Version</label>
+                  <label class="field-label" for="qc-version">Latest App Version</label>
                   <input type="text" id="qc-version" class="input" placeholder="e.g., v5.2.0" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="qc-domain">Production Domain (HTTPS)</label>
+                  <label class="field-label" for="qc-domain">Website Domain (HTTPS)</label>
                   <input type="url" id="qc-domain" class="input" placeholder="https://example.com" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="qc-email">Support Email</label>
+                  <label class="field-label" for="qc-email">Support Email Address</label>
                   <input type="email" id="qc-email" class="input" placeholder="support@example.com" />
                 </div>
-                <div class="field">
-                  <label class="field-label" for="qc-download-url">Protected Download Destination URL</label>
-                  <input type="text" id="qc-download-url" class="input" placeholder="https://cdn.example.com/build.apk" />
+                <div class="field span-full">
+                  <label class="field-label" for="qc-download-url">Protected Download Link (Hidden behind /moreinfo gate)</label>
+                  <input type="text" id="qc-download-url" class="input" placeholder="https://cdn.example.com/releases/app.apk" />
                 </div>
-                <div class="field">
-                  <label class="field-label" for="qc-accent-color">Brand Accent Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="qc-accent-color" value="#EF4444" />
-                    <input type="text" id="qc-accent-color" class="input" placeholder="#EF4444" />
-                  </div>
+                <div class="field span-full">
+                  <label class="field-label">Pick Main Accent Color</label>
+                  ${renderVisualColorControl('qc-accent-color', 'Brand Accent Color', '#EF4444', ACCENT_COLOR_CHOICES)}
                 </div>
-                <div class="field span-full" style="flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px;">
-                  <span class="field-help">Updates draft state across modules — click "Publish Edited Modules" afterward to save to Firebase and recompile static files.</span>
-                  <button type="button" id="btn-apply-quick-clone" class="btn btn-dark btn-sm">Apply to Entire Website</button>
+                <div class="field span-full quick-clone-footer">
+                  <span class="field-help">Updates your draft fields right away. Tap <strong>Publish</strong> afterward to save to Firebase.</span>
+                  <button type="button" id="btn-apply-quick-clone" class="btn btn-dark">Apply to Entire Website</button>
                 </div>
               </div>
             </div>
 
             <div class="stats-grid">
               <div class="stat-card">
-                <div class="stat-label">Technical SEO Score</div>
+                <div class="stat-label">SEO Readiness</div>
                 <div class="stat-value" id="stat-seo-score">0 / 100</div>
-                <div class="stat-sub is-warn" id="stat-seo-sub">0 of 9 checks passed</div>
+                <div class="stat-sub is-warn" id="stat-seo-sub">0 of 9 checks complete</div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Daily News Posts</div>
+                <div class="stat-label">News Posts</div>
                 <div class="stat-value" id="stat-news-count">0</div>
-                <div class="stat-sub is-muted" id="stat-news-sub">No articles yet</div>
+                <div class="stat-sub is-muted" id="stat-news-sub">No posts yet</div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Standalone Pages</div>
+                <div class="stat-label">Legal &amp; Info Pages</div>
                 <div class="stat-value" id="stat-pages-count">0</div>
-                <div class="stat-sub is-muted" id="stat-pages-sub">No legal pages yet</div>
+                <div class="stat-sub is-muted" id="stat-pages-sub">No pages yet</div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Sitemap Public URLs</div>
+                <div class="stat-label">Search Engine URLs</div>
                 <div class="stat-value" id="stat-sitemap-count">0</div>
-                <div class="stat-sub is-muted" id="stat-sitemap-sub">Not indexable yet</div>
+                <div class="stat-sub is-muted" id="stat-sitemap-sub">Waiting for setup</div>
               </div>
             </div>
 
             <div class="card">
               <div class="card-title">
-                <span>Live Technical SEO &amp; Readiness Audit</span>
+                <span>Live SEO Setup Checklist</span>
                 <span class="field-tag" id="seo-audit-summary-tag">0 / 9 passed</span>
               </div>
-              <div class="card-desc">Every check below inspects your live configuration. Click <strong>Configure →</strong> on any incomplete item to jump straight to its settings.</div>
+              <div class="card-desc">Checks your real configuration. Tap <strong>Configure →</strong> on any item to jump straight to its screen.</div>
               <div id="seo-audit-checklist" class="audit-list"></div>
             </div>
 
-            <!-- Interactive Visual Page Map (Shows where every section appears on the public website) -->
             <div class="card">
               <div class="card-title">
-                <span>Public Website Map (Where Each Workspace Renders)</span>
+                <span>Public Website Structure Map</span>
               </div>
-              <div class="card-desc">
-                Your public site blocks listed in top-to-bottom layout order. Select any row to open its editor directly.
-              </div>
+              <div class="card-desc">Every part of your public website listed from top to bottom. Tap any row to edit that area.</div>
               <div class="visual-map-list">
                 <div class="visual-map-item">
                   <div>
-                    <strong>1. Top Sticky Header Bar &amp; 3-Bar Navigation Drawer</strong>
-                    <span>Updates app logo, brand name, header News link, and hamburger drawer links across every page.</span>
+                    <strong>1. Brand Name, Logos &amp; Website Colors</strong>
+                    <span>Controls your site name, header logo, browser icon, and overall color theme.</span>
                   </div>
-                  <button type="button" class="btn btn-sm" data-jump-tab="brand" data-jump-subtab="drawer">Edit Header &amp; Menu →</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="brand">Edit Brand &amp; Colors →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>2. Hero Section &amp; 16:9 Showcase Banner (Top of <code>/</code>)</strong>
-                    <span>Updates main H1 headline, intro text, dual CTA buttons, floating CTA pill, and preloaded hero image.</span>
+                    <strong>2. Top Hero Section, Banner &amp; Download Buttons</strong>
+                    <span>Controls the main headline, intro paragraph, 16:9 showcase banner, and download buttons.</span>
                   </div>
-                  <button type="button" class="btn btn-sm" data-jump-tab="brand" data-jump-subtab="hero">Edit Hero &amp; Banner →</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="hero">Edit Hero &amp; Buttons →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>3. Technical Specifications &amp; SHA-256 Table (<code>/#technical-specifications</code>)</strong>
-                    <span>Updates version, file size, OS support, scan status, cryptographic SHA-256 digest, and custom spec rows.</span>
+                    <strong>3. Package Specifications &amp; SHA-256 Table</strong>
+                    <span>Displays version, file size, Android/iOS support, security scan badge, and checksum.</span>
                   </div>
-                  <button type="button" class="btn btn-sm" data-jump-tab="specs">Edit Specs Table →</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="specs">Edit Package Table →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>4. Homepage Editorial Content Sections &amp; Visual Blocks</strong>
-                    <span>Updates feature guides, step-by-step tutorials, tables, and section images inside <code>/</code>.</span>
+                    <strong>4. Homepage Guides &amp; Content Sections</strong>
+                    <span>Add feature highlights, installation steps, changelogs, and reorder homepage blocks.</span>
                   </div>
-                  <button type="button" class="btn btn-sm" data-jump-tab="sections">Edit Content Sections →</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="sections">Edit Page Sections →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>5. Daily News Feed (<code>/#latest-news</code>), Hub (<code>/news</code>) &amp; Articles (<code>/news/:slug</code>)</strong>
-                    <span>Publishes standalone crawlable articles with cover images, categories, RSS items, and NewsArticle schema.</span>
+                    <strong>5. Daily News Feed &amp; Article Publisher</strong>
+                    <span>Publishes standalone news pages at <code>/news/:slug</code> with RSS and sitemap support.</span>
                   </div>
-                  <button type="button" class="btn btn-sm btn-primary" data-jump-tab="news">Open News Publisher →</button>
+                  <button type="button" class="btn btn-sm btn-primary" data-jump-tab="news">Open Daily News →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>6. Frequently Asked Questions (<code>/#frequently-asked-questions</code>)</strong>
-                    <span>Updates Q&amp;A accordions on the homepage and compiles Google <code>FAQPage</code> JSON-LD schema.</span>
+                    <strong>6. Frequently Asked Questions (FAQs)</strong>
+                    <span>Answers common visitor questions and powers Google rich FAQ search snippets.</span>
                   </div>
                   <button type="button" class="btn btn-sm" data-jump-tab="faqs">Edit FAQs →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>7. Footer &amp; Standalone Legal Pages (<code>/privacy-policy</code>, <code>/terms</code>, etc.)</strong>
-                    <span>Updates footer summary, contact link, legal disclaimer, copyright notice, and standalone legal routes.</span>
+                    <strong>7. Header Menu, Footer &amp; Legal Pages</strong>
+                    <span>Manages top navigation menu links, footer text, Privacy Policy, Terms, and Contact pages.</span>
                   </div>
-                  <button type="button" class="btn btn-sm" data-jump-tab="pages">Edit Footer &amp; Legal Pages →</button>
+                  <button type="button" class="btn btn-sm" data-jump-tab="pages">Edit Menu &amp; Pages →</button>
                 </div>
                 <div class="visual-map-item">
                   <div>
-                    <strong>8. Download Security Gate (<code>/moreinfo</code>), Sitemap, Firebase &amp; GitHub Deploy</strong>
-                    <span>Controls AES-256-GCM link protection, Turnstile verification, domain canonicals, and static bundle pushing.</span>
+                    <strong>8. MoreInfo Download Protection &amp; Internal Linking</strong>
+                    <span>Protects download destinations behind <code>/moreinfo</code> and links keywords across pages.</span>
                   </div>
-                  <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain">Configure Security &amp; Deploy →</button>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button type="button" class="btn btn-sm" data-jump-tab="security">Security Gate →</button>
+                    <button type="button" class="btn btn-sm" data-jump-tab="links">Internal Links →</button>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 2: BRAND, HERO, DOWNLOAD BUTTONS & FULL UI CUSTOMIZER
+               2. BRAND, LOGOS & COLORS
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-brand">
             <div class="panel-header">
               <div>
-                <h2>Brand, Search Logo, Hero, Menu &amp; Visual Theme</h2>
-                <p>Filter by card below to focus on one area at a time on mobile, or view all settings together.</p>
+                <h2>Brand Identity, Logos &amp; Website Colors</h2>
+                <p>Set your website name, upload icons, and pick a complete color look with one tap — no color codes needed.</p>
               </div>
             </div>
 
-            <!-- Compact Sub-Card Filter Bar -->
-            <div class="subcard-filter-bar" role="tablist" aria-label="Brand & Hero Sub-Sections">
-              <button type="button" class="subcard-pill active" data-brand-subtab="all">All Cards</button>
-              <button type="button" class="subcard-pill" data-brand-subtab="identity">1. Brand &amp; Icons</button>
-              <button type="button" class="subcard-pill" data-brand-subtab="hero">2. Hero &amp; Banner</button>
-              <button type="button" class="subcard-pill" data-brand-subtab="ctas">3. Action Buttons</button>
-              <button type="button" class="subcard-pill" data-brand-subtab="drawer">4. Header &amp; Drawer</button>
-              <button type="button" class="subcard-pill" data-brand-subtab="theme">5. Theme &amp; Order</button>
-            </div>
-
-            <!-- Sub-Card 1: Brand Identity, Favicon, Google Search Logo & Web Manifest -->
-            <div class="card" data-brand-card="identity">
+            <div class="card" data-section-anchor="identity">
               <div class="card-title">
-                <span>1. Brand Identity, Favicon, Search Result Logo &amp; Web Manifest</span>
+                <span>1. Website Name, Support Email &amp; Icons</span>
               </div>
-              <div class="card-affects">Affects on Public Site: Sticky Header brand, browser tab favicon, <code>Organization.logo</code> JSON-LD, and <code>/manifest.webmanifest</code>.</div>
-              <div class="form-grid cols-2" style="margin-top: 8px">
+              <div class="card-affects">Updates: Header logo &amp; title, browser tab icon, mobile home screen icon, and Google Search brand logo.</div>
+              <div class="form-grid cols-2">
                 <div class="field">
                   <label class="field-label" for="brand-name">Brand / Application Name</label>
-                  <input type="text" id="brand-name" class="input" placeholder="e.g., MyBrand" />
+                  <input type="text" id="brand-name" class="input" placeholder="e.g., NovaPlayer" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-short-name">
                     <span>Short App Name</span>
-                    <span class="field-tag">PWA Manifest</span>
+                    <span class="field-tag">Mobile Shortcut</span>
                   </label>
-                  <input type="text" id="brand-short-name" class="input" placeholder="e.g., MyBrand" />
+                  <input type="text" id="brand-short-name" class="input" placeholder="e.g., NovaPlayer" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="brand-tagline">Brand Tagline / Subtitle</label>
-                  <input type="text" id="brand-tagline" class="input" placeholder="High-Speed Edge Utility &amp; Package Hub" />
+                  <label class="field-label" for="brand-tagline">Short Tagline</label>
+                  <input type="text" id="brand-tagline" class="input" placeholder="Fast &amp; Verified Release Hub" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="brand-email">Official Support Email</label>
                   <input type="email" id="brand-email" class="input" placeholder="support@domain.com" />
                 </div>
+
                 <div class="field">
                   <label class="field-label" for="brand-logo">
-                    <span>Header App Logo URL (36x36)</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-logo" data-preview-target="brand-logo-thumb">Upload Image</button>
+                    <span>Header App Logo (36x36)</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-logo" data-preview-target="brand-logo-thumb">Upload</button>
                   </label>
                   <div class="brand-thumb-row">
                     <img id="brand-logo-thumb" class="brand-thumb-preview" alt="Header Logo Preview" hidden />
-                    <input type="text" id="brand-logo" class="input" placeholder="https://... or upload logo image" />
+                    <input type="text" id="brand-logo" class="input" placeholder="Paste URL or tap Upload" />
                   </div>
                 </div>
+
                 <div class="field">
                   <label class="field-label" for="brand-favicon">
-                    <span>Browser Tab Favicon URL</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-favicon" data-preview-target="brand-favicon-thumb">Upload Image</button>
+                    <span>Browser Tab Favicon</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-favicon" data-preview-target="brand-favicon-thumb">Upload</button>
                   </label>
                   <div class="brand-thumb-row">
                     <img id="brand-favicon-thumb" class="brand-thumb-preview" alt="Favicon Preview" hidden />
-                    <input type="text" id="brand-favicon" class="input" placeholder="https://... or upload favicon image" />
+                    <input type="text" id="brand-favicon" class="input" placeholder="Paste URL or tap Upload" />
                   </div>
                 </div>
+
                 <div class="field">
                   <label class="field-label" for="brand-search-logo">
-                    <span>Search Result Small Logo URL (512x512)</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-search-logo" data-preview-target="brand-search-logo-thumb">Upload Image</button>
+                    <span>Google Search Logo (512x512)</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-search-logo" data-preview-target="brand-search-logo-thumb">Upload</button>
                   </label>
                   <div class="brand-thumb-row">
                     <img id="brand-search-logo-thumb" class="brand-thumb-preview" alt="Search Logo Preview" hidden />
-                    <input type="text" id="brand-search-logo" class="input" placeholder="Falls back to Header Logo URL if left blank" />
+                    <input type="text" id="brand-search-logo" class="input" placeholder="Uses Header Logo if empty" />
                   </div>
-                  <div class="field-help">Used in Google Search site attribution and Organization JSON-LD schema.</div>
                 </div>
+
                 <div class="field">
                   <label class="field-label" for="brand-apple-icon">
-                    <span>Apple Touch Icon URL (180x180)</span>
-                    <button type="button" class="btn btn-sm" data-upload-target="brand-apple-icon" data-preview-target="brand-apple-icon-thumb">Upload Image</button>
+                    <span>iPhone / iPad Icon (180x180)</span>
+                    <button type="button" class="btn btn-sm" data-upload-target="brand-apple-icon" data-preview-target="brand-apple-icon-thumb">Upload</button>
                   </label>
                   <div class="brand-thumb-row">
                     <img id="brand-apple-icon-thumb" class="brand-thumb-preview" alt="Apple Touch Icon Preview" hidden />
-                    <input type="text" id="brand-apple-icon" class="input" placeholder="Falls back to Header Logo URL if left blank" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="brand-color">Primary Accent Color (Hex)</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="brand-color" value="#EF4444" />
-                    <input type="text" id="brand-color" class="input" placeholder="#EF4444" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="brand-theme-color">Browser Status Bar Theme Color (Hex)</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="brand-theme-color" value="#EF4444" />
-                    <input type="text" id="brand-theme-color" class="input" placeholder="#EF4444" />
+                    <input type="text" id="brand-apple-icon" class="input" placeholder="Uses Header Logo if empty" />
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Sub-Card 2: Hero Headline, Intro & 16:9 Showcase Banner -->
-            <div class="card" data-brand-card="hero">
+            <div class="card" data-section-anchor="theme">
               <div class="card-title">
-                <span>2. Hero Headline, Intro &amp; 16:9 Showcase Banner</span>
+                <span>2. Website Color Theme (Visual Picker)</span>
               </div>
-              <div class="card-affects">Affects on Public Site: Top above-the-fold area of Homepage (<code>/</code>) and Hero LCP image preload.</div>
-              <div class="form-grid cols-2" style="margin-top: 8px">
-                <div class="field span-full">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Display Top Hero Section on Homepage</strong>
-                      <div class="field-help">Controls whether the main H1 headline and CTA area appear above the fold.</div>
-                    </div>
-                    <input type="checkbox" id="ui-show-hero-section" />
-                  </div>
-                </div>
-                <div class="field span-full">
-                  <label class="field-label" for="hero-h1">
-                    Main Hero Headline (&lt;h1&gt;)
-                    <span class="field-tag">Primary H1</span>
-                  </label>
-                  <input type="text" id="hero-h1" class="input" placeholder="e.g., Official App v5.0 — Fast &amp; Verified Download Hub" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="hero-meta-title">Hero Section Meta Title</label>
-                  <input type="text" id="hero-meta-title" class="input" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="hero-meta-desc">Hero Section Meta Description</label>
-                  <input type="text" id="hero-meta-desc" class="input" />
-                </div>
-                <div class="field span-full">
-                  <label class="field-label" for="hero-intro-html">
-                    <span>Hero Intro Paragraph (Appears Directly Below Hero Buttons)</span>
-                    <button type="button" class="btn btn-sm" data-toggle-preview="hero-intro-preview">Toggle Preview</button>
-                  </label>
-                  <div class="html-toolbar">
-                    <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="hero-intro-html">+ Visual Block</button>
-                    <button type="button" class="btn btn-sm" data-open-image-modal="hero-intro-html">+ Image</button>
-                    <button type="button" class="btn btn-sm" data-open-link-modal="hero-intro-html">+ Link</button>
-                    <button type="button" class="btn btn-sm" data-scalar-snippet="b" data-target="hero-intro-html"><b>B</b></button>
-                    <button type="button" class="btn btn-sm" data-scalar-snippet="p" data-target="hero-intro-html">+ P</button>
-                    <button type="button" class="btn btn-sm" data-undo-target="hero-intro-html">Undo</button>
-                  </div>
-                  <textarea id="hero-intro-html" class="textarea" rows="3" data-preview-target="hero-intro-preview"></textarea>
-                  <div id="hero-intro-preview" class="live-preview-box"></div>
-                </div>
-                <div class="field span-full">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Display 16:9 Hero Showcase Banner (Preloaded High-Priority LCP Image)</strong>
-                      <div class="field-help">Locked at 16:9 aspect ratio with <code>fetchpriority="high"</code> for fast LCP and zero layout shift.</div>
-                    </div>
-                    <input type="checkbox" id="hero-show-banner" />
-                  </div>
-                </div>
-                <div class="field span-full">
-                  <label class="field-label" for="hero-banner-url">
-                    <span>Hero Banner Image URL</span>
-                    <button
-                      type="button"
-                      class="btn btn-sm"
-                      data-upload-target="hero-banner-url"
-                      data-preview-target="hero-banner-preview"
-                    >
-                      Upload Banner Image
-                    </button>
-                  </label>
-                  <input type="text" id="hero-banner-url" class="input" placeholder="https://... or upload 16:9 banner image" />
-                  <img id="hero-banner-preview" class="img-mini-preview" alt="Banner Preview" hidden />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="hero-banner-alt">Hero Banner Alt Text (Required for Image SEO)</label>
-                  <input type="text" id="hero-banner-alt" class="input" placeholder="Describe the showcase banner..." />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="hero-banner-caption">Hero Banner Caption (Optional)</label>
-                  <input type="text" id="hero-banner-caption" class="input" placeholder="Optional caption under banner..." />
-                </div>
-              </div>
-            </div>
+              <div class="card-affects">Updates: Page background, cards, primary action buttons, header bar, typography, and footer across all public pages.</div>
 
-            <!-- Sub-Card 3: Hero 2-Column Download Buttons & Floating Pill CTA -->
-            <div class="card" data-brand-card="ctas">
-              <div class="card-title">
-                <span>3. Hero Download Buttons &amp; Floating CTA</span>
-              </div>
-              <div class="card-affects">Affects on Public Site: Two-button Hero CTA grid on Homepage (<code>/</code>) and bottom-left floating button across site routes.</div>
-              <div class="form-grid cols-2" style="margin-top: 8px">
-                <div class="field span-full">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Display 2-Column Hero Action Buttons</strong>
-                      <div class="field-help">Shows the Secondary &amp; Primary buttons directly below the Hero H1.</div>
-                    </div>
-                    <input type="checkbox" id="ui-show-hero-ctas" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="cta-left-text">Left Secondary Button Text</label>
-                  <input type="text" id="cta-left-text" class="input" placeholder="e.g., Install Guide" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="cta-left-url">Left Secondary Button Target URL / Anchor</label>
-                  <div class="url-picker-row">
-                    <input type="text" id="cta-left-url" class="input" placeholder="/#technical-specifications" />
-                    <select class="select url-quick-select" data-url-picker-for="cta-left-url" aria-label="Quick select URL"></select>
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="cta-right-text">Right Primary Download Button Text</label>
-                  <input type="text" id="cta-right-text" class="input" placeholder="e.g., Download Official Build" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="cta-right-url">
-                    <span>Right Primary Button Route</span>
-                    <span class="field-tag">Keep /moreinfo for Protected Flow</span>
-                  </label>
-                  <div class="url-picker-row">
-                    <input type="text" id="cta-right-url" class="input" placeholder="/moreinfo" />
-                    <select class="select url-quick-select" data-url-picker-for="cta-right-url" aria-label="Quick select URL"></select>
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Secondary CTA <code>rel="sponsored"</code></strong>
-                      <div class="field-help">Marks the secondary link as sponsored/partner for SEO compliance.</div>
-                    </div>
-                    <input type="checkbox" id="cta-left-sponsored" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Primary CTA <code>rel="sponsored"</code></strong>
-                      <div class="field-help">Applies when Primary CTA points outside <code>/moreinfo</code>.</div>
-                    </div>
-                    <input type="checkbox" id="cta-right-sponsored" />
-                  </div>
-                </div>
-                <div class="field span-full" style="background:#ECFDF5; border:1px solid #A7F3D0; border-radius:8px; padding:12px;">
-                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-                    <div>
-                      <strong style="color:#065F46; font-size:0.8rem;">Protected Destination Link &amp; Turnstile Security Gate (<code>/moreinfo</code>)</strong>
-                      <div class="field-help" style="color:#047857; margin-top:2px;">
-                        Your encrypted destination download URL, AES-256-GCM vault, and Cloudflare Turnstile keys are configured in Workspace 8.
-                      </div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-dark" data-jump-tab="domain" data-jump-subtab="security">Configure /moreinfo Security Vault →</button>
-                  </div>
-                </div>
-                <div class="field span-full">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Enable Floating Bottom-Left Pill CTA Button</strong>
-                      <div class="field-help">Stays pinned at bottom-left on mobile &amp; desktop.</div>
-                    </div>
-                    <input type="checkbox" id="floating-cta-enabled" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="floating-cta-text">Floating Pill Text</label>
-                  <input type="text" id="floating-cta-text" class="input" placeholder="e.g., Download Latest Build" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="floating-cta-url">Floating Pill Target URL</label>
-                  <div class="url-picker-row">
-                    <input type="text" id="floating-cta-url" class="input" placeholder="/moreinfo" />
-                    <select class="select url-quick-select" data-url-picker-for="floating-cta-url" aria-label="Quick select URL"></select>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Sub-Card 4: Sticky Header & 3-Bar Hamburger Menu Drawer Controls + Custom Links -->
-            <div class="card" data-brand-card="drawer">
-              <div class="card-title">
-                <span>4. Sticky Header &amp; 3-Bar Hamburger Drawer Controls</span>
-              </div>
-              <div class="card-affects">Affects on Public Site: Top header bar, News button, slide-down navigation drawer, and subpage back bar across all public routes.</div>
-              <div class="form-grid cols-2" style="margin-top: 8px">
-                <div class="field">
-                  <label class="field-label" for="ui-header-news-label">Top Header News Button Label</label>
-                  <input type="text" id="ui-header-news-label" class="input" placeholder="News" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-back-home-label">Subpage "Back to Home" Label</label>
-                  <input type="text" id="ui-back-home-label" class="input" placeholder="← Back to Main Page" />
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show Top-Right Header News Button</strong>
-                      <div class="field-help">Displays the News link next to the 3-bar menu button.</div>
-                    </div>
-                    <input type="checkbox" id="ui-show-header-news" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show Article Count in Header News Button</strong>
-                      <div class="field-help">Displays e.g. "News (3)" when articles exist.</div>
-                    </div>
-                    <input type="checkbox" id="ui-show-news-count" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Auto-Sync Homepage Sections in 3-Bar Menu</strong>
-                      <div class="field-help">Automatically lists visible homepage sections (#slug) in the drawer.</div>
-                    </div>
-                    <input type="checkbox" id="ui-drawer-auto-sections" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show Latest Daily News Links in 3-Bar Menu</strong>
-                      <div class="field-help">Lists the /news hub + latest news posts inside the drawer.</div>
-                    </div>
-                    <input type="checkbox" id="ui-drawer-show-news" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show Official Legal Pages in 3-Bar Menu</strong>
-                      <div class="field-help">Displays Privacy Policy, Terms, and Support links in the drawer.</div>
-                    </div>
-                    <input type="checkbox" id="ui-drawer-show-legal" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-all-news-label">News Article "All News" Breadcrumb Label</label>
-                  <input type="text" id="ui-all-news-label" class="input" placeholder="All Daily News →" />
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Pin Sticky Top Header on Scroll</strong>
-                      <div class="field-help">Keeps top navigation bar fixed while scrolling pages.</div>
-                    </div>
-                    <input type="checkbox" id="ui-sticky-header" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show Subpage Breadcrumb Navigation Bar</strong>
-                      <div class="field-help">Displays "Back to Main Page" link bar on /news &amp; legal pages.</div>
-                    </div>
-                    <input type="checkbox" id="ui-show-breadcrumbs" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show Bottom Download Action CTA in 3-Bar Menu</strong>
-                      <div class="field-help">Displays the primary download button &amp; version badge at the bottom of the drawer.</div>
-                    </div>
-                    <input type="checkbox" id="ui-drawer-show-cta" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Consolidated Custom Header Navigation Links -->
-              <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px">
-                <div class="card-title">
-                  <span>Custom Header Navigation Drawer Links</span>
-                  <button type="button" id="btn-add-menu-link" class="btn btn-sm btn-primary">+ Add Custom Menu Link</button>
-                </div>
-                <div class="card-desc">Add or reorder custom links inside the top-right 3-bar slide-down navigation drawer.</div>
-                <div id="menu-links-list" class="item-list"></div>
-              </div>
-            </div>
-
-            <!-- Sub-Card 5: Full Website Color Studio, 1-Tap Presets, Typography & Section Order -->
-            <div class="card" data-brand-card="theme">
-              <div class="card-title">
-                <span>5. Theme Color Designer, Fonts &amp; Homepage Block Order</span>
-              </div>
-              <div class="card-affects">Affects on Public Site: Inline CSS design tokens (header, body, cards, buttons, footer), typography, and vertical homepage order.</div>
-
-              <!-- Instant Live Theme Mini-Preview Card -->
               <div id="live-theme-preview-card" class="live-theme-preview-card" style="background:#F8FAFC; padding:12px;">
                 <div id="ltp-surface" style="background:#FFFFFF; border:1px solid #E2E8F0; border-radius:10px; overflow:hidden;">
                   <div id="ltp-header" style="background:#FFFFFF; color:#111827; padding:8px 12px; border-bottom:1px solid #E2E8F0; display:flex; align-items:center; justify-content:space-between; font-weight:800; font-size:0.82rem;">
                     <span id="ltp-brand">Your Brand</span>
-                    <span id="ltp-accent-pill" style="font-size:0.68rem; padding:2px 8px; border-radius:6px; background:#FEF2F2; color:#EF4444;">☰ Menu</span>
+                    <span id="ltp-accent-pill" style="font-size:0.68rem; padding:2px 8px; border-radius:6px; background:#FEF2F2; color:#EF4444;">Menu</span>
                   </div>
                   <div style="padding:12px;">
-                    <div id="ltp-heading" style="color:#111827; font-weight:800; font-size:0.9rem; margin-bottom:4px;">Live Website Theme &amp; Color Preview</div>
-                    <div id="ltp-text" style="color:#1F2937; font-size:0.76rem; margin-bottom:10px;">Zero external blocking fonts — compiles into clean inline CSS variables.</div>
-                    <div style="display:flex; gap:8px;">
+                    <div id="ltp-heading" style="color:#111827; font-weight:800; font-size:0.9rem; margin-bottom:4px;">Live Website Theme Preview</div>
+                    <div id="ltp-text" style="color:#1F2937; font-size:0.76rem; margin-bottom:10px;">Tap any theme preset or color dot below to preview your public site colors instantly.</div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
                       <span id="ltp-btn-secondary" style="border:1.5px solid #EF4444; color:#EF4444; padding:5px 10px; border-radius:8px; font-size:0.73rem; font-weight:700;">Install Guide</span>
-                      <span id="ltp-btn-primary" style="background:#EF4444; color:#FFFFFF; padding:5px 12px; border-radius:8px; font-size:0.73rem; font-weight:700;">Download Official Build</span>
+                      <span id="ltp-btn-primary" style="background:#EF4444; color:#FFFFFF; padding:5px 12px; border-radius:8px; font-size:0.73rem; font-weight:700;">Download Build</span>
                     </div>
                   </div>
                   <div id="ltp-footer" style="background:#0F172A; color:#F8FAFC; padding:7px 12px; font-size:0.7rem; text-align:center;">
-                    © Your Brand • Static Edge Delivery
+                    Your Brand — Official Site
                   </div>
                 </div>
               </div>
 
               <div class="field-label" style="margin-bottom: 6px">
-                <span>1-Tap Color Theme Presets</span>
-                <span class="field-tag">WCAG AA Contrast Verified</span>
+                <span>Choose a Full Website Theme (1-Tap Balanced Colors)</span>
+                <span class="field-tag">High Contrast Ready</span>
               </div>
               <div class="theme-preset-grid">
                 <button type="button" class="theme-preset-btn" data-theme-preset="clean-light">
@@ -743,7 +544,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 <button type="button" class="theme-preset-btn" data-theme-preset="midnight-dark">
                   <span class="theme-preset-swatches">
                     <span class="theme-preset-dot" style="background: #0B1120"></span>
-                    <span class="theme-preset-dot" style="background: #38BDF8"></span>
+                    <span class="theme-preset-dot" style="background: #3B82F6"></span>
                     <span class="theme-preset-dot" style="background: #111827"></span>
                   </span>
                   <span>Midnight Dark</span>
@@ -774,115 +575,122 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 </button>
                 <button type="button" class="theme-preset-btn" data-theme-preset="warm-editorial">
                   <span class="theme-preset-swatches">
-                    <span class="theme-preset-dot" style="background: #FAFAF9"></span>
-                    <span class="theme-preset-dot" style="background: #D97706"></span>
+                    <span class="theme-preset-dot" style="background: #FFFBEB"></span>
+                    <span class="theme-preset-dot" style="background: #EA580C"></span>
                     <span class="theme-preset-dot" style="background: #1C1917"></span>
                   </span>
                   <span>Warm Editorial</span>
                 </button>
               </div>
 
-              <div class="form-grid cols-3">
+              <div class="form-grid cols-2">
                 <div class="field">
-                  <label class="field-label" for="ui-bg-page">Outer Page Background</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-bg-page" value="#F8FAFC" />
-                    <input type="text" id="ui-bg-page" class="input" placeholder="#F8FAFC" />
-                  </div>
+                  <label class="field-label">Main Accent Color (Buttons &amp; Links)</label>
+                  ${renderVisualColorControl('brand-color', 'Primary Accent Color', '#EF4444', ACCENT_COLOR_CHOICES)}
                 </div>
                 <div class="field">
-                  <label class="field-label" for="ui-bg-surface">Main Content Surface</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-bg-surface" value="#FFFFFF" />
-                    <input type="text" id="ui-bg-surface" class="input" placeholder="#FFFFFF" />
+                  <label class="field-label">Mobile Browser Status Bar Color</label>
+                  ${renderVisualColorControl('brand-theme-color', 'Browser Theme Color', '#EF4444', ACCENT_COLOR_CHOICES)}
+                </div>
+              </div>
+
+              <div class="custom-colors-toggle-row">
+                <div>
+                  <strong>Customize Individual Area Colors</strong>
+                  <div class="field-help">Optional: fine-tune page background, cards, header, text, and footer colors separately.</div>
+                </div>
+                <button type="button" id="btn-toggle-custom-colors" class="btn btn-sm" aria-expanded="false">Customize Individual Colors ▾</button>
+              </div>
+
+              <div id="ui-custom-colors-panel" class="custom-colors-panel" hidden>
+                <div class="form-grid cols-2">
+                  <div class="field">
+                    <label class="field-label">Outer Page Background</label>
+                    ${renderVisualColorControl('ui-bg-page', 'Outer Page Background', '#F8FAFC', SURFACE_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Card &amp; Content Surface</label>
+                    ${renderVisualColorControl('ui-bg-surface', 'Content Surface', '#FFFFFF', SURFACE_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Top Header Bar Background</label>
+                    ${renderVisualColorControl('ui-header-bg', 'Header Background', '#FFFFFF', SURFACE_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Top Header Title Text</label>
+                    ${renderVisualColorControl('ui-header-text', 'Header Text', '#111827', TEXT_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Primary Button Text</label>
+                    ${renderVisualColorControl('ui-btn-text-color', 'Button Text', '#FFFFFF', TEXT_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Headings (H1–H3) Color</label>
+                    ${renderVisualColorControl('ui-heading-color', 'Headings Color', '#111827', TEXT_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Body Paragraph Text</label>
+                    ${renderVisualColorControl('ui-text-color', 'Body Text Color', '#1F2937', TEXT_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Card Border Color</label>
+                    ${renderVisualColorControl('ui-border-color', 'Border Color', '#E2E8F0', BORDER_COLOR_CHOICES)}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Footer Background</label>
+                    ${renderVisualColorControl('ui-footer-bg', 'Footer Background', '#0F172A', [
+                      { hex: '#0F172A', name: 'Deep Slate' },
+                      { hex: '#090D16', name: 'Obsidian' },
+                      { hex: '#064E3B', name: 'Deep Emerald' },
+                      { hex: '#1E1B4B', name: 'Deep Indigo' },
+                      { hex: '#1C1917', name: 'Warm Charcoal' },
+                      { hex: '#F8FAFC', name: 'Light Gray' }
+                    ])}
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Footer Text Color</label>
+                    ${renderVisualColorControl('ui-footer-text', 'Footer Text', '#F8FAFC', TEXT_COLOR_CHOICES)}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>3. Font Style, Page Width &amp; Layout Options</span>
+              </div>
+              <div class="card-affects">Updates: Text legibility, button roundness, container width, and homepage interactive controls.</div>
+              <div class="form-grid cols-2">
                 <div class="field">
-                  <label class="field-label" for="ui-border-color">Card &amp; Section Border Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-border-color" value="#E2E8F0" />
-                    <input type="text" id="ui-border-color" class="input" placeholder="#E2E8F0" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-header-bg">Sticky Header Background</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-header-bg" value="#FFFFFF" />
-                    <input type="text" id="ui-header-bg" class="input" placeholder="#FFFFFF" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-header-text">Sticky Header Title Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-header-text" value="#111827" />
-                    <input type="text" id="ui-header-text" class="input" placeholder="#111827" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-btn-text-color">Primary Button Text Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-btn-text-color" value="#FFFFFF" />
-                    <input type="text" id="ui-btn-text-color" class="input" placeholder="#FFFFFF" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-footer-bg">Website Footer Background</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-footer-bg" value="#0F172A" />
-                    <input type="text" id="ui-footer-bg" class="input" placeholder="#0F172A" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-footer-text">Website Footer Text Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-footer-text" value="#F8FAFC" />
-                    <input type="text" id="ui-footer-text" class="input" placeholder="#F8FAFC" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-text-color">Body Paragraph Text Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-text-color" value="#1F2937" />
-                    <input type="text" id="ui-text-color" class="input" placeholder="#1F2937" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-heading-color">Headings (H1–H3) Color</label>
-                  <div class="color-input-pair">
-                    <input type="color" class="color-swatch-picker" data-color-sync="ui-heading-color" value="#111827" />
-                    <input type="text" id="ui-heading-color" class="input" placeholder="#111827" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-card-radius">Button &amp; Card Corner Radius</label>
+                  <label class="field-label" for="ui-card-radius">Button &amp; Card Corner Style</label>
                   <select id="ui-card-radius" class="select">
-                    <option value="6px">6px (Sharp Technical)</option>
-                    <option value="8px">8px (Clean Standard)</option>
-                    <option value="12px">12px (Modern Rounded)</option>
-                    <option value="16px">16px (Soft Pill Card)</option>
+                    <option value="6px">Sharp Corners (6px)</option>
+                    <option value="8px">Clean Standard (8px)</option>
+                    <option value="12px">Modern Rounded (12px)</option>
+                    <option value="16px">Soft Rounded (16px)</option>
                   </select>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="ui-max-width">Container Max Width</label>
+                  <label class="field-label" for="ui-max-width">Page Content Width</label>
                   <select id="ui-max-width" class="select">
-                    <option value="680px">680px (Compact Editorial)</option>
-                    <option value="768px">768px (Standard Single-Column)</option>
+                    <option value="680px">680px (Compact Reading)</option>
+                    <option value="768px">768px (Balanced Standard)</option>
                     <option value="860px">860px (Medium Wide)</option>
-                    <option value="960px">960px (Wide Portal)</option>
-                    <option value="1080px">1080px (Full Widescreen)</option>
+                    <option value="960px">960px (Wide Layout)</option>
+                    <option value="1080px">1080px (Extra Wide)</option>
                   </select>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="ui-font-family">Typography Font Family</label>
+                  <label class="field-label" for="ui-font-family">Website Font Style</label>
                   <select id="ui-font-family" class="select">
-                    <option value="system">System UI (Zero-Latency Native)</option>
-                    <option value="inter">Inter (Modern Technical)</option>
+                    <option value="system">Native Device Font (Fastest)</option>
                     <option value="jakarta">Plus Jakarta Sans</option>
+                    <option value="inter">Inter Clean Sans</option>
                     <option value="serif">Editorial Serif (Georgia)</option>
                   </select>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="ui-font-size">Base Body Font Size</label>
+                  <label class="field-label" for="ui-font-size">Reading Text Size</label>
                   <select id="ui-font-size" class="select">
                     <option value="15px">15px (Compact)</option>
                     <option value="16px">16px (Recommended)</option>
@@ -890,31 +698,10 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                   </select>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="ui-home-news-limit">Homepage News Articles Limit</label>
-                  <input type="number" id="ui-home-news-limit" class="input" min="1" max="50" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-news-readmore">News "Read More" Link Text</label>
-                  <input type="text" id="ui-news-readmore" class="input" placeholder="Read Full News Article →" />
-                </div>
-                <div class="field">
-                  <label class="field-label" for="ui-news-viewall">News "View All" Link Text</label>
-                  <input type="text" id="ui-news-viewall" class="input" placeholder="View All Daily News →" />
-                </div>
-                <div class="field span-full">
                   <div class="toggle-box">
                     <div>
-                      <strong>Show Subpage Quick-Switcher Pills on Legal &amp; News Pages</strong>
-                      <div class="field-help">Displays quick jump pills at the top of standalone pages.</div>
-                    </div>
-                    <input type="checkbox" id="ui-show-subpage-pills" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show "On This Page" Jump Bar on Homepage</strong>
-                      <div class="field-help">Displays quick section jump chips below the hero banner.</div>
+                      <strong>Show "On This Page" Jump Bar</strong>
+                      <div class="field-help">Displays quick section jump links below the hero banner.</div>
                     </div>
                     <input type="checkbox" id="ui-show-toc-bar" />
                   </div>
@@ -922,113 +709,299 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Expandable FAQ Accordion Mode</strong>
-                      <div class="field-help">Renders homepage FAQs as clean collapsible items (uncheck for open list).</div>
+                      <strong>Show Subpage Quick-Switch Bar</strong>
+                      <div class="field-help">Displays quick links at the top of legal &amp; news pages.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-subpage-pills" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Expandable FAQ Accordions</strong>
+                      <div class="field-help">Visitors tap to expand FAQ answers cleanly (turn off to show all answers open).</div>
                     </div>
                     <input type="checkbox" id="ui-enable-faq-accordion" />
                   </div>
                 </div>
               </div>
+            </div>
+          </section>
 
-              <!-- Homepage Section Order Controller -->
-              <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px">
-                <div class="card-title">Homepage Vertical Block Order Controller</div>
-                <div class="card-desc">Reorder how the major sections appear vertically on your homepage.</div>
-                <div id="homepage-order-list"></div>
+          <!-- ───────────────────────────────────────────────────────────────────
+               3. HERO & DOWNLOAD BUTTONS
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-hero">
+            <div class="panel-header">
+              <div>
+                <h2>Hero Headline, Showcase Banner &amp; Download Buttons</h2>
+                <p>The first screen visitors see when they open your homepage (<code>/</code>).</p>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>1. Main Headline, Intro Text &amp; 16:9 Showcase Banner</span>
+              </div>
+              <div class="card-affects">Updates: Above-the-fold Hero section of Homepage (<code>/</code>) and fast preloaded hero image.</div>
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Top Hero Section on Homepage</strong>
+                      <div class="field-help">Displays your main H1 headline and buttons at the top of the homepage.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-hero-section" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="hero-h1">
+                    <span>Main Page Headline (&lt;h1&gt;)</span>
+                    <span class="field-tag">Primary H1</span>
+                  </label>
+                  <input type="text" id="hero-h1" class="input" placeholder="e.g., Official App v5.0 — Verified Download &amp; Updates" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-meta-title">Hero Section Title (Optional)</label>
+                  <input type="text" id="hero-meta-title" class="input" placeholder="Defaults to Website Meta Title" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-meta-desc">Hero Section Summary (Optional)</label>
+                  <input type="text" id="hero-meta-desc" class="input" placeholder="Short summary for search engines" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="hero-intro-html">
+                    <span>Intro Paragraph (Appears Directly Below Hero Buttons)</span>
+                    <button type="button" class="btn btn-sm" data-toggle-preview="hero-intro-preview">Preview</button>
+                  </label>
+                  <div class="html-toolbar">
+                    <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="hero-intro-html">+ Visual Block</button>
+                    <button type="button" class="btn btn-sm" data-open-image-modal="hero-intro-html">+ Image</button>
+                    <button type="button" class="btn btn-sm" data-open-link-modal="hero-intro-html">+ Link</button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="b" data-target="hero-intro-html">Bold</button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="p" data-target="hero-intro-html">+ Paragraph</button>
+                    <button type="button" class="btn btn-sm" data-undo-target="hero-intro-html">Undo</button>
+                  </div>
+                  <textarea id="hero-intro-html" class="textarea" rows="3" data-preview-target="hero-intro-preview"></textarea>
+                  <div id="hero-intro-preview" class="live-preview-box"></div>
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show 16:9 Hero Banner Image</strong>
+                      <div class="field-help">Locked 16:9 size prevents layout shift and speeds up Largest Contentful Paint.</div>
+                    </div>
+                    <input type="checkbox" id="hero-show-banner" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="hero-banner-url">
+                    <span>Hero Banner Image</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      data-upload-target="hero-banner-url"
+                      data-preview-target="hero-banner-preview"
+                    >
+                      Upload Image
+                    </button>
+                  </label>
+                  <input type="text" id="hero-banner-url" class="input" placeholder="Paste image link or tap Upload Image" />
+                  <img id="hero-banner-preview" class="img-mini-preview" alt="Banner Preview" hidden />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-banner-alt">Banner Image Description (Alt Text for SEO)</label>
+                  <input type="text" id="hero-banner-alt" class="input" placeholder="Describe what is shown in the banner..." />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="hero-banner-caption">Banner Caption (Optional)</label>
+                  <input type="text" id="hero-banner-caption" class="input" placeholder="Optional caption under banner..." />
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>2. Hero Action Buttons &amp; Floating Download Button</span>
+              </div>
+              <div class="card-affects">Updates: Two main Hero buttons on Homepage (<code>/</code>) and optional bottom-left floating button.</div>
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show 2-Button Hero Action Grid</strong>
+                      <div class="field-help">Displays the Secondary &amp; Primary buttons directly below the headline.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-hero-ctas" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-left-text">Left Secondary Button Text</label>
+                  <input type="text" id="cta-left-text" class="input" placeholder="e.g., Install Guide" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-left-url">Left Button Destination</label>
+                  <div class="url-picker-row">
+                    <input type="text" id="cta-left-url" class="input" placeholder="/#technical-specifications" />
+                    <select class="select url-quick-select" data-url-picker-for="cta-left-url" aria-label="Quick select URL"></select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-right-text">Right Primary Button Text</label>
+                  <input type="text" id="cta-right-text" class="input" placeholder="e.g., Download Official Build" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="cta-right-url">
+                    <span>Right Primary Button Destination</span>
+                    <span class="field-tag">/moreinfo when protected</span>
+                  </label>
+                  <div class="url-picker-row">
+                    <input type="text" id="cta-right-url" class="input" placeholder="/moreinfo" />
+                    <select class="select url-quick-select" data-url-picker-for="cta-right-url" aria-label="Quick select URL"></select>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Mark Secondary Link as Sponsored</strong>
+                      <div class="field-help">Adds <code>rel="sponsored"</code> for partner/affiliate links.</div>
+                    </div>
+                    <input type="checkbox" id="cta-left-sponsored" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Mark Primary Link as Sponsored</strong>
+                      <div class="field-help">Applies if Primary Button links outside <code>/moreinfo</code>.</div>
+                    </div>
+                    <input type="checkbox" id="cta-right-sponsored" />
+                  </div>
+                </div>
+
+                <div class="field span-full inline-note-box">
+                  <div class="inline-note-row">
+                    <div>
+                      <strong style="font-size:0.8rem; color:var(--text-main);">Secret Download Link &amp; Verification Gate (<code>/moreinfo</code>)</strong>
+                      <div class="field-help">Manage your protected destination file URL and human verification settings in the dedicated Security Gate workspace.</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-dark" data-jump-tab="security">Open Security Gate →</button>
+                  </div>
+                </div>
+
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Floating Bottom-Left Download Button</strong>
+                      <div class="field-help">Stays pinned neatly at bottom-left as visitors read the page.</div>
+                    </div>
+                    <input type="checkbox" id="floating-cta-enabled" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="floating-cta-text">Floating Button Label</label>
+                  <input type="text" id="floating-cta-text" class="input" placeholder="e.g., Download Latest Build" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="floating-cta-url">Floating Button Destination</label>
+                  <div class="url-picker-row">
+                    <input type="text" id="floating-cta-url" class="input" placeholder="/moreinfo" />
+                    <select class="select url-quick-select" data-url-picker-for="floating-cta-url" aria-label="Quick select URL"></select>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 3: TECHNICAL PACKAGE SPECIFICATIONS TABLE
+               4. PACKAGE INFO TABLE
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-specs">
             <div class="panel-header">
               <div>
-                <h2>Technical Package Specifications &amp; Checksum Table</h2>
-                <p>Renders on Homepage at <code>/#technical-specifications</code> and feeds SoftwareApplication schema metadata.</p>
+                <h2>Package Specifications &amp; Checksum Table</h2>
+                <p>Shown on your Homepage at <code>/#technical-specifications</code> and feeds app details to search engines.</p>
               </div>
             </div>
 
             <div class="card">
-              <div class="card-title">Package Specifications Table Controls</div>
-              <div class="card-affects">Affects on Public Site: Package Details table on Homepage (<code>/</code>) and optional specs box on <code>/moreinfo</code>.</div>
-              <div class="form-grid cols-2" style="margin-top: 12px">
+              <div class="card-title">Main Package Details</div>
+              <div class="card-affects">Updates: Package specifications table on Homepage (<code>/</code>) and optional details box on <code>/moreinfo</code>.</div>
+              <div class="form-grid cols-2">
                 <div class="field span-full">
                   <div class="toggle-box">
                     <div>
-                      <strong>Display Technical Specifications Table on Homepage</strong>
-                      <div class="field-help">Renders the specification &amp; SHA-256 verification table (#technical-specifications).</div>
+                      <strong>Show Specifications Table on Homepage</strong>
+                      <div class="field-help">Displays file version, size, system support, and SHA-256 checksum.</div>
                     </div>
                     <input type="checkbox" id="specs-enabled" />
                   </div>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-heading">Section Heading (&lt;h2&gt;)</label>
-                  <input type="text" id="specs-heading" class="input" />
+                  <label class="field-label" for="specs-heading">Table Section Heading</label>
+                  <input type="text" id="specs-heading" class="input" placeholder="Technical Package Specifications" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-app-name">Application Package Name</label>
-                  <input type="text" id="specs-app-name" class="input" />
+                  <label class="field-label" for="specs-app-name">Package / App Name</label>
+                  <input type="text" id="specs-app-name" class="input" placeholder="e.g., NovaPlayer" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="specs-version">Latest Version</label>
-                  <input type="text" id="specs-version" class="input" placeholder="e.g., v1.0.0 (Stable Build)" />
+                  <input type="text" id="specs-version" class="input" placeholder="e.g., v1.0.0 (Stable)" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-size">Package File Size</label>
+                  <label class="field-label" for="specs-size">File Size</label>
                   <input type="text" id="specs-size" class="input" placeholder="e.g., 25 MB" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-os">System Requirements</label>
+                  <label class="field-label" for="specs-os">Supported Devices / OS</label>
                   <input type="text" id="specs-os" class="input" placeholder="Android 9.0+ / iOS 15.0+" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-format">Package Format</label>
+                  <label class="field-label" for="specs-format">File Format</label>
                   <input type="text" id="specs-format" class="input" placeholder="Signed APK / Universal Package" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-license">License &amp; Cost</label>
-                  <input type="text" id="specs-license" class="input" placeholder="Freeware (100% Clean)" />
+                  <label class="field-label" for="specs-license">License / Price</label>
+                  <input type="text" id="specs-license" class="input" placeholder="Freeware (Clean Release)" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-security">Security Scan Status</label>
+                  <label class="field-label" for="specs-security">Security Verification Status</label>
                   <input type="text" id="specs-security" class="input" placeholder="Verified Clean (0/72 Engines)" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="specs-updated">Last Updated Date</label>
-                  <input type="text" id="specs-updated" class="input" placeholder="November 4, 2026" />
+                  <input type="text" id="specs-updated" class="input" placeholder="November 2026" />
                 </div>
                 <div class="field span-full">
                   <label class="field-label" for="specs-sha256">
-                    <span>SHA-256 Cryptographic Checksum</span>
-                    <button type="button" id="btn-gen-sha256" class="btn btn-sm">Generate SHA-256 Hash</button>
+                    <span>SHA-256 Checksum</span>
+                    <button type="button" id="btn-gen-sha256" class="btn btn-sm">Generate SHA-256</button>
                   </label>
-                  <input type="text" id="specs-sha256" class="input" />
+                  <input type="text" id="specs-sha256" class="input" placeholder="64-character SHA-256 hash" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-meta-title">Specs Section Meta Title</label>
+                  <label class="field-label" for="specs-meta-title">Section Meta Title (Optional)</label>
                   <input type="text" id="specs-meta-title" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="specs-meta-desc">Specs Section Meta Description</label>
+                  <label class="field-label" for="specs-meta-desc">Section Meta Description (Optional)</label>
                   <input type="text" id="specs-meta-desc" class="input" />
                 </div>
               </div>
             </div>
 
-            <!-- Custom Specification Rows -->
             <div class="card">
               <div class="card-title">
-                <span>Custom Specification Rows (Optional Extra Table Rows)</span>
-                <button type="button" id="btn-add-spec-row" class="btn btn-sm btn-primary">+ Add Custom Spec Row</button>
+                <span>Extra Custom Rows (Optional)</span>
+                <button type="button" id="btn-add-spec-row" class="btn btn-sm btn-primary">+ Add Custom Row</button>
               </div>
-              <div class="card-desc">Add extra technical rows (e.g., Architecture, Publisher, Minimum RAM, Release Channel).</div>
+              <div class="card-desc">Add extra rows like Developer Name, Architecture, or Minimum RAM.</div>
               <div class="template-bar">
-                <span class="template-bar-label">1-Click Common Rows:</span>
+                <span class="template-bar-label">Quick Add:</span>
                 <button type="button" class="btn btn-sm" data-spec-preset="arch">+ Architecture</button>
                 <button type="button" class="btn btn-sm" data-spec-preset="dev">+ Publisher</button>
-                <button type="button" class="btn btn-sm" data-spec-preset="ram">+ Min RAM / Storage</button>
+                <button type="button" class="btn btn-sm" data-spec-preset="ram">+ Min RAM</button>
                 <button type="button" class="btn btn-sm" data-spec-preset="channel">+ Release Channel</button>
               </div>
               <div id="custom-specs-list" class="item-list"></div>
@@ -1036,29 +1009,27 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 4: HOMEPAGE CONTENT SECTIONS & CUSTOM COMPONENTS
+               5. PAGE SECTIONS
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-sections">
             <div class="panel-header">
               <div>
-                <h2>Homepage Content Sections &amp; Media Blocks</h2>
-                <p>
-                  Sections render in sequence inside Homepage (<code>/</code>), appear in the navigation drawer, and support internal cross-linking.
-                </p>
+                <h2>Homepage Content Sections &amp; Block Order</h2>
+                <p>Add guides, feature highlights, changelogs, or custom visual blocks on your homepage (<code>/</code>).</p>
               </div>
               <button type="button" id="btn-add-section" class="btn btn-primary">+ Add Blank Section</button>
             </div>
 
             <div class="template-bar">
               <span class="template-bar-label">1-Click Section Templates:</span>
-              <button type="button" class="btn btn-sm" data-section-template="features">+ Feature Overview Grid</button>
-              <button type="button" class="btn btn-sm" data-section-template="install">+ Step-by-Step Installation Guide</button>
-              <button type="button" class="btn btn-sm" data-section-template="changelog">+ Version Changelog Table</button>
-              <button type="button" class="btn btn-sm" data-section-template="proscons">+ Pros &amp; Verification Highlights</button>
+              <button type="button" class="btn btn-sm" data-section-template="features">+ Feature Overview</button>
+              <button type="button" class="btn btn-sm" data-section-template="install">+ Installation Steps</button>
+              <button type="button" class="btn btn-sm" data-section-template="changelog">+ Version Changelog</button>
+              <button type="button" class="btn btn-sm" data-section-template="proscons">+ Verification Highlights</button>
             </div>
 
             <div class="list-controls-bar">
-              <input type="search" id="sections-search-input" class="input list-controls-search" placeholder="Filter sections by heading or #slug..." />
+              <input type="search" id="sections-search-input" class="input list-controls-search" placeholder="Search sections by title or #slug..." />
               <div class="list-controls-actions">
                 <button type="button" id="btn-sections-expand-all" class="btn btn-sm">Expand All</button>
                 <button type="button" id="btn-sections-collapse-all" class="btn btn-sm">Collapse All</button>
@@ -1067,13 +1038,12 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
 
             <div id="sections-list" class="item-list"></div>
 
-            <!-- Global Additional Raw HTML / Custom Component Block -->
-            <div class="card" style="margin-top: 18px">
+            <div class="card" style="margin-top: 14px">
               <div class="card-title">
-                <span>Additional Custom HTML / Component Block (Optional)</span>
-                <button type="button" class="btn btn-sm" data-toggle-preview="global-raw-html-preview">Toggle Preview</button>
+                <span>Extra Custom HTML / Visual Block (Optional)</span>
+                <button type="button" class="btn btn-sm" data-toggle-preview="global-raw-html-preview">Preview</button>
               </div>
-              <div class="card-affects">Affects on Public Site: Renders on Homepage (<code>/</code>) at the position set in Workspace 2 Block Order Controller.</div>
+              <div class="card-affects">Updates: Renders as its own block on Homepage (<code>/</code>) at the order chosen below.</div>
               <div class="html-toolbar">
                 <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="global-raw-html">+ Visual Block Builder</button>
                 <button type="button" class="btn btn-sm btn-dark" data-open-image-modal="global-raw-html">+ Image</button>
@@ -1089,40 +1059,42 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 class="textarea code"
                 rows="5"
                 data-preview-target="global-raw-html-preview"
-                placeholder="<!-- Use '+ Visual Block Builder' above or enter custom HTML -->"
+                placeholder="<!-- Tap '+ Visual Block Builder' above or write custom HTML -->"
               ></textarea>
               <div id="global-raw-html-preview" class="live-preview-box"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Homepage Vertical Section Order</span>
+              </div>
+              <div class="card-desc">Move major blocks up or down to choose what visitors see first on the homepage.</div>
+              <div id="homepage-order-list"></div>
             </div>
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 5: DAILY NEWS PUBLISHER
+               6. DAILY NEWS PUBLISHER
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-news">
             <div class="panel-header">
               <div>
-                <h2>Daily News Publisher &amp; Release Updates</h2>
-                <p>
-                  Each published post creates a standalone URL (<code>/news/:slug</code>), updates <code>/news</code>, feeds <code>/feed.xml</code> &amp; <code>/sitemap.xml</code>, and emits <code>NewsArticle</code> schema.
-                </p>
+                <h2>Daily News Publisher</h2>
+                <p>Each post creates its own SEO page at <code>/news/:slug</code>, updates <code>/news</code>, and adds to your RSS feed.</p>
               </div>
             </div>
 
-            <!-- Quick Daily News Composer Card -->
-            <div class="card" style="border: 1.5px solid #0f172a">
+            <div class="card">
               <div class="card-title">
-                <span id="news-composer-heading">Publish a New Daily News Article</span>
-                <button type="button" id="btn-news-autofill-seo" class="btn btn-sm">
-                  Auto-Fill SEO Meta from Headline
-                </button>
+                <span id="news-composer-heading">Write a New Daily News Post</span>
+                <button type="button" id="btn-news-autofill-seo" class="btn btn-sm">Auto-Fill Slug &amp; SEO</button>
               </div>
               <div class="card-desc">
-                Choose a 1-click template or write your own headline, cover image, summary, and body, then click
-                <strong>Publish News Post Now</strong> to save directly to Firebase.
+                Use a 1-click starter template or fill in your headline and story, then tap <strong>Publish News Post Now</strong>.
               </div>
 
               <div class="template-bar">
-                <span class="template-bar-label">1-Click News Templates:</span>
+                <span class="template-bar-label">1-Click Post Templates:</span>
                 <button type="button" class="btn btn-sm" data-news-template="release">+ Release Update</button>
                 <button type="button" class="btn btn-sm" data-news-template="security">+ Security Advisory</button>
                 <button type="button" class="btn btn-sm" data-news-template="guide">+ Feature Walkthrough</button>
@@ -1133,167 +1105,112 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
               <div class="form-grid cols-2">
                 <div class="field span-full">
                   <label class="field-label" for="composer-news-title">
-                    News Headline (&lt;h1&gt;)
+                    <span>Article Headline (&lt;h1&gt;)</span>
                     <span class="field-tag">Required</span>
                   </label>
                   <input
                     type="text"
                     id="composer-news-title"
                     class="input"
-                    placeholder="e.g., Official Release Update: Faster Edge Mirrors & Security Improvements"
+                    placeholder="e.g., Official Update v5.2: Faster Downloads & Security Fixes"
                   />
                 </div>
 
                 <div class="field">
                   <label class="field-label" for="composer-news-slug">
-                    <span>Article URL Slug (<code>/news/:slug</code>)</span>
+                    <span>Article Web URL (<code>/news/:slug</code>)</span>
                     <button type="button" id="btn-composer-autoslug" class="btn btn-sm">Auto-Slug</button>
                   </label>
-                  <input
-                    type="text"
-                    id="composer-news-slug"
-                    class="input"
-                    placeholder="auto-generated-from-headline"
-                  />
+                  <input type="text" id="composer-news-slug" class="input" placeholder="auto-generated-from-headline" />
                 </div>
 
                 <div class="field">
                   <label class="field-label" for="composer-news-category">
-                    <span>Category Badge</span>
-                    <span class="field-tag">Select or Type Custom</span>
+                    <span>Category Label</span>
                   </label>
-                  <input
-                    type="text"
-                    id="composer-news-category"
-                    class="input"
-                    list="news-category-presets"
-                    placeholder="Daily Update"
-                  />
+                  <input type="text" id="composer-news-category" class="input" list="news-category-presets" placeholder="Daily Update" />
                 </div>
 
                 <div class="field">
                   <label class="field-label" for="composer-news-date">Publish Date</label>
-                  <input type="text" id="composer-news-date" class="input" placeholder="November 4, 2026" />
+                  <input type="text" id="composer-news-date" class="input" placeholder="November 17, 2026" />
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for="composer-news-author">Author / Editorial Team</label>
+                  <label class="field-label" for="composer-news-author">Author / Team Name</label>
                   <input type="text" id="composer-news-author" class="input" placeholder="Editorial Team" />
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for="composer-news-readtime">Reading Time Badge</label>
+                  <label class="field-label" for="composer-news-readtime">Read Time Label</label>
                   <input type="text" id="composer-news-readtime" class="input" placeholder="2 min read" />
                 </div>
 
                 <div class="field">
                   <label class="field-label">Highlight Article</label>
-                  <div class="toggle-box" style="min-height: 40px; padding: 6px 12px">
-                    <span>Pin Featured Badge on Post</span>
+                  <div class="toggle-box">
+                    <span>Mark as Featured Article</span>
                     <input type="checkbox" id="composer-news-featured" />
                   </div>
                 </div>
 
-                <!-- News Featured Cover Image + Device Upload -->
                 <div class="field span-full">
                   <label class="field-label" for="composer-news-cover-url">
-                    <span>Featured Cover Image URL (Optional — Shown at Top of Article &amp; Hub Cards)</span>
+                    <span>Cover Image (Optional)</span>
                     <button
                       type="button"
                       class="btn btn-sm"
                       data-upload-target="composer-news-cover-url"
                       data-preview-target="composer-news-cover-preview"
                     >
-                      Upload Image from Device
+                      Upload Image
                     </button>
                   </label>
-                  <input
-                    type="text"
-                    id="composer-news-cover-url"
-                    class="input"
-                    placeholder="Paste image URL or click Upload Image from Device..."
-                  />
+                  <input type="text" id="composer-news-cover-url" class="input" placeholder="Paste image URL or tap Upload Image..." />
                   <img id="composer-news-cover-preview" class="img-mini-preview" alt="Cover Preview" hidden />
                 </div>
 
                 <div class="field">
                   <label class="field-label" for="composer-news-cover-alt">Cover Image Alt Text (SEO)</label>
-                  <input
-                    type="text"
-                    id="composer-news-cover-alt"
-                    class="input"
-                    placeholder="Describe the news image for Google Images..."
-                  />
+                  <input type="text" id="composer-news-cover-alt" class="input" placeholder="Describe the cover image..." />
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for="composer-news-cover-caption">Cover Image Caption (Optional)</label>
-                  <input
-                    type="text"
-                    id="composer-news-cover-caption"
-                    class="input"
-                    placeholder="Caption shown underneath the cover image..."
-                  />
+                  <label class="field-label" for="composer-news-cover-caption">Cover Caption (Optional)</label>
+                  <input type="text" id="composer-news-cover-caption" class="input" placeholder="Caption under cover image..." />
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for="composer-news-cta-label">In-Article Action Button Text (Optional)</label>
-                  <input
-                    type="text"
-                    id="composer-news-cta-label"
-                    class="input"
-                    placeholder="e.g., Download Patched Build v4.9.0"
-                  />
+                  <label class="field-label" for="composer-news-cta-label">In-Article Button Text (Optional)</label>
+                  <input type="text" id="composer-news-cta-label" class="input" placeholder="e.g., Download Patched Build" />
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for="composer-news-cta-url">In-Article Action Button URL (Optional)</label>
-                  <input
-                    type="text"
-                    id="composer-news-cta-url"
-                    class="input"
-                    placeholder="e.g., /#technical-specifications"
-                  />
+                  <label class="field-label" for="composer-news-cta-url">In-Article Button Link (Optional)</label>
+                  <input type="text" id="composer-news-cta-url" class="input" placeholder="e.g., /#technical-specifications" />
                 </div>
 
                 <div class="field span-full">
-                  <label class="field-label" for="composer-news-summary">
-                    Short Summary (Shown on Homepage &amp; /news Feed)
-                  </label>
-                  <textarea
-                    id="composer-news-summary"
-                    class="textarea"
-                    rows="2"
-                    placeholder="Write a 1–2 sentence summary of today's news update..."
-                  ></textarea>
+                  <label class="field-label" for="composer-news-summary">Short Summary (Shown on News Feed Cards)</label>
+                  <textarea id="composer-news-summary" class="textarea" rows="2" placeholder="Write a 1-2 sentence summary..."></textarea>
                 </div>
 
                 <div class="field span-full">
                   <label class="field-label" for="composer-news-html">
-                    <span>Full News Article Body (HTML + Rich Components)</span>
-                    <button type="button" id="btn-toggle-composer-preview" class="btn btn-sm">
-                      Toggle Visual Preview
-                    </button>
+                    <span>Full Article Content (Visual Blocks or HTML)</span>
+                    <button type="button" id="btn-toggle-composer-preview" class="btn btn-sm">Preview</button>
                   </label>
                   <div class="html-toolbar">
-                    <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="composer-news-html">
-                      + Visual Block Builder
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-dark"
-                      data-open-image-modal="composer-news-html"
-                    >
-                      + Image
-                    </button>
+                    <button type="button" class="btn btn-sm btn-primary" data-open-visual-block-modal="composer-news-html">+ Visual Block Builder</button>
+                    <button type="button" class="btn btn-sm btn-dark" data-open-image-modal="composer-news-html">+ Image</button>
                     <button type="button" class="btn btn-sm" data-open-link-modal="composer-news-html">+ Link</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="b"><b>B</b></button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="b">Bold</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="p">+ P</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="h3">+ H3</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="ul">+ List</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="steps">+ Steps</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="callout">+ Callout</button>
-                    <button type="button" class="btn btn-sm" data-composer-snippet="grid">+ 2-Col Grid</button>
+                    <button type="button" class="btn btn-sm" data-composer-snippet="grid">+ 2-Col</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="table">+ Table</button>
                     <button type="button" class="btn btn-sm" data-composer-snippet="cta">+ Button</button>
                     <button type="button" class="btn btn-sm" data-undo-target="composer-news-html">Undo</button>
@@ -1302,7 +1219,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                     id="composer-news-html"
                     class="textarea code"
                     rows="6"
-                    placeholder="<p>Write the full news article content here, or use '+ Visual Block Builder' above...</p>"
+                    placeholder="<p>Write your news article here or tap '+ Visual Block Builder' above...</p>"
                   ></textarea>
                   <div id="composer-live-preview" class="live-preview-box"></div>
                 </div>
@@ -1310,113 +1227,109 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
 
               <div class="seo-subbox">
                 <div class="seo-subbox-title">
-                  <span>News Article SEO Meta Title &amp; Meta Description</span>
-                  <span class="field-tag">Injected into &lt;head&gt; &amp; NewsArticle Schema</span>
+                  <span>Google Search Meta Tags for This Post</span>
+                  <span class="field-tag">NewsArticle Schema</span>
                 </div>
                 <div class="form-grid cols-2">
                   <div class="field">
-                    <label class="field-label" for="composer-news-meta-title">Article Meta Title (&lt;title&gt;)</label>
-                    <input
-                      type="text"
-                      id="composer-news-meta-title"
-                      class="input"
-                      placeholder="SEO Meta Title for Google Search..."
-                    />
+                    <label class="field-label" for="composer-news-meta-title">Article Meta Title</label>
+                    <input type="text" id="composer-news-meta-title" class="input" placeholder="Search title for Google..." />
                   </div>
                   <div class="field">
                     <label class="field-label" for="composer-news-meta-desc">Article Meta Description</label>
-                    <input
-                      type="text"
-                      id="composer-news-meta-desc"
-                      class="input"
-                      placeholder="SEO Meta Description (120–160 chars)..."
-                    />
+                    <input type="text" id="composer-news-meta-desc" class="input" placeholder="Short description (120-160 chars)..." />
                   </div>
                 </div>
               </div>
 
-              <div style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap">
-                <button type="button" id="btn-publish-single-news" class="btn btn-primary">
-                  Publish News Post Now
-                </button>
+              <div style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap">
+                <button type="button" id="btn-publish-single-news" class="btn btn-primary">Publish News Post Now</button>
                 <button type="button" id="btn-clear-news-composer" class="btn">Clear / New Post</button>
               </div>
             </div>
 
-            <!-- News Section Global Settings -->
             <div class="card">
-              <div class="card-title">News Section Heading &amp; <code>/news</code> Hub SEO Meta Tags</div>
-              <div class="form-grid cols-2" style="margin-top: 10px">
+              <div class="card-title">News Feed Display &amp; <code>/news</code> Archive Settings</div>
+              <div class="form-grid cols-2">
                 <div class="field span-full">
                   <div class="toggle-box">
                     <div>
-                      <strong>Enable Daily News Section on Public Website</strong>
-                      <div class="field-help">Displays the latest news feed on the homepage and enables the /news archive hub.</div>
+                      <strong>Show Daily News on Public Website</strong>
+                      <div class="field-help">Displays latest news on the homepage and turns on the <code>/news</code> archive page.</div>
                     </div>
                     <input type="checkbox" id="news-enabled" />
                   </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="news-heading">News Section Heading (&lt;h2&gt;)</label>
-                  <input type="text" id="news-heading" class="input" placeholder="Daily News &amp; Release Updates" />
+                  <input type="text" id="news-heading" class="input" placeholder="Latest News &amp; Updates" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="news-meta-title">News Hub (/news) Meta Title</label>
-                  <input type="text" id="news-meta-title" class="input" placeholder="Daily News &amp; Release Updates..." />
+                  <label class="field-label" for="ui-home-news-limit">Max Posts Shown on Homepage</label>
+                  <input type="number" id="ui-home-news-limit" class="input" min="1" max="50" />
                 </div>
-                <div class="field span-full">
-                  <label class="field-label" for="news-meta-desc">News Hub (/news) Meta Description</label>
-                  <input
-                    type="text"
-                    id="news-meta-desc"
-                    class="input"
-                    placeholder="Official daily news updates, software changelogs..."
-                  />
+                <div class="field">
+                  <label class="field-label" for="ui-news-readmore">Post "Read More" Button Text</label>
+                  <input type="text" id="ui-news-readmore" class="input" placeholder="Read Full Article →" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-news-viewall">"View All News" Link Text</label>
+                  <input type="text" id="ui-news-viewall" class="input" placeholder="View All News →" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="news-meta-title">News Archive (/news) Meta Title</label>
+                  <input type="text" id="news-meta-title" class="input" placeholder="Daily News &amp; Changelogs..." />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="news-meta-desc">News Archive (/news) Meta Description</label>
+                  <input type="text" id="news-meta-desc" class="input" placeholder="Official updates and changelogs..." />
                 </div>
               </div>
             </div>
 
-            <div class="card-title" style="margin: 18px 0 8px">
-              <span>Published Daily News Articles</span>
-              <a href="/news" target="_blank" class="btn btn-sm">Open /news Hub ↗</a>
-            </div>
-            <div class="list-controls-bar">
-              <input type="search" id="news-search-input" class="input list-controls-search" placeholder="Filter articles by headline or category..." />
-              <div class="list-controls-actions">
-                <button type="button" id="btn-news-expand-all" class="btn btn-sm">Expand All</button>
-                <button type="button" id="btn-news-collapse-all" class="btn btn-sm">Collapse All</button>
+            <div class="card">
+              <div class="card-title">
+                <span>Published News Articles</span>
+                <a href="/news" target="_blank" class="btn btn-sm">Open /news Hub ↗</a>
               </div>
+              <div class="list-controls-bar" style="padding:0; border:none; margin-top:8px;">
+                <input type="search" id="news-search-input" class="input list-controls-search" placeholder="Filter articles by headline or category..." />
+                <div class="list-controls-actions">
+                  <button type="button" id="btn-news-expand-all" class="btn btn-sm">Expand All</button>
+                  <button type="button" id="btn-news-collapse-all" class="btn btn-sm">Collapse All</button>
+                </div>
+              </div>
+              <div id="news-list" class="item-list"></div>
             </div>
-            <div id="news-list" class="item-list"></div>
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 6: FAQs MANAGER
+               7. FAQS MANAGER
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-faqs">
             <div class="panel-header">
               <div>
                 <h2>Frequently Asked Questions (FAQs)</h2>
-                <p>Renders Q&amp;A items on Homepage (<code>/#frequently-asked-questions</code>) and generates Google <code>FAQPage</code> JSON-LD schema.</p>
+                <p>Shown on Homepage at <code>/#frequently-asked-questions</code> and adds Google FAQ rich snippets automatically.</p>
               </div>
               <button type="button" id="btn-add-faq" class="btn btn-primary">+ Add FAQ Question</button>
             </div>
 
             <div class="card">
-              <div class="card-title">FAQ Section Heading &amp; Meta Tags</div>
-              <div class="form-grid cols-2" style="margin-top: 12px">
+              <div class="card-title">FAQ Section Settings</div>
+              <div class="form-grid cols-2">
                 <div class="field span-full">
                   <div class="toggle-box">
                     <div>
-                      <strong>Enable FAQ Section &amp; FAQPage Schema</strong>
-                      <div class="field-help">Displays FAQs on the homepage and syncs structured data.</div>
+                      <strong>Enable FAQ Section &amp; FAQ Schema</strong>
+                      <div class="field-help">Displays Q&amp;A accordions on homepage and outputs <code>FAQPage</code> structured data.</div>
                     </div>
                     <input type="checkbox" id="faqs-enabled" />
                   </div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="faqs-heading">FAQ Section Heading (&lt;h2&gt;)</label>
-                  <input type="text" id="faqs-heading" class="input" />
+                  <input type="text" id="faqs-heading" class="input" placeholder="Frequently Asked Questions" />
                 </div>
                 <div class="field">
                   <label class="field-label" for="faqs-meta-title">FAQ Section Meta Title</label>
@@ -1432,9 +1345,9 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
             <div class="template-bar">
               <span class="template-bar-label">1-Click Quick FAQs:</span>
               <button type="button" class="btn btn-sm" data-faq-preset="free">+ Free License FAQ</button>
-              <button type="button" class="btn btn-sm" data-faq-preset="safety">+ SHA-256 Verification FAQ</button>
+              <button type="button" class="btn btn-sm" data-faq-preset="safety">+ SHA-256 Check FAQ</button>
               <button type="button" class="btn btn-sm" data-faq-preset="update">+ Safe Upgrade FAQ</button>
-              <button type="button" class="btn btn-sm" data-faq-preset="compat">+ Android &amp; iOS Compatibility</button>
+              <button type="button" class="btn btn-sm" data-faq-preset="compat">+ Device Support FAQ</button>
             </div>
 
             <div class="list-controls-bar">
@@ -1449,49 +1362,153 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 7: FOOTER & STANDALONE LEGAL PAGES
+               8. HEADER MENU, FOOTER & STANDALONE LEGAL PAGES
                ─────────────────────────────────────────────────────────────────── -->
           <section class="tab-panel" id="panel-pages">
             <div class="panel-header">
               <div>
-                <h2>Footer &amp; Standalone Legal SEO Pages</h2>
-                <p>
-                  Each page compiles into its own crawlable static route (<code>/:slug</code>) with dedicated Meta Title, Meta Description, and footer navigation link.
-                </p>
+                <h2>Navigation Menu, Footer &amp; Standalone Legal Pages</h2>
+                <p>Manage standalone pages (<code>/:slug</code>), top 3-bar navigation drawer links, and your global site footer.</p>
               </div>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap">
+              <div class="panel-header-actions">
                 <button type="button" id="btn-autogen-legal" class="btn">Auto-Fill Brand in All Legal Pages</button>
-                <button type="button" id="btn-add-page" class="btn btn-primary">+ Add Standalone Page</button>
+                <button type="button" id="btn-add-page" class="btn btn-primary">+ Add Legal / Info Page</button>
               </div>
             </div>
 
-            <div class="template-bar">
-              <span class="template-bar-label">1-Click Page Templates:</span>
-              <button type="button" class="btn btn-sm" data-page-template="about">+ About Official Portal</button>
-              <button type="button" class="btn btn-sm" data-page-template="disclosure">+ Editorial Disclosure</button>
-              <button type="button" class="btn btn-sm" data-page-template="mirrors">+ Official Mirrors &amp; Checksums</button>
+            <div class="subcard-filter-bar" role="tablist" aria-label="Menu &amp; Pages Areas">
+              <button type="button" class="subcard-pill active" data-pages-subtab="all">All Areas</button>
+              <button type="button" class="subcard-pill" data-pages-subtab="legal">1. Legal &amp; Info Pages</button>
+              <button type="button" class="subcard-pill" data-pages-subtab="menu">2. Header &amp; 3-Bar Menu</button>
+              <button type="button" class="subcard-pill" data-pages-subtab="footer">3. Footer &amp; Quick Links</button>
             </div>
 
-            <!-- Select Which Legal Page to Edit -->
-            <div class="card">
-              <div class="card-title">Select Standalone Legal / Footer Page to Edit</div>
-              <div class="card-desc">Click any page tab below to edit its content, banner image, visibility, URL slug, and SEO meta tags.</div>
+            <div class="card" data-pages-card="legal">
+              <div class="card-title">1. Standalone Legal &amp; Info Pages (<code>/privacy-policy</code>, <code>/terms</code>, etc.)</div>
+              <div class="card-desc">Pick a template or tap any existing page tab below to edit its content, banner, URL slug, and SEO meta tags.</div>
+              <div class="template-bar" style="margin-bottom:12px;">
+                <span class="template-bar-label">1-Click Page Templates:</span>
+                <button type="button" class="btn btn-sm" data-page-template="about">+ About Official Portal</button>
+                <button type="button" class="btn btn-sm" data-page-template="disclosure">+ Editorial Disclosure</button>
+                <button type="button" class="btn btn-sm" data-page-template="mirrors">+ Mirrors &amp; Checksums</button>
+              </div>
               <div id="legal-page-selector" class="page-selector-bar"></div>
               <div id="pages-list"></div>
             </div>
 
-            <!-- Full Footer Brand Summary, Custom Quick Links, Disclaimer & Copyright Settings -->
-            <div class="card">
+            <div class="card" data-pages-card="menu">
               <div class="card-title">
-                <span>1. Website Footer Brand Summary, Contact Email &amp; Disclaimer</span>
+                <span>2. Sticky Header &amp; 3-Bar Navigation Drawer</span>
               </div>
-              <div class="card-affects">Affects on Public Site: Global footer rendered at the bottom of every public page (<code>/</code>, <code>/news</code>, and standalone pages).</div>
-              <div class="form-grid cols-2" style="margin-top: 10px">
+              <div class="card-affects">Updates: Top sticky header bar, slide-down 3-bar hamburger drawer, and subpage back link.</div>
+              <div class="form-grid cols-2">
+                <div class="field">
+                  <label class="field-label" for="ui-header-news-label">Header News Button Label</label>
+                  <input type="text" id="ui-header-news-label" class="input" placeholder="News" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-back-home-label">Subpage "Back to Home" Label</label>
+                  <input type="text" id="ui-back-home-label" class="input" placeholder="← Back to Main Page" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="ui-all-news-label">Article "All News" Link Label</label>
+                  <input type="text" id="ui-all-news-label" class="input" placeholder="All Daily News →" />
+                </div>
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Show Brand Summary Block in Footer</strong>
-                      <div class="field-help">Displays brand title and summary statement at the top of the footer.</div>
+                      <strong>Keep Top Header Pinned on Scroll</strong>
+                      <div class="field-help">Keeps navigation bar fixed at the top while scrolling.</div>
+                    </div>
+                    <input type="checkbox" id="ui-sticky-header" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Header News Button</strong>
+                      <div class="field-help">Displays the News link next to the 3-bar menu button.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-header-news" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show News Post Count Badge</strong>
+                      <div class="field-help">Shows e.g. "News (3)" when posts exist.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-news-count" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>List Homepage Sections in 3-Bar Menu</strong>
+                      <div class="field-help">Adds visible homepage sections automatically to the drawer.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-auto-sections" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Latest News in 3-Bar Menu</strong>
+                      <div class="field-help">Displays recent articles inside the slide-down menu.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-show-news" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Legal Pages in 3-Bar Menu</strong>
+                      <div class="field-help">Lists Privacy Policy, Terms, and Contact links in the drawer.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-show-legal" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Subpage Breadcrumb Back Bar</strong>
+                      <div class="field-help">Shows "Back to Home" bar on <code>/news</code> and legal pages.</div>
+                    </div>
+                    <input type="checkbox" id="ui-show-breadcrumbs" />
+                  </div>
+                </div>
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Download CTA Button at Bottom of 3-Bar Menu</strong>
+                      <div class="field-help">Displays your main download button inside the navigation drawer.</div>
+                    </div>
+                    <input type="checkbox" id="ui-drawer-show-cta" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="card-subsection">
+                <div class="card-title">
+                  <span>Custom Drawer Menu Links</span>
+                  <button type="button" id="btn-add-menu-link" class="btn btn-sm btn-primary">+ Add Custom Menu Link</button>
+                </div>
+                <div class="card-desc">Add custom internal or external links inside the slide-down 3-bar menu.</div>
+                <div id="menu-links-list" class="item-list"></div>
+              </div>
+            </div>
+
+            <div class="card" data-pages-card="footer">
+              <div class="card-title">
+                <span>3. Website Footer Content, Disclaimer &amp; Quick Links</span>
+              </div>
+              <div class="card-affects">Updates: Global footer shown at the bottom of every public page.</div>
+              <div class="form-grid cols-2">
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show Brand Summary in Footer</strong>
+                      <div class="field-help">Displays brand title and summary above footer links.</div>
                     </div>
                     <input type="checkbox" id="nav-show-footer-summary" />
                   </div>
@@ -1499,21 +1516,21 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Show Support Email Link in Footer</strong>
-                      <div class="field-help">Displays your official support email inside the footer summary block.</div>
+                      <strong>Show Support Email in Footer</strong>
+                      <div class="field-help">Displays clickable email inside the footer summary block.</div>
                     </div>
                     <input type="checkbox" id="nav-show-footer-email" />
                   </div>
                 </div>
                 <div class="field span-full">
-                  <label class="field-label" for="nav-footer-summary">Footer Brand Summary / About Text</label>
-                  <textarea id="nav-footer-summary" class="textarea" rows="2" placeholder="Official release portal providing cryptographically verified packages..."></textarea>
+                  <label class="field-label" for="nav-footer-summary">Footer Summary / About Text</label>
+                  <textarea id="nav-footer-summary" class="textarea" rows="2" placeholder="Official release portal providing verified software packages..."></textarea>
                 </div>
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Display Legal Disclaimer Paragraph</strong>
-                      <div class="field-help">Uncheck to hide the disclaimer text above the footer links.</div>
+                      <strong>Show Legal Disclaimer Text</strong>
+                      <div class="field-help">Displays disclaimer notice above the footer links.</div>
                     </div>
                     <input type="checkbox" id="ui-show-footer-disclaimer" />
                   </div>
@@ -1521,14 +1538,14 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Display Footer Links Section Heading</strong>
-                      <div class="field-help">Shows or hides the heading above the footer links.</div>
+                      <strong>Show Footer Links Heading</strong>
+                      <div class="field-help">Displays column heading above footer page links.</div>
                     </div>
                     <input type="checkbox" id="ui-show-footer-links-heading" />
                   </div>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="footer-disclaimer-heading">Footer Disclaimer Heading</label>
+                  <label class="field-label" for="footer-disclaimer-heading">Disclaimer Heading</label>
                   <input type="text" id="footer-disclaimer-heading" class="input" />
                 </div>
                 <div class="field">
@@ -1536,442 +1553,252 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                   <input type="text" id="footer-links-heading" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="footer-meta-title">Footer Disclaimer Meta Title</label>
+                  <label class="field-label" for="footer-meta-title">Disclaimer Meta Title</label>
                   <input type="text" id="footer-meta-title" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="footer-meta-desc">Footer Disclaimer Meta Description</label>
+                  <label class="field-label" for="footer-meta-desc">Disclaimer Meta Description</label>
                   <input type="text" id="footer-meta-desc" class="input" />
                 </div>
                 <div class="field span-full">
-                  <label class="field-label" for="footer-disclaimer-text">Footer Disclaimer Text</label>
+                  <label class="field-label" for="footer-disclaimer-text">Legal Disclaimer Paragraph</label>
                   <textarea id="footer-disclaimer-text" class="textarea" rows="3"></textarea>
                 </div>
                 <div class="field span-full">
-                  <label class="field-label" for="footer-copyright-text">Copyright Notice</label>
+                  <label class="field-label" for="footer-copyright-text">Copyright Notice Line</label>
                   <input type="text" id="footer-copyright-text" class="input" />
                 </div>
               </div>
-            </div>
 
-            <!-- Custom Footer Quick Links Manager -->
-            <div class="card">
-              <div class="card-title">
-                <span>2. Custom Footer Quick Links (In Addition to Legal Pages)</span>
-                <button type="button" id="btn-add-footer-quick-link" class="btn btn-sm btn-primary">+ Add Footer Link</button>
+              <div class="card-subsection">
+                <div class="card-title">
+                  <span>Custom Footer Quick Links</span>
+                  <button type="button" id="btn-add-footer-quick-link" class="btn btn-sm btn-primary">+ Add Footer Link</button>
+                </div>
+                <div class="card-desc">Add extra internal or external links alongside your Legal Pages in the footer.</div>
+                <div id="footer-quick-links-list" class="item-list"></div>
               </div>
-              <div class="card-desc">Add custom internal or external links directly into your website footer alongside your legal pages.</div>
-              <div id="footer-quick-links-list" class="item-list"></div>
             </div>
           </section>
 
           <!-- ───────────────────────────────────────────────────────────────────
-               WORKSPACE 8: SECURITY GATE, INTERNAL LINKS, GITHUB PUSH, SEO & FIREBASE
+               9. MOREINFO SECURITY GATE & AES-256-GCM LINK VAULT
                ─────────────────────────────────────────────────────────────────── -->
-          <section class="tab-panel" id="panel-domain">
+          <section class="tab-panel" id="panel-security">
             <div class="panel-header">
               <div>
-                <h2>Security Gate, SEO Engine, GitHub Deploy &amp; Firebase</h2>
-                <p>Filter by card below to focus on security vault, internal links, sitemap/SERP meta, static deployment, or Firebase persistence.</p>
+                <h2>MoreInfo Security Gate &amp; Download Protection</h2>
+                <p>Keep your real download links private behind human &amp; Turnstile checks at <code>/moreinfo</code> (never exposed in HTML).</p>
               </div>
+              <a href="/moreinfo" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Open /moreinfo Page ↗</a>
             </div>
 
-            <!-- Compact Sub-Card Filter Bar for Workspace 8 -->
-            <div class="subcard-filter-bar" role="tablist" aria-label="Domain, GitHub & SEO Sub-Sections">
-              <button type="button" class="subcard-pill active" data-domain-subtab="all">All Cards</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="security">Security Gate (/moreinfo)</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="internallinks">1. Internal Links</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="github">2. GitHub Static Push</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="sitemap">3. Domain &amp; Sitemap</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="serp">4. Google SERP &amp; Meta</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="schema">5. App Star Schema</button>
-              <button type="button" class="subcard-pill" data-domain-subtab="firebase">6. Firebase &amp; Backup</button>
-            </div>
-
-            <!-- v12 7-Gate Security Gateway & AES-256-GCM Encrypted Link Vault Card -->
-            <div class="card" data-domain-card="security" style="border: 2px solid #059669">
+            <div class="card">
               <div class="card-title">
-                <span>Protected Download Gate &amp; AES-256-GCM Link Vault (<code>/moreinfo</code>)</span>
-                <a href="/moreinfo" target="_blank" rel="noopener" class="btn btn-sm btn-primary">Open /moreinfo Gateway ↗</a>
+                <span>Protected Destination URL &amp; AES-256-GCM Link Vault</span>
+                <span class="field-tag" id="sec-vault-status-tag">Not Set</span>
               </div>
-              <div class="card-affects">Affects on Public Site: <code>/moreinfo</code> and <code>/download</code> verification gate (strictly <code>noindex, nofollow</code>, isolated from SEO pages).</div>
-              <div class="card-desc">
-                Protects your download destination behind sequential verification checks (edge bot/ASN filter, device cookie, hardware probe, single-use nonce, Cloudflare Turnstile, pointer telemetry, and server-side AES-256-GCM decryption) without exposing the destination URL in static HTML.
-              </div>
-
+              <div class="card-affects">Updates: <code>/moreinfo</code>, <code>/download</code>, and server-side verification checks (strictly <code>noindex, nofollow</code>).</div>
               <div class="form-grid cols-2">
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Enable Protected Security Gateway (<code>/moreinfo</code>)</strong>
-                      <div class="field-help">Routes download CTAs through the 7-Gate verification page.</div>
+                      <strong>Enable Security Gate (<code>/moreinfo</code>)</strong>
+                      <div class="field-help">Requires visitors to pass verification before receiving your download URL.</div>
                     </div>
                     <input type="checkbox" id="sec-enabled" />
                   </div>
                 </div>
-
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Show SHA-256 &amp; Specs Table on <code>/moreinfo</code></strong>
-                      <div class="field-help">Displays package checksum &amp; version details below the clearance card.</div>
+                      <strong>Show SHA-256 &amp; Version Info on <code>/moreinfo</code></strong>
+                      <div class="field-help">Displays file checksum details below the verification card.</div>
                     </div>
                     <input type="checkbox" id="sec-show-specs" />
                   </div>
                 </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-device-policy">Device Verification Policy Mode</label>
-                  <select id="sec-device-policy" class="select">
-                    <option value="universal_human">Universal Human (Mobile + Desktop Humans — Blocks Bots/Headless)</option>
-                    <option value="strict_mobile_only">Strict Mobile-Only Lock (Physical Touch Smartphone Only — Desktop Gets 404)</option>
-                  </select>
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-btn-label">Clearance Button Label (After Verification)</label>
-                  <input type="text" id="sec-btn-label" class="input" placeholder="PROCEED" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-app-slug">Gateway App Slug (Used for Nonce &amp; Rate-Limit Keys)</label>
-                  <input type="text" id="sec-app-slug" class="input" placeholder="e.g., my-app" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-serial-id">Gateway Header Serial Badge ID</label>
-                  <input type="text" id="sec-serial-id" class="input" placeholder="e.g., PKG-001" />
-                </div>
-
-                <div class="field span-full">
-                  <label class="field-label" for="sec-custom-heading">
-                    <span>Custom App Title on <code>/moreinfo</code> (Optional — Defaults to Brand Name)</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="sec-custom-heading"
-                    class="input"
-                    placeholder="Leave blank to use your main App / Brand Name"
-                  />
-                </div>
-
-                <div class="field span-full">
-                  <label class="field-label" for="sec-custom-note">
-                    <span>Custom Note / HTML on <code>/moreinfo</code> (Optional — Leave Blank for Minimal Card)</span>
-                  </label>
-                  <div class="html-toolbar">
-                    <button type="button" class="btn btn-sm" data-open-link-modal="sec-custom-note">+ Link</button>
-                    <button type="button" class="btn btn-sm" data-scalar-snippet="b" data-target="sec-custom-note"><b>B</b></button>
-                    <button type="button" class="btn btn-sm" data-scalar-snippet="callout" data-target="sec-custom-note">+ Notice Box</button>
-                    <button type="button" class="btn btn-sm" data-undo-target="sec-custom-note">Undo</button>
-                  </div>
-                  <textarea
-                    id="sec-custom-note"
-                    class="textarea"
-                    rows="2"
-                    placeholder="Leave blank to show only the App Icon, App Name, Turnstile verification, and PROCEED button."
-                  ></textarea>
-                </div>
-
                 <div class="field span-full">
                   <label class="field-label" for="sec-primary-url">
-                    <span>Protected Destination Download URL (Auto-Encrypted on Save or Encrypt Now)</span>
-                    <button type="button" id="btn-encrypt-vault-url" class="btn btn-sm btn-dark">Encrypt URL Now (AES-256-GCM)</button>
+                    <span>Protected Destination Download URL</span>
+                    <button type="button" id="btn-encrypt-vault-url" class="btn btn-sm btn-dark">Encrypt URL Now</button>
                   </label>
-                  <input
-                    type="text"
-                    id="sec-primary-url"
-                    class="input"
-                    placeholder="https://cdn.example.com/releases/package.apk"
-                  />
-                  <div class="field-help">
-                    This destination URL is never exposed in public HTML or static JSON. It is decrypted only in server RAM after verification passes.
-                  </div>
+                  <input type="text" id="sec-primary-url" class="input" placeholder="https://cdn.example.com/releases/package.apk" />
+                  <div class="field-help">Never written into public HTML. Decrypted strictly inside server RAM after verification passes.</div>
                 </div>
-
                 <div class="field span-full">
-                  <label class="field-label" for="sec-encrypted-url">
-                    <span>AES-256-GCM Encrypted Vault Ciphertext (<code>v2.&lt;iv&gt;.&lt;cipher&gt;</code>)</span>
-                    <span class="field-tag" id="sec-vault-status-tag">Not Set</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="sec-encrypted-url"
-                    class="input"
-                    placeholder="v2.<base64url-iv>.<base64url-ciphertext> (Generated on Encrypt or Save)"
-                  />
+                  <label class="field-label" for="sec-encrypted-url">AES-256-GCM Encrypted Vault Value (<code>v2.&lt;iv&gt;.&lt;cipher&gt;</code>)</label>
+                  <input type="text" id="sec-encrypted-url" class="input" placeholder="Auto-generated when you tap Encrypt URL Now or Publish" />
                 </div>
-
                 <div class="field">
-                  <label class="field-label" for="sec-turnstile-site-key">
-                    <span>Cloudflare Turnstile Site Key (<code>0x4...</code>)</span>
-                    <span class="field-tag">Auto Test Key on Localhost</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="sec-turnstile-site-key"
-                    class="input"
-                    placeholder="0x4AAAAAA... (Leave blank for localhost test key)"
-                  />
+                  <label class="field-label" for="sec-device-policy">Visitor Device Rule</label>
+                  <select id="sec-device-policy" class="select">
+                    <option value="universal_human">Allow Both Mobile &amp; Desktop Humans (Block Bots)</option>
+                    <option value="strict_mobile_only">Touch Smartphones Only (Block Desktop Browsers)</option>
+                  </select>
                 </div>
-
                 <div class="field">
-                  <label class="field-label" for="sec-turnstile-secret-key">
-                    <span>Cloudflare Turnstile Secret Key (<code>0x4...</code>)</span>
-                    <span class="field-tag" id="sec-ts-secret-status-tag">Write-Only Secret</span>
-                  </label>
-                  <div class="input-upload-row">
-                    <input
-                      type="password"
-                      id="sec-turnstile-secret-key"
-                      class="input"
-                      placeholder="0x4AAAAAA... (Leave blank to keep stored secret)"
-                      autocomplete="off"
-                    />
-                    <button type="button" id="btn-clear-ts-secret" class="btn btn-sm btn-danger" style="display:none;">Clear</button>
-                  </div>
-                </div>
-
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Temporarily Pause Link Dispatch</strong>
-                      <div class="field-help">Shows the maintenance notice &amp; helpline buttons instead of redirecting.</div>
-                    </div>
-                    <input type="checkbox" id="sec-paused" />
-                  </div>
-                </div>
-
-                <div class="field">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Coming Soon Mode</strong>
-                      <div class="field-help">Displays a Coming Soon notice when users complete verification.</div>
-                    </div>
-                    <input type="checkbox" id="sec-coming-soon" />
-                  </div>
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-daily-cap">Daily Link Issuance Cap (<code>0</code> = Unlimited)</label>
-                  <input type="number" id="sec-daily-cap" class="input" min="0" placeholder="0" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-unavailable-msg">Maintenance / Unavailable Message</label>
-                  <input
-                    type="text"
-                    id="sec-unavailable-msg"
-                    class="input"
-                    placeholder="Official download mirror is undergoing scheduled maintenance."
-                  />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-whatsapp">WhatsApp Helpline Link (Optional)</label>
-                  <input type="text" id="sec-whatsapp" class="input" placeholder="https://wa.me/1234567890" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="sec-telegram">Telegram Helpline Link (Optional)</label>
-                  <input type="text" id="sec-telegram" class="input" placeholder="https://t.me/example" />
+                  <label class="field-label" for="sec-btn-label">Proceed Button Text</label>
+                  <input type="text" id="sec-btn-label" class="input" placeholder="PROCEED" />
                 </div>
               </div>
             </div>
 
-            <!-- 1. Smart Contextual Internal Linking Engine -->
-            <div class="card" data-domain-card="internallinks">
-              <div class="card-title">
-                <span>1. Contextual Internal Linking Engine &amp; Resource Hub</span>
-                <button type="button" id="btn-add-internal-link" class="btn btn-sm btn-primary">+ Add Keyword Link Rule</button>
+            <div class="card">
+              <div class="card-title">Cloudflare Turnstile, Page Text &amp; Availability Limits</div>
+              <div class="form-grid cols-2">
+                <div class="field">
+                  <label class="field-label" for="sec-turnstile-site-key">
+                    <span>Cloudflare Turnstile Site Key</span>
+                    <span class="field-tag">Auto Test Key on Localhost</span>
+                  </label>
+                  <input type="text" id="sec-turnstile-site-key" class="input" placeholder="0x4AAAAAA... (Optional on localhost)" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-turnstile-secret-key">
+                    <span>Cloudflare Turnstile Secret Key</span>
+                    <span class="field-tag" id="sec-ts-secret-status-tag">Write-Only Secret</span>
+                  </label>
+                  <div class="input-upload-row">
+                    <input type="password" id="sec-turnstile-secret-key" class="input" placeholder="0x4AAAAAA... (Leave blank to keep stored)" autocomplete="off" />
+                    <button type="button" id="btn-clear-ts-secret" class="btn btn-sm btn-danger" style="display:none;">Clear</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-app-slug">Gateway App Slug</label>
+                  <input type="text" id="sec-app-slug" class="input" placeholder="e.g., novaplayer" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-serial-id">Gateway Serial Label (Optional)</label>
+                  <input type="text" id="sec-serial-id" class="input" placeholder="e.g., PKG-001" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="sec-custom-heading">Custom Page Title on <code>/moreinfo</code> (Optional)</label>
+                  <input type="text" id="sec-custom-heading" class="input" placeholder="Defaults to your Website / App Name" />
+                </div>
+                <div class="field span-full">
+                  <label class="field-label" for="sec-custom-note">Custom Notice Box on <code>/moreinfo</code> (Optional)</label>
+                  <div class="html-toolbar">
+                    <button type="button" class="btn btn-sm" data-open-link-modal="sec-custom-note">+ Link</button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="b" data-target="sec-custom-note">Bold</button>
+                    <button type="button" class="btn btn-sm" data-scalar-snippet="callout" data-target="sec-custom-note">+ Notice Box</button>
+                    <button type="button" class="btn btn-sm" data-undo-target="sec-custom-note">Undo</button>
+                  </div>
+                  <textarea id="sec-custom-note" class="textarea" rows="2" placeholder="Leave blank for a minimal card with App Name, verification, and PROCEED button."></textarea>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Pause Downloads Temporarily</strong>
+                      <div class="field-help">Shows maintenance notice &amp; helpline links instead of downloading.</div>
+                    </div>
+                    <input type="checkbox" id="sec-paused" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Coming Soon Mode</strong>
+                      <div class="field-help">Shows Coming Soon notice after visitor verification.</div>
+                    </div>
+                    <input type="checkbox" id="sec-coming-soon" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-daily-cap">Daily Download Cap (0 = Unlimited)</label>
+                  <input type="number" id="sec-daily-cap" class="input" min="0" placeholder="0" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-unavailable-msg">Pause / Maintenance Message</label>
+                  <input type="text" id="sec-unavailable-msg" class="input" placeholder="Official download mirror is undergoing maintenance." />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-whatsapp">WhatsApp Support Link (Optional)</label>
+                  <input type="text" id="sec-whatsapp" class="input" placeholder="https://wa.me/1234567890" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="sec-telegram">Telegram Support Link (Optional)</label>
+                  <input type="text" id="sec-telegram" class="input" placeholder="https://t.me/example" />
+                </div>
               </div>
-              <div class="card-affects">Affects on Public Site: Auto-links matching keywords in sections, news, and legal pages, and adds cross-links inside news articles.</div>
+            </div>
+          </section>
+
+          <!-- ───────────────────────────────────────────────────────────────────
+               10. INTERNAL LINKING SYSTEM
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-links">
+            <div class="panel-header">
+              <div>
+                <h2>Smart Internal Linking System</h2>
+                <p>Automatically turn important keywords inside sections, news articles, and legal pages into helpful SEO internal links.</p>
+              </div>
+              <button type="button" id="btn-add-internal-link" class="btn btn-primary">+ Add Keyword Link Rule</button>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Automatic Cross-Linking Settings</div>
+              <div class="card-affects">Updates: Safely adds internal links inside body paragraphs across Homepage sections, Daily News posts, and Legal pages without breaking headings or existing links.</div>
               <div class="field" style="margin-bottom: 12px">
                 <div class="toggle-box">
                   <div>
-                    <strong>Enable Automatic Contextual Internal Linking &amp; Resource Hub</strong>
-                    <div class="field-help">Safely links keywords inside paragraph text without altering headings, code blocks, or existing links.</div>
+                    <strong>Enable Automatic Contextual Internal Linking</strong>
+                    <div class="field-help">Matches each keyword rule below once per paragraph and links related guides inside news articles.</div>
                   </div>
                   <input type="checkbox" id="domain-auto-internal-links" />
                 </div>
               </div>
               <div id="internal-links-list" class="item-list"></div>
             </div>
+          </section>
 
-            <!-- 2. GitHub Fine-Grained Token Static Publisher Card -->
-            <div class="card" data-domain-card="github" style="border: 2px solid #0f172a">
-              <div class="card-title">
-                <span>2. GitHub Fine-Grained Token Static Website Publisher</span>
-                <span class="field-tag" id="gh-status-badge">Local /dist-public Compiler Active</span>
-              </div>
-              <div class="card-affects">Affects on Public Site: Compiles standalone HTML, static route JSONs, <code>sitemap.xml</code>, <code>robots.txt</code>, <code>feed.xml</code>, and pushes to your GitHub repo.</div>
-              <div class="card-desc">
-                Admin Studio reads &amp; saves live state in Firebase. Clicking <strong>Compile &amp; Push Static Website to GitHub Now</strong> compiles a pure static public bundle with zero Firebase runtime code and commits only changed files.
-              </div>
-
-              <div class="form-grid cols-2">
-                <div class="field span-full">
-                  <label class="field-label" for="gh-token">
-                    <span>GitHub Fine-Grained Personal Access Token (<code>github_pat_...</code>)</span>
-                    <span class="field-tag" id="gh-token-status-tag">Not Configured</span>
-                  </label>
-                  <div class="input-upload-row">
-                    <input
-                      type="password"
-                      id="gh-token"
-                      class="input"
-                      placeholder="github_pat_11ABCDEFG... (Needs Contents: Read and write)"
-                      autocomplete="off"
-                    />
-                    <button type="button" id="btn-clear-gh-token" class="btn btn-sm btn-danger" style="display:none;">Clear</button>
-                  </div>
-                  <div class="field-help">
-                    Required permission: Repository &rarr; Contents (Read and write). Tokens are stored write-only on the server and never sent back to clients.
-                  </div>
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="gh-owner">GitHub Username or Organization</label>
-                  <input type="text" id="gh-owner" class="input" placeholder="e.g., octocat or my-org" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="gh-repo">GitHub Repository Name</label>
-                  <input type="text" id="gh-repo" class="input" placeholder="e.g., mybrand-static-public" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="gh-branch">Target Branch</label>
-                  <input type="text" id="gh-branch" class="input" placeholder="main" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="gh-dir">
-                    <span>Target Folder in Repo</span>
-                    <span class="field-tag">dist-public or empty for root</span>
-                  </label>
-                  <input type="text" id="gh-dir" class="input" placeholder="dist-public" />
-                </div>
-
-                <div class="field span-full">
-                  <label class="field-label" for="gh-commit-msg">Git Commit Message Template</label>
-                  <input
-                    type="text"
-                    id="gh-commit-msg"
-                    class="input"
-                    placeholder="chore(static-publish): update compiled static public pages from Admin Studio"
-                  />
-                </div>
-
-                <div class="field span-full">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Auto-Push Compiled Static Site to GitHub on Every "Publish Changes"</strong>
-                      <div class="field-help">
-                        When enabled, clicking "Publish Changes" saves to Firebase and automatically pushes changed static files to GitHub.
-                      </div>
-                    </div>
-                    <input type="checkbox" id="gh-auto-push" />
-                  </div>
-                </div>
-              </div>
-
-              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px">
-                <button type="button" id="btn-verify-github" class="btn btn-dark">
-                  Verify GitHub Token &amp; Repo Access
-                </button>
-                <button type="button" id="btn-publish-github" class="btn btn-primary">
-                  Compile &amp; Push Static Website to GitHub Now
-                </button>
-                <button type="button" id="btn-inspect-static-bundle" class="btn">
-                  Inspect Compiled Static Public Files
-                </button>
-              </div>
-
-              <div id="gh-pending-sync-bar" class="gh-pending-sync-bar">
-                <span><strong>Admin &rarr; Public Sync Queue:</strong> <span id="gh-pending-modules-text">Up to date</span></span>
-                <span class="field-tag" id="gh-pending-count-tag">0 pending</span>
-              </div>
-
-              <div id="gh-sync-pipeline-log" class="gh-sync-pipeline-log" aria-live="polite"></div>
-
-              <div id="gh-verify-feedback" style="margin-top: 10px; display: none" class="seo-subbox"></div>
-
-              <div id="static-bundle-inspector-box" style="margin-top: 12px; display: none" class="seo-subbox">
-                <div class="seo-subbox-title">
-                  <span>Compiled Public Static Bundle (<code>/dist-public</code> — 100% Isolated from Admin)</span>
-                  <span class="field-tag" id="static-bundle-count-tag">0 files</span>
-                </div>
-                <div id="static-bundle-source-summary" style="margin-bottom:8px;font-size:0.78rem;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:#f8fafc;color:#334155;"></div>
-                <div style="overflow-x: auto; max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px; background: #ffffff">
-                  <table class="bundle-inspector-table">
-                    <thead>
-                      <tr>
-                        <th>Static File Path</th>
-                        <th>Size</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody id="static-bundle-tbody"></tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Admin -> Public Static Compilation & GitHub Sync Audit Logs -->
-              <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px">
-                <div class="field-label" style="margin-bottom: 6px">
-                  <span>Admin &rarr; Public Static Sync &amp; GitHub Push Logs</span>
-                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                    <span class="field-tag" id="gh-last-commit-tag">No GitHub push yet</span>
-                    <button type="button" id="btn-clear-sync-logs" class="btn btn-sm">Clear Logs</button>
-                  </div>
-                </div>
-                <div id="gh-deploy-history-list" class="audit-list"></div>
+          <!-- ───────────────────────────────────────────────────────────────────
+               11. DOMAIN & SEO SETTINGS
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-domain">
+            <div class="panel-header">
+              <div>
+                <h2>Domain, Google Search Preview &amp; Technical SEO</h2>
+                <p>Configure your canonical domain, Search Console tags, Sitemap, RSS feed, homepage meta tags, and Schema markup.</p>
               </div>
             </div>
 
-            <!-- 3. Custom Domain, Sitemap, Web Manifest & Webmaster Tools -->
-            <div class="card" data-domain-card="sitemap">
+            <div class="card" data-section-anchor="sitemap">
               <div class="card-title">
-                <span>3. Custom Domain, XML Sitemap &amp; Web App Manifest</span>
+                <span>1. Website Domain, Verification &amp; SEO Files</span>
                 <div style="display: flex; gap: 5px; flex-wrap: wrap">
-                  <a href="/sitemap.xml" target="_blank" class="btn btn-sm">Sitemap.xml ↗</a>
-                  <a href="/manifest.webmanifest" target="_blank" class="btn btn-sm">Manifest.webmanifest ↗</a>
+                  <a href="/sitemap.xml" target="_blank" class="btn btn-sm">Sitemap ↗</a>
+                  <a href="/manifest.webmanifest" target="_blank" class="btn btn-sm">Manifest ↗</a>
                   <a href="/robots.txt" target="_blank" class="btn btn-sm">Robots.txt ↗</a>
-                  <a href="/feed.xml" target="_blank" class="btn btn-sm">RSS Feed ↗</a>
+                  <a href="/feed.xml" target="_blank" class="btn btn-sm">RSS ↗</a>
                 </div>
               </div>
-              <div class="card-affects">Affects on Public Site: Canonical base domain, <code>/sitemap.xml</code>, <code>/manifest.webmanifest</code>, <code>/robots.txt</code>, <code>/feed.xml</code>, and analytics/verification tags.</div>
-              <div class="form-grid cols-2" style="margin-top: 8px">
+              <div class="card-affects">Updates: Canonical URLs, <code>/sitemap.xml</code>, <code>/manifest.webmanifest</code>, <code>/robots.txt</code>, <code>/feed.xml</code>, and analytics tags.</div>
+              <div class="form-grid cols-2">
                 <div class="field">
                   <label class="field-label" for="domain-primary">
-                    Primary Production Domain URL
+                    <span>Primary Production Domain</span>
                     <span class="field-tag">Canonical Base</span>
                   </label>
                   <input type="url" id="domain-primary" class="input" placeholder="https://yourdomain.com" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="domain-ga-id">Google Analytics / Tag ID (Optional)</label>
+                  <label class="field-label" for="domain-ga-id">Google Analytics ID (Optional)</label>
                   <input type="text" id="domain-ga-id" class="input" placeholder="G-XXXXXXXXXX" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="domain-gsc">Google Search Console Verification Code</label>
-                  <input
-                    type="text"
-                    id="domain-gsc"
-                    class="input"
-                    placeholder="google-site-verification content token"
-                  />
+                  <label class="field-label" for="domain-gsc">Google Search Console Token</label>
+                  <input type="text" id="domain-gsc" class="input" placeholder="google-site-verification content value" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="domain-bing">Bing Webmaster Verification Code</label>
-                  <input type="text" id="domain-bing" class="input" placeholder="msvalidate.01 content token" />
+                  <label class="field-label" for="domain-bing">Bing Webmaster Verification Token</label>
+                  <input type="text" id="domain-bing" class="input" placeholder="msvalidate.01 content value" />
                 </div>
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Include Google Image Sitemap (<code>&lt;image:image&gt;</code>)</strong>
-                      <div class="field-help">Embeds Hero Banner, Section Images &amp; News Cover Images inside <code>/sitemap.xml</code>.</div>
+                      <strong>Include Images in XML Sitemap</strong>
+                      <div class="field-help">Adds Hero Banner, Section &amp; News images for Google Image Search.</div>
                     </div>
                     <input type="checkbox" id="domain-image-sitemap" />
                   </div>
@@ -1980,7 +1807,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                   <div class="toggle-box">
                     <div>
                       <strong>Enable XML Sitemap (<code>/sitemap.xml</code>)</strong>
-                      <div class="field-help">Automatically lists homepage, news archive, articles, and legal URLs (uncheck to disable /sitemap.xml).</div>
+                      <div class="field-help">Lists homepage, news posts, and legal pages for search bots.</div>
                     </div>
                     <input type="checkbox" id="domain-enable-sitemap" />
                   </div>
@@ -1988,8 +1815,8 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 <div class="field">
                   <div class="toggle-box">
                     <div>
-                      <strong>Enable News RSS 2.0 Feed (<code>/feed.xml</code>)</strong>
-                      <div class="field-help">Publishes an auto-updating RSS XML feed for all daily news articles (uncheck to disable /feed.xml).</div>
+                      <strong>Enable News RSS Feed (<code>/feed.xml</code>)</strong>
+                      <div class="field-help">Generates a live RSS 2.0 feed of your published news posts.</div>
                     </div>
                     <input type="checkbox" id="domain-enable-rss" />
                   </div>
@@ -1998,7 +1825,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                   <div class="toggle-box">
                     <div>
                       <strong>Enable Web App Manifest (<code>/manifest.webmanifest</code>)</strong>
-                      <div class="field-help">Generates PWA manifest with 192x192 &amp; 512x512 icons and theme color.</div>
+                      <div class="field-help">Enables mobile install metadata with app name and icons.</div>
                     </div>
                     <input type="checkbox" id="domain-web-manifest" />
                   </div>
@@ -2006,8 +1833,8 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 <div class="field span-full">
                   <div class="toggle-box">
                     <div>
-                      <strong>Force HTTPS on All Canonical &amp; Sitemap URLs</strong>
-                      <div class="field-help">Normalizes http:// to https:// across all pages and JSON-LD schemas.</div>
+                      <strong>Always Use HTTPS Canonical URLs</strong>
+                      <div class="field-help">Upgrades http:// links cleanly to https:// in sitemaps and meta tags.</div>
                     </div>
                     <input type="checkbox" id="domain-force-https" />
                   </div>
@@ -2019,13 +1846,12 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
               </div>
             </div>
 
-            <!-- 4. Homepage Global SEO & Google SERP Simulator -->
-            <div class="card" data-domain-card="serp">
+            <div class="card" data-section-anchor="serp">
               <div class="card-title">
-                <span>4. Homepage Meta Tags &amp; Live Google SERP Preview</span>
+                <span>2. Homepage Search Title, Description &amp; Live Google Preview</span>
               </div>
-              <div class="card-affects">Affects on Public Site: Homepage (<code>/</code>) <code>&lt;title&gt;</code>, <code>&lt;meta name="description"&gt;</code>, canonical tag, OpenGraph &amp; Twitter cards.</div>
-              <div class="form-grid cols-2" style="margin-top: 8px">
+              <div class="card-affects">Updates: Homepage (<code>/</code>) <code>&lt;title&gt;</code>, meta description, OpenGraph, and social share cards.</div>
+              <div class="form-grid cols-2">
                 <div class="field span-full">
                   <label class="field-label" for="seo-meta-title">
                     <span>Homepage Meta Title (&lt;title&gt;)</span>
@@ -2038,7 +1864,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                     <span>Homepage Meta Description</span>
                     <span class="field-tag" id="seo-desc-counter">0 / 160 chars</span>
                   </label>
-                  <textarea id="seo-meta-desc" class="textarea" rows="3" placeholder="Write a 80–165 character search snippet description..."></textarea>
+                  <textarea id="seo-meta-desc" class="textarea" rows="3" placeholder="Write an 80-165 character search snippet description..."></textarea>
                 </div>
                 <div class="field">
                   <label class="field-label" for="seo-canonical">Homepage Canonical URL</label>
@@ -2046,10 +1872,10 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 </div>
                 <div class="field">
                   <label class="field-label" for="seo-og-image">
-                    <span>OpenGraph Social Share Image URL</span>
+                    <span>Social Share Image (OpenGraph)</span>
                     <button type="button" class="btn btn-sm" data-upload-target="seo-og-image">Upload</button>
                   </label>
-                  <input type="text" id="seo-og-image" class="input" placeholder="https://... or upload social preview image" />
+                  <input type="text" id="seo-og-image" class="input" placeholder="Paste image URL or upload share banner" />
                 </div>
                 <div class="field span-full">
                   <label class="field-label">Live Google Search Result Preview</label>
@@ -2062,18 +1888,17 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
               </div>
             </div>
 
-            <!-- 5. SoftwareApplication Schema -->
-            <div class="card" data-domain-card="schema">
+            <div class="card" data-section-anchor="schema">
               <div class="card-title">
-                <span>5. SoftwareApplication Rich Snippet Star Schema &amp; Custom JSON-LD</span>
+                <span>3. SoftwareApplication Rich Snippet Schema &amp; Custom JSON-LD</span>
               </div>
-              <div class="card-affects">Affects on Public Site: Homepage <code>&lt;script type="application/ld+json"&gt;</code> structured data <code>@graph</code>.</div>
-              <div class="form-grid cols-3" style="margin-top: 8px">
+              <div class="card-affects">Updates: Homepage structured data JSON-LD <code>@graph</code> for Google Search rich snippets.</div>
+              <div class="form-grid cols-3">
                 <div class="field span-full">
                   <div class="toggle-box">
                     <div>
-                      <strong>Enable SoftwareApplication Star Rating Schema</strong>
-                      <div class="field-help">Injects AggregateRating and software metadata into JSON-LD.</div>
+                      <strong>Include SoftwareApplication Star Rating Schema</strong>
+                      <div class="field-help">Outputs app name, OS, free price, and rating count in structured data.</div>
                     </div>
                     <input type="checkbox" id="schema-app-enabled" />
                   </div>
@@ -2095,11 +1920,11 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                   <input type="text" id="schema-app-price" class="input" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="schema-app-currency">Price Currency</label>
+                  <label class="field-label" for="schema-app-currency">Currency Code</label>
                   <input type="text" id="schema-app-currency" class="input" placeholder="USD" />
                 </div>
                 <div class="field">
-                  <label class="field-label" for="schema-app-rating">Star Rating (1–5)</label>
+                  <label class="field-label" for="schema-app-rating">Star Rating (1-5)</label>
                   <input type="text" id="schema-app-rating" class="input" />
                 </div>
                 <div class="field">
@@ -2108,27 +1933,154 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 </div>
                 <div class="field span-full">
                   <label class="field-label" for="seo-raw-jsonld">
-                    <span>Custom JSON-LD Schema Node / @graph Extension (Optional)</span>
-                    <span class="field-tag" id="seo-jsonld-status">Optional Valid JSON Object or Array</span>
+                    <span>Extra Custom JSON-LD Node (Optional)</span>
+                    <span class="field-tag" id="seo-jsonld-status">Optional Valid JSON</span>
                   </label>
                   <textarea id="seo-raw-jsonld" class="textarea code" rows="3" placeholder='{"@type":"Organization","sameAs":["https://github.com/yourorg"]}'></textarea>
                 </div>
               </div>
             </div>
+          </section>
 
-            <!-- 6. Firebase Cloud Persistence, Environment Diagnostics & Master Clone Backup -->
-            <div class="card" data-domain-card="firebase">
+          <!-- ───────────────────────────────────────────────────────────────────
+               12. FIREBASE, GITHUB STATIC PUSH & SYNC LOGS
+               ─────────────────────────────────────────────────────────────────── -->
+          <section class="tab-panel" id="panel-deploy">
+            <div class="panel-header">
+              <div>
+                <h2>Firebase Connection, GitHub Static Push &amp; Sync Logs</h2>
+                <p>Manage live Firebase persistence, compile standalone static public files to GitHub, and review recent sync logs.</p>
+              </div>
+            </div>
+
+            <div class="card">
               <div class="card-title">
-                <span>6. Firebase Cloud Persistence &amp; Environment Security Diagnostics</span>
-                <span class="field-tag" id="fb-env-badge">Checking .env...</span>
+                <span>1. GitHub Static Website Publisher</span>
+                <span class="field-tag" id="gh-status-badge">Static Compiler Active</span>
+              </div>
+              <div class="card-affects">Compiles standalone public HTML, JSON routes, <code>sitemap.xml</code>, <code>robots.txt</code>, <code>feed.xml</code> and pushes changed files to your GitHub repository.</div>
+
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <label class="field-label" for="gh-token">
+                    <span>GitHub Fine-Grained Token (<code>github_pat_...</code>)</span>
+                    <span class="field-tag" id="gh-token-status-tag">Not Configured</span>
+                  </label>
+                  <div class="input-upload-row">
+                    <input
+                      type="password"
+                      id="gh-token"
+                      class="input"
+                      placeholder="github_pat_... (Requires Repository Contents: Read &amp; Write)"
+                      autocomplete="off"
+                    />
+                    <button type="button" id="btn-clear-gh-token" class="btn btn-sm btn-danger" style="display:none;">Clear</button>
+                  </div>
+                  <div class="field-help">Stored write-only on the server — never sent back to browsers.</div>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-owner">GitHub Username or Organization</label>
+                  <input type="text" id="gh-owner" class="input" placeholder="e.g., my-org" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-repo">GitHub Repository Name</label>
+                  <input type="text" id="gh-repo" class="input" placeholder="e.g., mybrand-public" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-branch">Target Branch</label>
+                  <input type="text" id="gh-branch" class="input" placeholder="main" />
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="gh-dir">
+                    <span>Target Folder in Repo</span>
+                    <span class="field-tag">dist-public or empty for root</span>
+                  </label>
+                  <input type="text" id="gh-dir" class="input" placeholder="dist-public" />
+                </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="gh-commit-msg">Git Commit Message</label>
+                  <input
+                    type="text"
+                    id="gh-commit-msg"
+                    class="input"
+                    placeholder="chore(static-publish): sync compiled static public site from Admin Studio"
+                  />
+                </div>
+
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Auto-Push to GitHub Every Time You Tap Publish</strong>
+                      <div class="field-help">Automatically commits changed static public files after saving to Firebase.</div>
+                    </div>
+                    <input type="checkbox" id="gh-auto-push" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="deploy-actions-row">
+                <button type="button" id="btn-verify-github" class="btn btn-dark">Verify GitHub Access</button>
+                <button type="button" id="btn-publish-github" class="btn btn-primary">Compile &amp; Push Static Site to GitHub</button>
+                <button type="button" id="btn-inspect-static-bundle" class="btn">Inspect Static Public Files</button>
+              </div>
+
+              <div id="gh-pending-sync-bar" class="gh-pending-sync-bar">
+                <span><strong>Sync Queue:</strong> <span id="gh-pending-modules-text">Up to date</span></span>
+                <span class="field-tag" id="gh-pending-count-tag">0 pending</span>
+              </div>
+
+              <div id="gh-sync-pipeline-log" class="gh-sync-pipeline-log" aria-live="polite"></div>
+              <div id="gh-verify-feedback" style="margin-top: 10px; display: none" class="seo-subbox"></div>
+
+              <div id="static-bundle-inspector-box" style="margin-top: 12px; display: none" class="seo-subbox">
+                <div class="seo-subbox-title">
+                  <span>Compiled Static Public Files (100% Isolated from Admin)</span>
+                  <span class="field-tag" id="static-bundle-count-tag">0 files</span>
+                </div>
+                <div id="static-bundle-source-summary" style="margin-bottom:8px;font-size:0.78rem;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:#f8fafc;color:#334155;"></div>
+                <div style="overflow-x: auto; max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px; background: #ffffff">
+                  <table class="bundle-inspector-table">
+                    <thead>
+                      <tr>
+                        <th>Static File Path</th>
+                        <th>Size</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody id="static-bundle-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card-subsection">
+                <div class="field-label" style="margin-bottom: 6px">
+                  <span>Admin-to-Public Sync &amp; Publish Logs</span>
+                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <span class="field-tag" id="gh-last-commit-tag">No GitHub push yet</span>
+                    <button type="button" id="btn-clear-sync-logs" class="btn btn-sm">Clear Logs</button>
+                  </div>
+                </div>
+                <div id="gh-deploy-history-list" class="audit-list"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>2. Firebase Cloud Firestore &amp; Backups</span>
+                <span class="field-tag" id="fb-env-badge">Checking...</span>
               </div>
               <div class="card-desc">
-                Admin Studio persists live CMS documents to Cloud Firestore (<code>siteConfig/main</code>). Paste your Firebase SDK snippet below to auto-fill all fields, or configure server environment variables.
+                Stores your live workspace data in Cloud Firestore (<code>siteConfig/main</code>). Use environment variables in production, or test/paste your Firebase SDK snippet below.
               </div>
 
               <div class="seo-subbox" style="margin-bottom: 12px">
                 <div class="seo-subbox-title">
-                  <span>1-Click Paste Firebase SDK Snippet or JSON</span>
+                  <span>Paste Firebase SDK Snippet to Auto-Fill</span>
                   <button type="button" id="btn-parse-fb-snippet" class="btn btn-sm btn-primary">Parse &amp; Auto-Fill</button>
                 </div>
                 <textarea
@@ -2175,26 +2127,25 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                   <input type="text" id="fb-database-id" class="input" placeholder="(default)" autocomplete="off" />
                 </div>
 
-                <div class="field span-full" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px">
+                <div class="field span-full deploy-actions-row">
                   <button type="button" id="btn-save-firebase" class="btn btn-dark">Save &amp; Connect Firebase</button>
                   <button type="button" id="btn-test-firebase" class="btn btn-primary">Test Firestore Connection</button>
-                  <button type="button" id="btn-clear-firebase" class="btn">Revert to .env Defaults</button>
-                  <button type="button" id="btn-export-json" class="btn">Export Site JSON Backup</button>
+                  <button type="button" id="btn-clear-firebase" class="btn">Revert to Env Defaults</button>
+                  <button type="button" id="btn-export-json" class="btn">Export JSON Backup</button>
                   <label class="btn" style="cursor: pointer">
-                    Import Site JSON
+                    Import JSON
                     <input type="file" id="input-import-json" accept="application/json" style="display: none" />
                   </label>
-                  <button type="button" id="btn-reset-defaults" class="btn btn-danger">Clear All Content (Empty DB)</button>
+                  <button type="button" id="btn-reset-defaults" class="btn btn-danger">Clear All Content</button>
                 </div>
               </div>
 
               <div id="fb-test-feedback" class="seo-subbox" style="margin-top: 10px; display: none"></div>
 
-              <!-- Live Environment Variables & Security System Diagnostics -->
               <div class="seo-subbox" style="margin-top: 12px">
                 <div class="seo-subbox-title">
-                  <span>Environment Variables &amp; Security System Status (Non-Secret Live Audit)</span>
-                  <span class="field-tag" id="env-runtime-tag">Checking runtime...</span>
+                  <span>Server Environment &amp; Security Check</span>
+                  <span class="field-tag" id="env-runtime-tag">Checking...</span>
                 </div>
                 <div id="env-security-diagnostics-box" class="form-grid cols-2" style="gap: 8px; margin-top: 6px"></div>
               </div>
@@ -2203,7 +2154,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
         </main>
       </div>
 
-      <!-- Fixed Bottom Save Bar -->
+      <!-- Compact Single-Row Sticky Bottom Save Bar (Mobile height <= 52px) -->
       <div class="bottom-save-bar">
         <div class="bottom-save-inner">
           <div class="save-bar-status">
@@ -2211,23 +2162,21 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
             <span id="dirty-modules-summary" class="dirty-modules-summary"></span>
           </div>
           <div class="save-bar-actions">
-            <button type="button" id="btn-save-active-module" class="btn btn-dark btn-sm">Save [brand]</button>
-            <button type="button" id="btn-bottom-save" class="btn btn-primary">Publish Edited Modules</button>
+            <button type="button" id="btn-save-active-module" class="btn btn-dark btn-sm">Save Section</button>
+            <button type="button" id="btn-bottom-save" class="btn btn-primary btn-sm">Publish Changes</button>
           </div>
         </div>
       </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         3. INTERACTIVE IMAGE & MEDIA INSERTION MODAL
-         ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- Image Insertion Modal -->
     <div id="image-insert-modal" class="cms-modal-backdrop" hidden>
       <div class="cms-modal-card">
         <div class="card-title">
           <span>Insert Image into Content</span>
-          <button type="button" id="btn-close-image-modal" class="btn btn-sm">✕ Close</button>
+          <button type="button" id="btn-close-image-modal" class="btn btn-sm">Close</button>
         </div>
         <div class="card-desc">
-          Upload an image directly from your device or paste an image URL. Automatically formatted with responsive 16:9 styling and optional caption.
+          Upload an image from your device or paste a URL to insert a responsive 16:9 image block.
         </div>
         <div class="form-grid">
           <div class="field">
@@ -2239,135 +2188,117 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
                 data-upload-target="modal-img-url"
                 data-preview-target="modal-img-preview"
               >
-                Upload Image from Device
+                Upload Image
               </button>
             </label>
             <input type="text" id="modal-img-url" class="input" placeholder="https://... or /uploads/..." />
             <img id="modal-img-preview" class="img-mini-preview" alt="Preview" hidden />
           </div>
           <div class="field">
-            <label class="field-label" for="modal-img-alt">Image Alt Text (For Google Images SEO)</label>
+            <label class="field-label" for="modal-img-alt">Image Alt Text (Google Image SEO)</label>
             <input type="text" id="modal-img-alt" class="input" placeholder="Describe the image..." />
           </div>
           <div class="field">
-            <label class="field-label" for="modal-img-caption">Image Caption (Optional — Shown Below Image)</label>
+            <label class="field-label" for="modal-img-caption">Caption (Optional)</label>
             <input type="text" id="modal-img-caption" class="input" placeholder="Optional caption..." />
           </div>
           <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
-            <button type="button" id="btn-confirm-insert-image" class="btn btn-primary">
-              + Insert Image into Editor
-            </button>
+            <button type="button" id="btn-confirm-insert-image" class="btn btn-primary">+ Insert Image</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         4. INTERACTIVE NO-CODE VISUAL BLOCK BUILDER MODAL
-         ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- Visual Block Builder Modal -->
     <div id="visual-block-modal" class="cms-modal-backdrop" hidden>
       <div class="cms-modal-card">
         <div class="card-title">
-          <span>Visual Block Builder (No HTML Required)</span>
-          <button type="button" id="btn-close-visual-block-modal" class="btn btn-sm">✕ Close</button>
+          <span>Visual Block Builder (No Coding Needed)</span>
+          <button type="button" id="btn-close-visual-block-modal" class="btn btn-sm">Close</button>
         </div>
         <div class="card-desc">
-          Choose a visual component below, type your text into the simple fields, and click
-          <strong>+ Insert Visual Block into Editor</strong>.
+          Pick a clean layout block, type your text in plain fields, and tap Insert Visual Block.
         </div>
         <div class="form-grid">
           <div class="field">
-            <label class="field-label" for="vb-type">Select Component Type to Build</label>
+            <label class="field-label" for="vb-type">Block Style</label>
             <select id="vb-type" class="select">
-              <option value="callout">1. Highlight / Verification Callout Box</option>
-              <option value="grid">2. Two-Column Feature Cards Grid</option>
-              <option value="steps">3. Numbered Step-by-Step Guide Block</option>
-              <option value="checklist">4. Verified Checklist (Bullet Items)</option>
-              <option value="table">5. Two-Column Technical Comparison Table</option>
+              <option value="callout">1. Highlight / Note Box</option>
+              <option value="grid">2. Two-Column Feature Cards</option>
+              <option value="steps">3. Numbered Step-by-Step Guide</option>
+              <option value="checklist">4. Verified Bullet Checklist</option>
+              <option value="table">5. Two-Column Comparison Table</option>
               <option value="cta">6. Inline Action / Download Button</option>
-              <option value="accordion">7. Expandable FAQ / Details Accordion</option>
+              <option value="accordion">7. Expandable Details Accordion</option>
             </select>
           </div>
-
           <div class="field">
-            <label class="field-label" for="vb-title-1" id="vb-label-title-1">Box Heading / Title</label>
+            <label class="field-label" for="vb-title-1" id="vb-label-title-1">Title</label>
             <input type="text" id="vb-title-1" class="input" value="Verified Technical Note" />
           </div>
-
           <div class="field">
-            <label class="field-label" for="vb-text-1" id="vb-label-text-1">Main Description / Content</label>
-            <textarea id="vb-text-1" class="textarea" rows="2">All packages are cryptographically signed with SHA-256 checksums and scanned across 72 security engines.</textarea>
+            <label class="field-label" for="vb-text-1" id="vb-label-text-1">Description</label>
+            <textarea id="vb-text-1" class="textarea" rows="2">All packages are cryptographically signed with SHA-256 checksums.</textarea>
           </div>
-
           <div class="field" id="vb-group-2" style="display: none">
-            <label class="field-label" for="vb-title-2" id="vb-label-title-2">Second Card Title / Row 2 Label</label>
-            <input type="text" id="vb-title-2" class="input" value="Zero-Latency Edge Delivery" />
+            <label class="field-label" for="vb-title-2" id="vb-label-title-2">Second Item Title</label>
+            <input type="text" id="vb-title-2" class="input" value="Fast Static Delivery" />
           </div>
-
           <div class="field" id="vb-group-2-text" style="display: none">
-            <label class="field-label" for="vb-text-2" id="vb-label-text-2">Second Card Description / Row 2 Value</label>
-            <textarea id="vb-text-2" class="textarea" rows="2">Pre-compiled static pages load in under 50ms globally with zero database overhead.</textarea>
+            <label class="field-label" for="vb-text-2" id="vb-label-text-2">Second Item Description</label>
+            <textarea id="vb-text-2" class="textarea" rows="2">Pre-compiled static pages load fast with zero bloat.</textarea>
           </div>
-
           <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
-            <button type="button" id="btn-confirm-visual-block" class="btn btn-primary">
-              + Insert Visual Block into Editor
-            </button>
+            <button type="button" id="btn-confirm-visual-block" class="btn btn-primary">+ Insert Visual Block</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         5. INTERACTIVE INTERNAL / EXTERNAL LINK INSERTION MODAL
-         ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- Link Insertion Modal -->
     <div id="link-insert-modal" class="cms-modal-backdrop" hidden>
       <div class="cms-modal-card">
         <div class="card-title">
-          <span>Insert Internal or External Link</span>
-          <button type="button" id="btn-close-link-modal" class="btn btn-sm">✕ Close</button>
+          <span>Insert Link</span>
+          <button type="button" id="btn-close-link-modal" class="btn btn-sm">Close</button>
         </div>
-        <div class="card-desc">
-          Pick an existing section, news route, legal page, or paste any URL to insert a clean SEO link.
-        </div>
+        <div class="card-desc">Choose an existing page or section, or paste any external link.</div>
         <div class="form-grid">
           <div class="field">
-            <label class="field-label" for="modal-link-text">Link Anchor Text</label>
-            <input type="text" id="modal-link-text" class="input" placeholder="e.g., View Technical Specifications" />
+            <label class="field-label" for="modal-link-text">Link Label Text</label>
+            <input type="text" id="modal-link-text" class="input" placeholder="e.g., View Specifications" />
           </div>
           <div class="field">
-            <label class="field-label" for="modal-link-preset">Quick Pick Existing Page or Section</label>
+            <label class="field-label" for="modal-link-preset">Quick Pick Existing Page</label>
             <select id="modal-link-preset" class="select"></select>
           </div>
           <div class="field">
-            <label class="field-label" for="modal-link-url">Target URL or Section Hash</label>
+            <label class="field-label" for="modal-link-url">Target URL</label>
             <input type="text" id="modal-link-url" class="input" placeholder="/#technical-specifications or https://..." />
           </div>
           <div class="field">
             <div class="toggle-box">
               <div>
-                <strong>Open Link in New Tab (Recommended for External URLs)</strong>
-                <div class="field-help">Adds <code>target="_blank" rel="noopener noreferrer"</code> cleanly.</div>
+                <strong>Open Link in New Tab</strong>
+                <div class="field-help">Recommended when linking to outside websites.</div>
               </div>
               <input type="checkbox" id="modal-link-newtab" />
             </div>
           </div>
           <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
-            <button type="button" id="btn-confirm-insert-link" class="btn btn-primary">+ Insert Link into Editor</button>
+            <button type="button" id="btn-confirm-insert-link" class="btn btn-primary">+ Insert Link</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         6. LIVE PUBLIC WEBSITE PREVIEW MODAL (MOBILE + DESKTOP)
-         ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- Live Website Preview Modal -->
     <div id="site-preview-modal" class="cms-modal-backdrop" hidden>
       <div class="site-preview-modal-card">
         <div class="site-preview-toolbar">
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <strong style="font-size:0.9rem;">Live Website Preview</strong>
-            <select id="preview-route-select" class="select" style="width:auto; min-width:155px; min-height:32px; padding:4px 8px;">
+            <select id="preview-route-select" class="select" style="width:auto; min-width:155px; min-height:36px; padding:4px 8px;">
               <option value="/">Homepage (/)</option>
               <option value="/news">Daily News Hub (/news)</option>
               <option value="/privacy-policy">Privacy Policy</option>
@@ -2377,8 +2308,8 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Single-Row Top Header wi
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <button type="button" id="btn-preview-mobile" class="btn btn-sm btn-dark">Mobile 390px</button>
             <button type="button" id="btn-preview-desktop" class="btn btn-sm">Desktop</button>
-            <button type="button" id="btn-preview-save-reload" class="btn btn-sm btn-primary">Save &amp; Refresh</button>
-            <button type="button" id="btn-close-preview-modal" class="btn btn-sm">✕ Close</button>
+            <button type="button" id="btn-preview-save-reload" class="btn btn-sm btn-primary">Publish &amp; Refresh</button>
+            <button type="button" id="btn-close-preview-modal" class="btn btn-sm">Close</button>
           </div>
         </div>
         <div class="site-preview-frame-wrap">

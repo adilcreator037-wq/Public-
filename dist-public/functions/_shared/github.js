@@ -145,9 +145,12 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
   const token = cleanEnvVal(ghConfig.fineGrainedToken);
 
   if (!owner || !repo || !token) {
+    const msg = 'Please provide Repository Owner, Repository Name, and Fine-Grained Token.';
     return {
+      success: false,
       ok: false,
-      message: 'Please provide Repository Owner, Repository Name, and Fine-Grained Token.'
+      error: msg,
+      message: msg
     };
   }
 
@@ -166,9 +169,12 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
 
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
+      const msg = `GitHub returned ${res.status}: ${errJson?.message || res.statusText}`;
       return {
+        success: false,
         ok: false,
-        message: `GitHub returned ${res.status}: ${errJson?.message || res.statusText}`
+        error: msg,
+        message: msg
       };
     }
 
@@ -177,21 +183,33 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
       ? Boolean(repoData.permissions.push || repoData.permissions.admin)
       : true;
     const isEmptyRepo = Number(repoData?.size) === 0;
+    const fullName = repoData.full_name || `${owner}/${repo}`;
+    const isPrivate = Boolean(repoData.private);
+    const msg = canPush
+      ? `Verified write access to ${fullName} (branch: ${branch}${isEmptyRepo ? ' — empty repo auto-initializes on publish' : ''}).`
+      : `Read access to ${fullName} succeeded, but Contents write permission is missing.`;
     return {
+      success: canPush,
       ok: canPush,
-      fullName: repoData.full_name,
-      defaultBranch: repoData.default_branch,
+      fullName,
+      repoFullName: fullName,
+      defaultBranch: repoData.default_branch || 'main',
       branchChecked: branch,
+      private: isPrivate,
+      privateRepo: isPrivate,
+      permissions: repoData.permissions,
       canPush,
       isEmptyRepo,
-      message: canPush
-        ? `Verified write access to ${repoData.full_name} (branch: ${branch}${isEmptyRepo ? ' — empty repo auto-initializes on publish' : ''}).`
-        : `Read access to ${repoData.full_name} succeeded, but Contents write permission is missing.`
+      message: msg,
+      ...(canPush ? {} : { error: msg })
     };
   } catch (err) {
+    const msg = `GitHub verification failed: ${err?.message || 'Network error'}`;
     return {
+      success: false,
       ok: false,
-      message: `GitHub verification failed: ${err?.message || 'Network error'}`
+      error: msg,
+      message: msg
     };
   }
 }

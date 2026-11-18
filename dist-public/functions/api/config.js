@@ -9,13 +9,14 @@ import {
   verifyCsrfEdge,
   getFirebaseEnvFromEnv,
   buildEdgeEnvDiagnostics,
-  readSiteConfigFromFirestoreRest,
+  readSiteConfigWithStatusEdge,
   writeSiteConfigToFirestoreRest,
-  writeModuleToFirestoreRest,
+  writeBatchToFirestoreRest,
   sanitizeConfigForClientEdge,
   sanitizeFirebaseConfigForClientEdge,
   preserveSecretsEdge,
   applyModulePatchEdge,
+  appendSyncLogEntryEdge,
   isCmsModuleKey,
   encryptVaultValueWeb,
   EMPTY_ADMIN_CONFIG,
@@ -42,9 +43,23 @@ export async function onRequestGet(context) {
   }
 
   const fbEnv = getFirebaseEnvFromEnv(env);
-  const cloudConfig = fbEnv.isConfigured
-    ? await readSiteConfigFromFirestoreRest(fbEnv.config)
-    : null;
+  let cloudConfig = null;
+  if (fbEnv.isConfigured) {
+    const readRes = await readSiteConfigWithStatusEdge(fbEnv.config);
+    if (readRes.status === 'error') {
+      return jsonResponse(
+        {
+          success: false,
+          error: `Firebase Firestore read failed: ${readRes.error || 'Unable to load workspace configuration'}`
+        },
+        502,
+        {},
+        request,
+        true
+      );
+    }
+    cloudConfig = readRes.config;
+  }
 
   const effectiveConfig = cloudConfig || EMPTY_ADMIN_CONFIG;
   const sanitizedConfig = sanitizeConfigForClientEdge(effectiveConfig, env);
@@ -102,9 +117,35 @@ export async function onRequestPatch(context) {
   }
 
   const fbEnv = getFirebaseEnvFromEnv(env);
-  const existing = fbEnv.isConfigured
-    ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
-    : EMPTY_ADMIN_CONFIG;
+  if (!fbEnv.isConfigured) {
+    return jsonResponse(
+      {
+        success: false,
+        firestoreSaved: false,
+        error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to persist changes.'
+      },
+      503,
+      {},
+      request,
+      true
+    );
+  }
+
+  const readRes = await readSiteConfigWithStatusEdge(fbEnv.config);
+  if (readRes.status === 'error') {
+    return jsonResponse(
+      {
+        success: false,
+        firestoreSaved: false,
+        error: `Firebase Firestore read failed before save: ${readRes.error || 'Unable to read existing configuration'}`
+      },
+      502,
+      {},
+      request,
+      true
+    );
+  }
+  const existing = readRes.config || EMPTY_ADMIN_CONFIG;
 
   const patched = applyModulePatchEdge(existing, moduleKey, data);
 
@@ -119,14 +160,57 @@ export async function onRequestPatch(context) {
     }
   }
 
-  const sanitized = sanitizeConfigForClientEdge(patched.config, env);
-  let firestoreResult = { ok: false, error: 'Firebase not configured in Cloudflare env' };
-  if (fbEnv.isConfigured) {
-    firestoreResult = await writeModuleToFirestoreRest(
-      fbEnv.config,
-      moduleKey,
-      sanitized[moduleKey],
-      { updatedAt: sanitized.updatedAt, dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync }
+  let nextConfig = patched.config;
+  if (moduleKey !== 'syncLogs') {
+    nextConfig = appendSyncLogEntryEdge(
+      nextConfig,
+      {
+        trigger: 'firebase-save',
+        status: 'saved',
+        modulesChanged: [moduleKey],
+        filesCount: 1,
+        branch: nextConfig.githubConfig?.branch || 'main',
+        repo:
+          nextConfig.githubConfig?.repoOwner && nextConfig.githubConfig?.repoName
+            ? `${nextConfig.githubConfig.repoOwner}/${nextConfig.githubConfig.repoName}`
+            : '',
+        durationMs: 0,
+        steps: [
+          `Saved module "${moduleKey}" to Cloud Firestore (${fbEnv.config?.projectId})`,
+          'Staged for next GitHub static site deployment'
+        ],
+        message: `Saved "${moduleKey}" to Firebase Firestore.`
+      },
+      false
+    );
+  }
+
+  const sanitized = sanitizeConfigForClientEdge(nextConfig, env);
+  const batchModules = {
+    [moduleKey]: sanitized[moduleKey],
+    syncLogs: sanitized.syncLogs,
+    githubConfig: sanitized.githubConfig
+  };
+  if (moduleKey === 'domainConfig') batchModules.seo = sanitized.seo;
+  if (moduleKey === 'seo') batchModules.domainConfig = sanitized.domainConfig;
+
+  const firestoreResult = await writeBatchToFirestoreRest(
+    fbEnv.config,
+    batchModules,
+    { updatedAt: sanitized.updatedAt, dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync }
+  );
+
+  if (!firestoreResult.ok) {
+    return jsonResponse(
+      {
+        success: false,
+        firestoreSaved: false,
+        error: `Firebase Firestore rejected save: ${firestoreResult.error || 'Unknown error'}`
+      },
+      502,
+      {},
+      request,
+      true
     );
   }
 
@@ -137,8 +221,8 @@ export async function onRequestPatch(context) {
       bytesSent: JSON.stringify(data ?? {}).length,
       dirtyModulesSinceSync: sanitized.dirtyModulesSinceSync || [],
       config: sanitized,
-      firestoreSaved: firestoreResult.ok,
-      firestoreNotice: firestoreResult.ok ? null : firestoreResult.error,
+      firestoreSaved: true,
+      firestoreNotice: null,
       savedAt: sanitized.updatedAt,
       runtime: 'Cloudflare Pages Functions'
     },
@@ -181,9 +265,35 @@ export async function onRequestPut(context) {
   }
 
   const fbEnv = getFirebaseEnvFromEnv(env);
-  const existing = fbEnv.isConfigured
-    ? (await readSiteConfigFromFirestoreRest(fbEnv.config)) || EMPTY_ADMIN_CONFIG
-    : EMPTY_ADMIN_CONFIG;
+  if (!fbEnv.isConfigured) {
+    return jsonResponse(
+      {
+        success: false,
+        firestoreSaved: false,
+        error: 'Firebase is not configured in Cloudflare environment variables. Add FIREBASE_API_KEY and FIREBASE_PROJECT_ID to persist changes.'
+      },
+      503,
+      {},
+      request,
+      true
+    );
+  }
+
+  const readRes = await readSiteConfigWithStatusEdge(fbEnv.config);
+  if (readRes.status === 'error') {
+    return jsonResponse(
+      {
+        success: false,
+        firestoreSaved: false,
+        error: `Firebase Firestore read failed before save: ${readRes.error || 'Unable to read existing configuration'}`
+      },
+      502,
+      {},
+      request,
+      true
+    );
+  }
+  const existing = readRes.config || EMPTY_ADMIN_CONFIG;
 
   const nextConfig = preserveSecretsEdge(incomingConfig, existing);
   if (nextConfig.securityGate?.primaryDownloadUrl) {
@@ -198,17 +308,27 @@ export async function onRequestPut(context) {
   }
   nextConfig.updatedAt = Date.now();
 
-  let firestoreResult = { ok: false, error: 'Firebase not configured in Cloudflare env' };
-  if (fbEnv.isConfigured) {
-    firestoreResult = await writeSiteConfigToFirestoreRest(fbEnv.config, nextConfig, env);
+  const firestoreResult = await writeSiteConfigToFirestoreRest(fbEnv.config, nextConfig, env);
+  if (!firestoreResult.ok) {
+    return jsonResponse(
+      {
+        success: false,
+        firestoreSaved: false,
+        error: `Firebase Firestore rejected save: ${firestoreResult.error || 'Unknown error'}`
+      },
+      502,
+      {},
+      request,
+      true
+    );
   }
 
   return jsonResponse(
     {
       success: true,
       config: sanitizeConfigForClientEdge(nextConfig, env),
-      firestoreSaved: firestoreResult.ok,
-      firestoreNotice: firestoreResult.ok ? null : firestoreResult.error,
+      firestoreSaved: true,
+      firestoreNotice: null,
       savedAt: nextConfig.updatedAt,
       runtime: 'Cloudflare Pages Functions'
     },

@@ -12,19 +12,25 @@
 
 import crypto from 'crypto';
 import { GitHubDeployConfig } from './cms-types';
-import { CompiledStaticFile } from './static-compiler';
+import { CompiledStaticFile, collectCloudflarePagesRepoSyncFiles } from './static-compiler';
 
 export interface GitHubVerifyResponse {
+  success: boolean;
   ok: boolean;
+  fullName?: string;
   repoFullName?: string;
   defaultBranch?: string;
+  branchChecked?: string;
+  private?: boolean;
   privateRepo?: boolean;
+  canPush?: boolean;
   permissions?: {
     push?: boolean;
     admin?: boolean;
     maintain?: boolean;
   };
   isEmptyRepo?: boolean;
+  error?: string;
   message: string;
 }
 
@@ -108,9 +114,14 @@ export function diffGitTrees(
   const updated: CompiledStaticFile[] = [];
   const unchanged: CompiledStaticFile[] = [];
 
-  for (const file of files) {
+  const resolveFullGitPath = (file: CompiledStaticFile): string => {
     const cleanRel = file.path.replace(/^\/+/, '');
-    const fullPath = prefix ? `${prefix}${cleanRel}` : cleanRel;
+    if (file.rootRelative) return cleanRel;
+    return prefix ? `${prefix}${cleanRel}` : cleanRel;
+  };
+
+  for (const file of files) {
+    const fullPath = resolveFullGitPath(file);
     desiredFullPaths.add(fullPath);
 
     const existingSha = remoteBlobMap.get(fullPath);
@@ -151,8 +162,8 @@ export function diffGitTrees(
   }
 
   const changedPaths = [
-    ...added.map((f) => (prefix ? `${prefix}${f.path.replace(/^\/+/, '')}` : f.path.replace(/^\/+/, ''))),
-    ...updated.map((f) => (prefix ? `${prefix}${f.path.replace(/^\/+/, '')}` : f.path.replace(/^\/+/, ''))),
+    ...added.map((f) => resolveFullGitPath(f)),
+    ...updated.map((f) => resolveFullGitPath(f)),
     ...deletedPaths
   ];
 
@@ -177,12 +188,16 @@ export async function verifyGitHubRepoAccess(
 ): Promise<GitHubVerifyResponse> {
   const owner = (ghConfig.repoOwner || '').trim();
   const repo = (ghConfig.repoName || '').trim();
+  const branch = (ghConfig.branch || 'main').trim() || 'main';
   const token = (ghConfig.fineGrainedToken || '').trim();
 
   if (!owner || !repo || !token) {
+    const msg = 'Please provide Repository Owner, Repository Name, and a GitHub Fine-Grained Token.';
     return {
+      success: false,
       ok: false,
-      message: 'Please provide Repository Owner, Repository Name, and a GitHub Fine-Grained Token.'
+      error: msg,
+      message: msg
     };
   }
 
@@ -200,31 +215,46 @@ export async function verifyGitHubRepoAccess(
       } catch {
         // ignore
       }
+      const msg = `GitHub Verification Failed: ${errText}. Ensure the repository exists and the Fine-Grained Token has "Contents: Read and write" access.`;
       return {
+        success: false,
         ok: false,
-        message: `GitHub Verification Failed: ${errText}. Ensure the repository exists and the Fine-Grained Token has "Contents: Read and write" access.`
+        error: msg,
+        message: msg
       };
     }
 
     const data: any = await res.json();
     const canPush = data.permissions ? Boolean(data.permissions.push || data.permissions.admin) : true;
     const isEmptyRepo = Number(data.size) === 0;
+    const fullName = data.full_name || `${owner}/${repo}`;
+    const isPrivate = Boolean(data.private);
+    const msg = canPush
+      ? `Connected to ${fullName} (Default branch: ${data.default_branch || 'main'}${isEmptyRepo ? ' — Empty repo will be auto-initialized on first push' : ''}). Ready to publish static builds.`
+      : `Token has read access to ${fullName}, but lacks write ("Contents: Read and write") permission.`;
 
     return {
+      success: canPush,
       ok: canPush,
-      repoFullName: data.full_name || `${owner}/${repo}`,
+      fullName,
+      repoFullName: fullName,
       defaultBranch: data.default_branch || 'main',
-      privateRepo: Boolean(data.private),
+      branchChecked: branch,
+      private: isPrivate,
+      privateRepo: isPrivate,
+      canPush,
       permissions: data.permissions,
       isEmptyRepo,
-      message: canPush
-        ? `Connected to ${data.full_name} (Default branch: ${data.default_branch || 'main'}${isEmptyRepo ? ' — Empty repo will be auto-initialized on first push' : ''}). Ready to publish static builds.`
-        : `Token has read access to ${data.full_name}, but lacks write ("Contents: Read and write") permission.`
+      message: msg,
+      ...(canPush ? {} : { error: msg })
     };
   } catch (err: any) {
+    const msg = `Network error connecting to GitHub API: ${err?.message || 'Unknown error'}`;
     return {
+      success: false,
       ok: false,
-      message: `Network error connecting to GitHub API: ${err?.message || 'Unknown error'}`
+      error: msg,
+      message: msg
     };
   }
 }
@@ -422,7 +452,51 @@ export async function pushStaticFilesToGitHub(
       }
     }
 
-    const diff = diffGitTrees(files, remoteEntries, targetDir);
+    // If the remote repository is a full Cloudflare Pages deployment repository (contains functions/ or vite.config.ts),
+    // automatically synchronize root-level Cloudflare Pages runtime files and public/ static-routes so Vite builds on Cloudflare Pages stay 100% in sync.
+    const isFullCloudflareRepo = remoteEntries.some(
+      (e) => e.path === 'vite.config.ts' || e.path === 'admin.html' || e.path.startsWith('functions/')
+    );
+    let effectiveFiles = [...files];
+    if (isFullCloudflareRepo) {
+      const runtimeFiles = collectCloudflarePagesRepoSyncFiles();
+      const existingRootPaths = new Set(
+        effectiveFiles.filter((f) => f.rootRelative).map((f) => f.path.replace(/^\/+/, ''))
+      );
+      for (const rf of runtimeFiles) {
+        const cleanRf = rf.path.replace(/^\/+/, '');
+        if (!existingRootPaths.has(cleanRf)) {
+          effectiveFiles.push(rf);
+          existingRootPaths.add(cleanRf);
+        }
+      }
+      if (targetDir) {
+        const PUBLIC_MIRROR_FILES = new Set([
+          'sitemap.xml',
+          'robots.txt',
+          'feed.xml',
+          'manifest.webmanifest',
+          '_headers'
+        ]);
+        for (const f of files) {
+          if (f.rootRelative) continue;
+          const cleanRel = f.path.replace(/^\/+/, '');
+          if (cleanRel.startsWith('static-routes/') || PUBLIC_MIRROR_FILES.has(cleanRel)) {
+            const pubPath = `public/${cleanRel}`;
+            if (!existingRootPaths.has(pubPath)) {
+              effectiveFiles.push({
+                ...f,
+                path: pubPath,
+                rootRelative: true
+              });
+              existingRootPaths.add(pubPath);
+            }
+          }
+        }
+      }
+    }
+
+    const diff = diffGitTrees(effectiveFiles, remoteEntries, targetDir);
     const totalChanged = diff.added.length + diff.updated.length + diff.deletedPaths.length;
 
     if (baseTreeSha && remoteEntries.length > 0 && totalChanged === 0) {
@@ -444,12 +518,12 @@ export async function pushStaticFilesToGitHub(
     }
 
     // 3. Build Delta Tree Entries (Only Added/Updated Files + Orphan Deletions)
-    const filesToUpload = remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : files;
+    const filesToUpload = remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : effectiveFiles;
     const treeEntries: Array<Record<string, any>> = [];
 
     for (const file of filesToUpload) {
       const cleanPath = file.path.replace(/^\/+/, '');
-      const fullPath = targetDir ? `${targetDir}/${cleanPath}` : cleanPath;
+      const fullPath = file.rootRelative ? cleanPath : targetDir ? `${targetDir}/${cleanPath}` : cleanPath;
       if (file.encoding === 'base64') {
         const blobSha = await createGitHubBinaryBlob(baseUrl, headers, file.content);
         treeEntries.push({

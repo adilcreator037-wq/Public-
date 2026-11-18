@@ -272,13 +272,18 @@ export async function saveSiteConfigRemote(config, editedModules = []) {
     return {
       success: false,
       status: res.status,
+      firestoreSaved: false,
       error: data?.error || `Failed to save configuration (HTTP ${res.status}).`
     };
   }
   if (data.config) {
     inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
   }
-  return data;
+  return {
+    ...data,
+    firestoreSaved: Boolean(data.firestoreSaved),
+    firestoreNotice: data.firestoreNotice || null
+  };
 }
 
 /**
@@ -307,6 +312,7 @@ export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
     return {
       success: false,
       status: res.status,
+      firestoreSaved: false,
       error: data?.error || `Failed to save module [${moduleKey}] (HTTP ${res.status}).`
     };
   }
@@ -315,6 +321,8 @@ export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
   }
   return {
     ...data,
+    firestoreSaved: Boolean(data.firestoreSaved),
+    firestoreNotice: data.firestoreNotice || null,
     message: data.message || `Saved module [${moduleKey}]`
   };
 }
@@ -344,13 +352,18 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
     return {
       success: false,
       status: res.status,
+      firestoreSaved: false,
       error: data?.error || `Failed to save modules batch (HTTP ${res.status}).`
     };
   }
   if (data.config) {
     inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
   }
-  return data;
+  return {
+    ...data,
+    firestoreSaved: Boolean(data.firestoreSaved),
+    firestoreNotice: data.firestoreNotice || null
+  };
 }
 
 /**
@@ -371,7 +384,10 @@ export async function resetSiteConfigRemote() {
   if (res.status === 401) {
     notifyAdminUnauthorized(data?.error);
   }
-  if (res.ok && data?.config) {
+  if (!res.ok || !data?.success) {
+    throw new Error(data?.error || `Failed to reset workspace (HTTP ${res.status}).`);
+  }
+  if (data?.config) {
     inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
     return inMemoryCachedConfig;
   }
@@ -433,6 +449,9 @@ export async function verifyGitHubRepoRemote(ghPayload) {
     });
     const data = await res.json().catch(() => null);
     if (res.status === 401) notifyAdminUnauthorized(data?.error);
+    if (data?.config) {
+      inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+    }
     return data || { success: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {
     return { success: false, error: err?.message || 'Network error verifying GitHub access.' };
@@ -442,7 +461,22 @@ export async function verifyGitHubRepoRemote(ghPayload) {
 /**
  * Compile static public website & push changed blobs to GitHub (`POST /api/github/publish`)
  */
-export async function publishStaticSiteToGitHubRemote(payload) {
+export async function publishStaticSiteToGitHubRemote(
+  payloadOrGhConfig = {},
+  fullConfig = null,
+  modulesChanged = null
+) {
+  let bodyObj = {};
+  if (fullConfig && typeof fullConfig === 'object') {
+    bodyObj = {
+      config: fullConfig,
+      githubConfig: payloadOrGhConfig || fullConfig.githubConfig || {},
+      ...(Array.isArray(modulesChanged) ? { modulesChanged } : {})
+    };
+  } else if (payloadOrGhConfig && typeof payloadOrGhConfig === 'object') {
+    bodyObj = payloadOrGhConfig;
+  }
+
   try {
     const res = await fetch('/api/github/publish', {
       method: 'POST',
@@ -452,7 +486,7 @@ export async function publishStaticSiteToGitHubRemote(payload) {
         Accept: 'application/json',
         'X-Admin-CSRF': '1'
       },
-      body: JSON.stringify(payload || {})
+      body: JSON.stringify(bodyObj)
     });
     const data = await res.json().catch(() => null);
     if (res.status === 401) notifyAdminUnauthorized(data?.error);
@@ -492,7 +526,10 @@ export async function loginAdminUser(emailOrObj, password = '', apiKey = '') {
     });
     const data = await res.json().catch(() => null);
     if (res.ok && data?.success) {
-      const fbCfg = data.firebaseEnv?.config || data.firebaseConfig;
+      const fbCfg =
+        data.firebaseEnv?.config ||
+        data.firebaseConfig ||
+        data.envDiagnostics?.firebaseConfig;
       if (fbCfg) setServerEnvFirebaseConfig(fbCfg);
       if (data.envDiagnostics) lastEnvDiagnostics = data.envDiagnostics;
       return { success: true, user: data.user };
@@ -530,7 +567,11 @@ export async function verifyAdminSession() {
     });
     const data = await res.json().catch(() => null);
     if (res.ok && data?.authenticated) {
-      if (data.firebaseConfig) setServerEnvFirebaseConfig(data.firebaseConfig);
+      const fbCfg =
+        data.firebaseEnv?.config ||
+        data.firebaseConfig ||
+        data.envDiagnostics?.firebaseConfig;
+      if (fbCfg) setServerEnvFirebaseConfig(fbCfg);
       if (data.envDiagnostics) lastEnvDiagnostics = data.envDiagnostics;
       return { authenticated: true, user: data.user, status: res.status, code: '' };
     }

@@ -25,7 +25,10 @@ import {
   generateWebManifestJson,
   auditSiteSeoHealth,
   renderGatewayPageHtml,
+  SECRET_MASK,
   encryptVaultValue,
+  decryptVaultValue,
+  resolveVaultSecret,
   evaluateGateG1,
   handleSessionInit,
   handleSessionClearance,
@@ -372,12 +375,22 @@ async function readSiteConfigWithStatusNode(
     }).catch(() => null)
   ]);
 
-  if (!modulesRes && !mainRes) {
+  if (!modulesRes || !mainRes) {
     return { status: 'error', config: null, error: 'Network error reaching Firestore' };
   }
 
+  if (
+    (mainRes.status !== 200 && mainRes.status !== 404) ||
+    (modulesRes.status !== 200 && modulesRes.status !== 404)
+  ) {
+    const failedRes = mainRes.status !== 200 && mainRes.status !== 404 ? mainRes : modulesRes;
+    const errBody: any = await failedRes.json().catch(() => ({}));
+    const errMsg = errBody?.error?.message || `Firestore HTTP ${failedRes.status}`;
+    return { status: 'error', config: null, error: errMsg };
+  }
+
   let mainObj: Record<string, any> | null = null;
-  if (mainRes && mainRes.ok) {
+  if (mainRes.ok) {
     const docData: any = await mainRes.json().catch(() => null);
     if (docData?.fields) {
       mainObj = {};
@@ -385,8 +398,6 @@ async function readSiteConfigWithStatusNode(
         mainObj[k] = decodeFsVal(v);
       }
     }
-  } else if (mainRes && mainRes.status !== 404 && (!modulesRes || !modulesRes.ok)) {
-    return { status: 'error', config: null, error: `Firestore HTTP ${mainRes.status}` };
   }
 
   let modulesCount = 0;
@@ -416,15 +427,79 @@ async function readSiteConfigWithStatusNode(
   if (modulesCount === 0 && !mainObj) {
     return { status: 'empty', config: null };
   }
+
+  if (assembled.githubConfig && typeof assembled.githubConfig === 'object') {
+    const rawTok = cleanEnvVal(assembled.githubConfig.fineGrainedToken);
+    let decryptedTok = '';
+    if (rawTok && rawTok !== SECRET_MASK) {
+      try {
+        decryptedTok = rawTok.startsWith('v2.')
+          ? await decryptVaultValue(rawTok, process.env, resolveVaultSecret(process.env))
+          : rawTok;
+      } catch {
+        decryptedTok = '';
+      }
+    }
+    assembled.githubConfig.fineGrainedToken = decryptedTok;
+    assembled.githubConfig.hasFineGrainedToken = Boolean(decryptedTok);
+  }
+
+  if (assembled.securityGate && typeof assembled.securityGate === 'object') {
+    const rawTs = cleanEnvVal(assembled.securityGate.turnstileSecretKey);
+    let decryptedTs = '';
+    if (rawTs && rawTs !== SECRET_MASK) {
+      try {
+        decryptedTs = rawTs.startsWith('v2.')
+          ? await decryptVaultValue(rawTs, process.env, resolveVaultSecret(process.env))
+          : rawTs;
+      } catch {
+        decryptedTs = '';
+      }
+    }
+    assembled.securityGate.turnstileSecretKey = decryptedTs;
+    assembled.securityGate.hasTurnstileSecretKey = Boolean(decryptedTs);
+  }
+
   return { status: 'ok', config: mergeSiteConfig(assembled, EMPTY_ADMIN_CONFIG) };
+}
+
+async function prepareModuleForFirestoreNode(moduleKey: string, moduleData: any): Promise<any> {
+  if (!moduleData || typeof moduleData !== 'object') return moduleData;
+  const clone = JSON.parse(JSON.stringify(moduleData));
+  if (moduleKey === 'githubConfig') {
+    const rawTok = cleanEnvVal(clone.fineGrainedToken);
+    if (rawTok && rawTok !== SECRET_MASK) {
+      clone.fineGrainedToken = rawTok.startsWith('v2.')
+        ? rawTok
+        : await encryptVaultValue(rawTok, process.env, resolveVaultSecret(process.env));
+      clone.hasFineGrainedToken = true;
+    } else {
+      clone.fineGrainedToken = '';
+      clone.hasFineGrainedToken = false;
+    }
+  } else if (moduleKey === 'securityGate') {
+    const rawTs = cleanEnvVal(clone.turnstileSecretKey);
+    if (rawTs && rawTs !== SECRET_MASK) {
+      clone.turnstileSecretKey = rawTs.startsWith('v2.')
+        ? rawTs
+        : await encryptVaultValue(rawTs, process.env, resolveVaultSecret(process.env));
+      clone.hasTurnstileSecretKey = true;
+    } else {
+      clone.turnstileSecretKey = '';
+      clone.hasTurnstileSecretKey = false;
+    }
+  }
+  return clone;
 }
 
 async function writeBatchToFirestoreRestNode(
   fbCfg: any,
   modulesMap: Record<string, any>,
   meta: { updatedAt?: number; dirtyModulesSinceSync?: string[] } = {}
-): Promise<boolean> {
-  if (!fbCfg?.projectId || !fbCfg?.apiKey) return false;
+): Promise<{ ok: boolean; error?: string; writesCommitted?: number }> {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) {
+    return { ok: false, error: 'Missing Firebase config' };
+  }
   const dbIdRaw = fbCfg.databaseId || '(default)';
   const docRoot = `projects/${fbCfg.projectId}/databases/${dbIdRaw}/documents`;
   const commitUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
@@ -435,11 +510,12 @@ async function writeBatchToFirestoreRestNode(
 
   for (const [moduleKey, moduleData] of Object.entries(modulesMap || {})) {
     if (!isCmsModuleKey(moduleKey) || moduleData === undefined) continue;
+    const preparedData = await prepareModuleForFirestoreNode(moduleKey, moduleData);
     writes.push({
       update: {
         name: `${docRoot}/cmsModules/${moduleKey}`,
         fields: {
-          data: encodeFsVal(moduleData),
+          data: encodeFsVal(preparedData),
           updatedAt: encodeFsVal(now)
         }
       }
@@ -464,9 +540,13 @@ async function writeBatchToFirestoreRestNode(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ writes })
     });
-    return res.ok;
-  } catch {
-    return false;
+    if (!res.ok) {
+      const errBody: any = await res.json().catch(() => ({}));
+      return { ok: false, error: errBody?.error?.message || `HTTP ${res.status}` };
+    }
+    return { ok: true, writesCommitted: writes.length };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Firestore batch commit failed' };
   }
 }
 
@@ -1374,19 +1454,23 @@ async function startServer() {
     const sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
     const fbEnv = getFirebaseEnvConfig();
     let firestoreSaved = false;
+    let firestoreNotice: string | null = null;
     if (fbEnv.isConfigured && fbEnv.config) {
-      firestoreSaved = await writeBatchToFirestoreRestNode(
+      const fbRes = await writeBatchToFirestoreRestNode(
         fbEnv.config,
         {
           syncLogs: [],
-          githubConfig: sanitized.githubConfig
+          githubConfig: saved.githubConfig
         },
         { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
       );
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
     }
     res.json({
       success: true,
       firestoreSaved,
+      firestoreNotice,
       config: sanitized
     });
   });
@@ -1418,45 +1502,81 @@ async function startServer() {
       }
     }
 
-    let saved = savePersistedSiteConfig(patched.config);
     const bytesSent = Buffer.byteLength(JSON.stringify(data ?? {}), 'utf-8');
     const fbEnv = getFirebaseEnvConfig();
     let firestoreSaved = false;
-    let sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    let firestoreNotice: string | null = null;
+    let workingConfig = patched.config;
+
     if (fbEnv.isConfigured && fbEnv.config) {
-      firestoreSaved = await writeBatchToFirestoreRestNode(
-        fbEnv.config,
-        { [moduleKey]: sanitizedConfig[moduleKey as CmsModuleKey] },
-        { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
-      );
+      const candidateWithLog =
+        moduleKey !== 'syncLogs'
+          ? appendSyncLogEntry(
+              workingConfig,
+              {
+                trigger: 'firebase-save',
+                status: 'success',
+                modulesChanged: [moduleKey],
+                filesCount: 1,
+                changedPaths: [`cmsModules/${moduleKey}`],
+                steps: [
+                  `Updated module "${moduleKey}" (${(bytesSent / 1024).toFixed(1)} KB payload)`,
+                  `Committed to Cloud Firestore (${fbEnv.config?.projectId})`
+                ],
+                message: `Saved module "${moduleKey}" to Firebase Firestore (${(bytesSent / 1024).toFixed(1)} KB).`
+              },
+              false
+            )
+          : workingConfig;
+
+      const batchMap: Record<string, any> = {
+        [moduleKey]: candidateWithLog[moduleKey as CmsModuleKey],
+        syncLogs: candidateWithLog.syncLogs,
+        githubConfig: candidateWithLog.githubConfig
+      };
+      if (moduleKey === 'domainConfig') batchMap.seo = candidateWithLog.seo;
+      if (moduleKey === 'seo') batchMap.domainConfig = candidateWithLog.domainConfig;
+
+      const fbRes = await writeBatchToFirestoreRestNode(fbEnv.config, batchMap, {
+        updatedAt: candidateWithLog.updatedAt,
+        dirtyModulesSinceSync: candidateWithLog.dirtyModulesSinceSync
+      });
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
+      if (fbRes.ok) {
+        workingConfig = candidateWithLog;
+      }
     }
 
     const saveMsg = firestoreSaved
       ? `Saved module "${moduleKey}" to Firebase Firestore (${(bytesSent / 1024).toFixed(1)} KB).`
+      : fbEnv.isConfigured && firestoreNotice
+      ? `Saved module "${moduleKey}" locally, but Firebase sync failed: ${firestoreNotice}`
       : `Saved module "${moduleKey}" & updated static bundle (${(bytesSent / 1024).toFixed(1)} KB).`;
 
-    if (moduleKey !== 'syncLogs') {
-      saved = appendSyncLogEntry(
-        saved,
+    if (!firestoreSaved && moduleKey !== 'syncLogs') {
+      workingConfig = appendSyncLogEntry(
+        workingConfig,
         {
           trigger: 'firebase-save',
-          status: firestoreSaved ? 'success' : 'local-only',
+          status: 'local-only',
           modulesChanged: [moduleKey],
           filesCount: 1,
           changedPaths: [`cmsModules/${moduleKey}`],
           steps: [
             `Updated module "${moduleKey}" (${(bytesSent / 1024).toFixed(1)} KB payload)`,
-            firestoreSaved
-              ? `Committed to Cloud Firestore (${fbEnv.config?.projectId})`
+            firestoreNotice
+              ? `Firestore write failed (${firestoreNotice}); saved to local workspace (/dist-public)`
               : 'Saved to local workspace & re-compiled static bundle (/dist-public)'
           ],
           message: saveMsg
         },
         false
       );
-      saved = savePersistedSiteConfig(saved);
-      sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
     }
+
+    const saved = savePersistedSiteConfig(workingConfig);
+    const sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
 
     res.json({
       success: true,
@@ -1464,6 +1584,7 @@ async function startServer() {
       bytesSent,
       dirtyModulesSinceSync: saved.dirtyModulesSinceSync || [],
       firestoreSaved,
+      firestoreNotice,
       message: saveMsg,
       config: sanitizedConfig,
       seoAudit: auditSiteSeoHealth(saved),
@@ -1502,49 +1623,83 @@ async function startServer() {
       }
     }
 
-    let saved = savePersistedSiteConfig(patched.config);
     const bytesSent = Buffer.byteLength(JSON.stringify(modulesMap ?? {}), 'utf-8');
-    let sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
     const fbEnv = getFirebaseEnvConfig();
     let firestoreSaved = false;
+    let firestoreNotice: string | null = null;
+    const nonLogKeys = validKeys.filter((k) => k !== 'syncLogs');
+    let workingConfig = patched.config;
 
     if (fbEnv.isConfigured && fbEnv.config) {
-      const batchData: Record<string, any> = {};
+      const candidateWithLog =
+        nonLogKeys.length > 0
+          ? appendSyncLogEntry(
+              workingConfig,
+              {
+                trigger: 'firebase-save',
+                status: 'success',
+                modulesChanged: nonLogKeys,
+                filesCount: nonLogKeys.length,
+                changedPaths: nonLogKeys.map((k) => `cmsModules/${k}`),
+                durationMs: Date.now() - startTime,
+                steps: [
+                  `Patched ${nonLogKeys.length} module(s): ${nonLogKeys.join(', ')} (${(bytesSent / 1024).toFixed(1)} KB)`,
+                  `Committed atomic batch to Cloud Firestore (${fbEnv.config?.projectId})`
+                ],
+                message: `Saved ${nonLogKeys.join(', ')} to Firebase Firestore (${(bytesSent / 1024).toFixed(1)} KB).`
+              },
+              false
+            )
+          : workingConfig;
+
+      const batchData: Record<string, any> = {
+        syncLogs: candidateWithLog.syncLogs,
+        githubConfig: candidateWithLog.githubConfig
+      };
       for (const k of validKeys) {
-        batchData[k] = sanitizedConfig[k];
+        batchData[k] = candidateWithLog[k];
       }
-      firestoreSaved = await writeBatchToFirestoreRestNode(fbEnv.config, batchData, {
-        updatedAt: saved.updatedAt,
-        dirtyModulesSinceSync: saved.dirtyModulesSinceSync
+      if (validKeys.includes('domainConfig')) batchData.seo = candidateWithLog.seo;
+      if (validKeys.includes('seo')) batchData.domainConfig = candidateWithLog.domainConfig;
+
+      const fbRes = await writeBatchToFirestoreRestNode(fbEnv.config, batchData, {
+        updatedAt: candidateWithLog.updatedAt,
+        dirtyModulesSinceSync: candidateWithLog.dirtyModulesSinceSync
       });
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
+      if (fbRes.ok) {
+        workingConfig = candidateWithLog;
+      }
     }
 
-    const nonLogKeys = validKeys.filter((k) => k !== 'syncLogs');
-    if (nonLogKeys.length > 0) {
-      saved = appendSyncLogEntry(
-        saved,
+    if (!firestoreSaved && nonLogKeys.length > 0) {
+      workingConfig = appendSyncLogEntry(
+        workingConfig,
         {
           trigger: 'firebase-save',
-          status: firestoreSaved ? 'success' : 'local-only',
+          status: 'local-only',
           modulesChanged: nonLogKeys,
           filesCount: nonLogKeys.length,
           changedPaths: nonLogKeys.map((k) => `cmsModules/${k}`),
           durationMs: Date.now() - startTime,
           steps: [
             `Patched ${nonLogKeys.length} module(s): ${nonLogKeys.join(', ')} (${(bytesSent / 1024).toFixed(1)} KB)`,
-            firestoreSaved
-              ? `Committed atomic batch to Cloud Firestore (${fbEnv.config?.projectId})`
+            firestoreNotice
+              ? `Firestore write failed (${firestoreNotice}); saved to local workspace (/dist-public)`
               : 'Saved to local workspace & re-compiled static public bundle (/dist-public)'
           ],
-          message: firestoreSaved
-            ? `Saved ${nonLogKeys.join(', ')} to Firebase Firestore (${(bytesSent / 1024).toFixed(1)} KB).`
-            : `Saved ${nonLogKeys.join(', ')} & re-compiled static bundle (${(bytesSent / 1024).toFixed(1)} KB).`
+          message:
+            fbEnv.isConfigured && firestoreNotice
+              ? `Saved ${nonLogKeys.join(', ')} locally, but Firebase sync failed: ${firestoreNotice}`
+              : `Saved ${nonLogKeys.join(', ')} & re-compiled static bundle (${(bytesSent / 1024).toFixed(1)} KB).`
         },
         false
       );
-      saved = savePersistedSiteConfig(saved);
-      sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
     }
+
+    const saved = savePersistedSiteConfig(workingConfig);
+    const sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
 
     res.json({
       success: true,
@@ -1552,6 +1707,7 @@ async function startServer() {
       bytesSent,
       dirtyModulesSinceSync: saved.dirtyModulesSinceSync || [],
       firestoreSaved,
+      firestoreNotice,
       config: sanitizedConfig,
       seoAudit: auditSiteSeoHealth(saved),
       savedAt: saved.updatedAt
@@ -1590,6 +1746,39 @@ async function startServer() {
     );
 
     let saved = savePersistedSiteConfig(mergedIncoming);
+    let sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+    const fbEnv = getFirebaseEnvConfig();
+    let firestoreSaved = false;
+    let firestoreNotice: string | null = null;
+    if (fbEnv.isConfigured && fbEnv.config) {
+      const fullModulesMap: Record<string, any> = {};
+      for (const k of [
+        'brand',
+        'hero',
+        'uiConfig',
+        'packageSpecs',
+        'sections',
+        'newsSection',
+        'faqsSection',
+        'content',
+        'navigation',
+        'pages',
+        'domainConfig',
+        'seo',
+        'securityGate',
+        'githubConfig',
+        'syncLogs'
+      ] as CmsModuleKey[]) {
+        fullModulesMap[k] = saved[k];
+      }
+      const fbRes = await writeBatchToFirestoreRestNode(fbEnv.config, fullModulesMap, {
+        updatedAt: saved.updatedAt,
+        dirtyModulesSinceSync: saved.dirtyModulesSinceSync
+      });
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
+    }
+
     let githubPush = null;
 
     if (
@@ -1633,13 +1822,27 @@ async function startServer() {
           githubPush.ok
         );
         saved = savePersistedSiteConfig(saved);
+        sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
+        if (fbEnv.isConfigured && fbEnv.config && firestoreSaved) {
+          await writeBatchToFirestoreRestNode(
+            fbEnv.config,
+            {
+              syncLogs: saved.syncLogs,
+              githubConfig: saved.githubConfig
+            },
+            {
+              updatedAt: saved.updatedAt,
+              dirtyModulesSinceSync: saved.dirtyModulesSinceSync
+            }
+          );
+        }
       }
     }
 
-    const sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
-
     res.json({
       success: true,
+      firestoreSaved,
+      firestoreNotice,
       config: sanitizedConfig,
       githubPush,
       seoAudit: auditSiteSeoHealth(saved),
@@ -1662,15 +1865,50 @@ async function startServer() {
         ? incomingToken
         : persisted.githubConfig?.fineGrainedToken || envToken;
 
+    const repoOwner =
+      ghCfg.repoOwner || persisted.githubConfig?.repoOwner || cleanEnvVal(process.env.GITHUB_REPO_OWNER);
+    const repoName =
+      ghCfg.repoName || persisted.githubConfig?.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME);
+    const branch =
+      ghCfg.branch || persisted.githubConfig?.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main';
+
     const result = await verifyGitHubRepoAccess({
-      repoOwner:
-        ghCfg.repoOwner || persisted.githubConfig?.repoOwner || cleanEnvVal(process.env.GITHUB_REPO_OWNER),
-      repoName:
-        ghCfg.repoName || persisted.githubConfig?.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME),
-      branch:
-        ghCfg.branch || persisted.githubConfig?.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main',
+      repoOwner,
+      repoName,
+      branch,
       fineGrainedToken: effectiveToken
     });
+
+    if (result.ok && effectiveToken) {
+      const patched = applyModulePatch(
+        persisted,
+        'githubConfig',
+        {
+          ...persisted.githubConfig,
+          repoOwner,
+          repoName,
+          branch: result.defaultBranch || branch,
+          fineGrainedToken: effectiveToken,
+          hasFineGrainedToken: true
+        },
+        EMPTY_ADMIN_CONFIG
+      );
+      const saved = savePersistedSiteConfig(patched.config);
+      const fbEnv = getFirebaseEnvConfig();
+      if (fbEnv.isConfigured && fbEnv.config) {
+        await writeBatchToFirestoreRestNode(
+          fbEnv.config,
+          { githubConfig: saved.githubConfig },
+          { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
+        );
+      }
+      res.json({
+        ...result,
+        config: sanitizeConfigForClient(saved, getEnvSecretFlags())
+      });
+      return;
+    }
+
     res.json(result);
   });
 
@@ -1726,13 +1964,26 @@ async function startServer() {
   app.post('/api/github/publish', requireAdminAuth, async (req, res) => {
     const startTime = Date.now();
     const persisted = loadPersistedSiteConfig();
-    const incomingConfig = req.body?.config
+    let incomingConfig = req.body?.config
       ? mergeSiteConfig(preserveSecretsOnSave(req.body.config, persisted), EMPTY_ADMIN_CONFIG)
       : persisted;
+    const ghOverride =
+      req.body?.githubConfig && typeof req.body.githubConfig === 'object'
+        ? req.body.githubConfig
+        : !req.body?.config && (req.body?.repoOwner || req.body?.repoName || req.body?.fineGrainedToken)
+        ? req.body
+        : null;
+    if (ghOverride) {
+      incomingConfig = mergeSiteConfig(
+        preserveSecretsOnSave({ ...incomingConfig, githubConfig: ghOverride }, incomingConfig),
+        EMPTY_ADMIN_CONFIG
+      );
+    }
+
     const customCommitMessage = String(req.body?.commitMessage || '').trim();
     const modulesChanged: string[] = Array.isArray(req.body?.modulesChanged)
       ? req.body.modulesChanged
-      : persisted.dirtyModulesSinceSync || [];
+      : incomingConfig.dirtyModulesSinceSync || [];
 
     let saved = savePersistedSiteConfig(incomingConfig);
     const envToken = cleanEnvVal(
@@ -1821,18 +2072,21 @@ async function startServer() {
     const sanitizedConfig = sanitizeConfigForClient(saved, getEnvSecretFlags());
     const fbEnv = getFirebaseEnvConfig();
     let firestoreSaved = false;
+    let firestoreNotice: string | null = null;
     if (fbEnv.isConfigured && fbEnv.config) {
-      firestoreSaved = await writeBatchToFirestoreRestNode(
+      const fbRes = await writeBatchToFirestoreRestNode(
         fbEnv.config,
         {
-          syncLogs: sanitizedConfig.syncLogs,
-          githubConfig: sanitizedConfig.githubConfig
+          syncLogs: saved.syncLogs,
+          githubConfig: saved.githubConfig
         },
         {
           updatedAt: saved.updatedAt,
           dirtyModulesSinceSync: saved.dirtyModulesSinceSync
         }
       );
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
     }
 
     const distinctIcons = new Set(
@@ -1849,7 +2103,19 @@ async function startServer() {
     res.json({
       success: pushResult.ok,
       firestoreSaved,
+      firestoreNotice,
       publishResult: pushResult,
+      addedCount: pushResult.addedCount ?? 0,
+      updatedCount: pushResult.updatedCount ?? 0,
+      deletedCount: pushResult.deletedCount ?? 0,
+      unchangedCount: pushResult.unchangedCount ?? 0,
+      skipped: Boolean(pushResult.skipped),
+      filesCount: pushResult.filesPushed ?? bundle.totalFiles,
+      compiledLocalFiles: bundle.totalFiles,
+      commitSha: pushResult.commitSha,
+      commitUrl: pushResult.commitUrl,
+      message: pushResult.message,
+      ...(pushResult.ok ? {} : { error: pushResult.message }),
       syncLog: saved.syncLogs?.[0] || null,
       compiledBundle: {
         compiledAt: bundle.compiledAt,
@@ -1923,40 +2189,72 @@ async function startServer() {
     }
 
     const patched = applyModulePatch(current, 'newsSection', nextNewsSection, EMPTY_ADMIN_CONFIG);
-    let saved = savePersistedSiteConfig(patched.config);
-    let sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
     const fbEnv = getFirebaseEnvConfig();
     let firestoreSaved = false;
+    let firestoreNotice: string | null = null;
+    let workingConfig = patched.config;
+
     if (fbEnv.isConfigured && fbEnv.config) {
-      firestoreSaved = await writeBatchToFirestoreRestNode(
+      const candidateWithLog = appendSyncLogEntry(
+        workingConfig,
+        {
+          trigger: 'firebase-save',
+          status: 'success',
+          modulesChanged: ['newsSection'],
+          filesCount: 1,
+          changedPaths: [`/news/${newArticle.slug}`],
+          steps: [
+            `Published news article "${newArticle.title}" (/news/${newArticle.slug})`,
+            `Saved newsSection to Cloud Firestore (${fbEnv.config?.projectId})`
+          ],
+          message: `Published news article "${newArticle.title}" (/news/${newArticle.slug}).`
+        },
+        false
+      );
+      const sanitizedForCloud = sanitizeConfigForClient(candidateWithLog, getEnvSecretFlags());
+      const fbRes = await writeBatchToFirestoreRestNode(
         fbEnv.config,
-        { newsSection: sanitized.newsSection },
-        { updatedAt: saved.updatedAt, dirtyModulesSinceSync: saved.dirtyModulesSinceSync }
+        {
+          newsSection: sanitizedForCloud.newsSection,
+          syncLogs: sanitizedForCloud.syncLogs,
+          githubConfig: sanitizedForCloud.githubConfig
+        },
+        { updatedAt: candidateWithLog.updatedAt, dirtyModulesSinceSync: candidateWithLog.dirtyModulesSinceSync }
+      );
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
+      if (fbRes.ok) {
+        workingConfig = candidateWithLog;
+      }
+    }
+
+    if (!firestoreSaved) {
+      workingConfig = appendSyncLogEntry(
+        workingConfig,
+        {
+          trigger: 'firebase-save',
+          status: 'local-only',
+          modulesChanged: ['newsSection'],
+          filesCount: 1,
+          changedPaths: [`/news/${newArticle.slug}`],
+          steps: [
+            `Published news article "${newArticle.title}" (/news/${newArticle.slug})`,
+            firestoreNotice
+              ? `Firestore write failed (${firestoreNotice}); saved locally`
+              : 'Saved to local workspace & re-compiled static news route'
+          ],
+          message: `Published news article "${newArticle.title}" (/news/${newArticle.slug}).`
+        },
+        false
       );
     }
-    saved = appendSyncLogEntry(
-      saved,
-      {
-        trigger: 'firebase-save',
-        status: firestoreSaved ? 'success' : 'local-only',
-        modulesChanged: ['newsSection'],
-        filesCount: 1,
-        changedPaths: [`/news/${newArticle.slug}`],
-        steps: [
-          `Published news article "${newArticle.title}" (/news/${newArticle.slug})`,
-          firestoreSaved
-            ? `Saved newsSection to Cloud Firestore (${fbEnv.config?.projectId})`
-            : 'Saved to local workspace & re-compiled static news route'
-        ],
-        message: `Published news article "${newArticle.title}" (/news/${newArticle.slug}).`
-      },
-      false
-    );
-    saved = savePersistedSiteConfig(saved);
-    sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
+
+    const saved = savePersistedSiteConfig(workingConfig);
+    const sanitized = sanitizeConfigForClient(saved, getEnvSecretFlags());
     res.json({
       success: true,
       firestoreSaved,
+      firestoreNotice,
       article: newArticle,
       config: sanitized,
       seoAudit: auditSiteSeoHealth(saved)
@@ -1969,19 +2267,23 @@ async function startServer() {
     const sanitized = sanitizeConfigForClient(fresh, getEnvSecretFlags());
     const fbEnv = getFirebaseEnvConfig();
     let firestoreSaved = false;
+    let firestoreNotice: string | null = null;
     if (fbEnv.isConfigured && fbEnv.config) {
       const clearMap: Record<string, any> = {};
-      for (const k of ['brand', 'hero', 'packageSpecs', 'sections', 'newsSection', 'faqsSection', 'content', 'navigation', 'pages', 'domainConfig', 'seo', 'securityGate', 'githubConfig', 'syncLogs']) {
+      for (const k of ['brand', 'hero', 'uiConfig', 'packageSpecs', 'sections', 'newsSection', 'faqsSection', 'content', 'navigation', 'pages', 'domainConfig', 'seo', 'securityGate', 'githubConfig', 'syncLogs']) {
         clearMap[k] = (sanitized as any)[k];
       }
-      firestoreSaved = await writeBatchToFirestoreRestNode(fbEnv.config, clearMap, {
+      const fbRes = await writeBatchToFirestoreRestNode(fbEnv.config, clearMap, {
         updatedAt: fresh.updatedAt,
         dirtyModulesSinceSync: []
       });
+      firestoreSaved = fbRes.ok;
+      firestoreNotice = fbRes.ok ? null : fbRes.error || 'Firestore write failed';
     }
     res.json({
       success: true,
       firestoreSaved,
+      firestoreNotice,
       config: sanitized,
       seoAudit: auditSiteSeoHealth(fresh)
     });

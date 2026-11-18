@@ -777,8 +777,8 @@ export function auditSiteSeoHealth(config: SiteConfig): SeoAuditResult {
     label: 'FCP/LCP Hero Headline, Banner & Alt Text Ready',
     passed: lcpBannerOptimized,
     detail: lcpDetail,
-    fixTab: 'brand',
-    fixSubtab: 'hero'
+    fixTab: 'hero',
+    fixSubtab: ''
   });
 
   const sectionsMissingMeta = sections.filter(
@@ -844,12 +844,12 @@ export function auditSiteSeoHealth(config: SiteConfig): SeoAuditResult {
     label: 'Contextual Internal Linking & Crawl Hub Active',
     passed: internalLinkingPassed,
     detail: !autoInternalActive
-      ? 'Auto internal linking disabled in Workspace 8'
+      ? 'Auto internal linking disabled in Internal Linking workspace'
       : !hasLinkTargets
       ? 'Enabled, waiting for keyword link rules or pages/sections to cross-link'
       : `${internalLinksCount} keyword link rule(s) + automatic cross-linking active`,
-    fixTab: 'domain',
-    fixSubtab: 'internallinks'
+    fixTab: 'links',
+    fixSubtab: ''
   });
 
   const passedCount = checks.filter((c) => c.passed).length;

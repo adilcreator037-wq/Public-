@@ -76,16 +76,35 @@ function showToast(message, type = 'default') {
   }, 3400);
 }
 
+const TAB_MODULES_MAP = {
+  overview: ['brand', 'packageSpecs', 'domainConfig', 'seo', 'hero', 'navigation', 'pages', 'securityGate'],
+  brand: ['brand', 'uiConfig'],
+  hero: ['hero', 'uiConfig'],
+  specs: ['packageSpecs'],
+  sections: ['sections', 'content', 'uiConfig'],
+  news: ['newsSection', 'uiConfig'],
+  faqs: ['faqsSection', 'uiConfig'],
+  pages: ['pages', 'navigation', 'uiConfig'],
+  security: ['securityGate'],
+  links: ['domainConfig'],
+  domain: ['domainConfig', 'seo'],
+  deploy: ['githubConfig']
+};
+
 function getPrimaryModuleForActiveTab(tabId = activeTab) {
   const map = {
     overview: 'brand',
     brand: 'brand',
+    hero: 'hero',
     specs: 'packageSpecs',
     sections: 'sections',
     news: 'newsSection',
     faqs: 'faqsSection',
     pages: 'pages',
-    domain: 'domainConfig'
+    security: 'securityGate',
+    links: 'domainConfig',
+    domain: 'domainConfig',
+    deploy: 'githubConfig'
   };
   return map[tabId] || 'brand';
 }
@@ -102,10 +121,11 @@ function inferModuleKeyFromElement(el) {
   if (col === 'internalLinks') return 'domainConfig';
 
   const id = String(el.id || '');
+  if (id.startsWith('fb-') || id.startsWith('qc-')) return null;
   if (id.startsWith('brand-')) return 'brand';
   if (id.startsWith('hero-') || id.startsWith('cta-') || id.startsWith('floating-cta-')) return 'hero';
   if (id.startsWith('ui-')) return 'uiConfig';
-  if (id.startsWith('specs-')) return 'packageSpecs';
+  if (id.startsWith('specs-') || id === 'btn-gen-sha256') return 'packageSpecs';
   if (id.startsWith('news-')) return 'newsSection';
   if (id.startsWith('faqs-')) return 'faqsSection';
   if (id === 'global-raw-html') return 'content';
@@ -213,7 +233,7 @@ function undoTextareaEdit(textareaId) {
   }
   const previewId = ta.getAttribute('data-preview-target') || (textareaId === 'composer-news-html' ? 'composer-live-preview' : '');
   if (previewId && $(previewId)) $(previewId).innerHTML = previous;
-  markDirty();
+  markDirty('Restored previous editor snapshot', inferModuleKeyFromElement(ta));
   showToast('Restored previous editor snapshot', 'success');
 }
 
@@ -384,7 +404,10 @@ function insertHtmlIntoTarget(targetDescriptor, snippetHtml) {
       if (previewId && $(previewId)) {
         $(previewId).innerHTML = textarea.value;
       }
-      markDirty();
+      if (targetDescriptor.id !== 'composer-news-html') {
+        const modKey = inferModuleKeyFromElement(textarea);
+        markDirty('Inserted content block — click Save or Publish to persist', modKey);
+      }
     }
   } else if (targetDescriptor.type === 'collection') {
     const { collection, index, key, textareaId, previewId } = targetDescriptor;
@@ -396,7 +419,8 @@ function insertHtmlIntoTarget(targetDescriptor, snippetHtml) {
       if (ta) ta.value = list[index][key];
       const pv = previewId ? $(previewId) : null;
       if (pv) pv.innerHTML = list[index][key];
-      markDirty();
+      const modKey = inferModuleKeyFromElement({ dataset: { collection } });
+      markDirty('Inserted content block — click Save or Publish to persist', modKey);
     }
   }
 }
@@ -930,36 +954,52 @@ async function unlockAdminStudio() {
    ═══════════════════════════════════════════════════════════════════════════ */
 const WORKSPACE_CONTEXT_MAP = {
   overview: {
-    label: '1. Website Map & Audit',
-    target: 'Public Site: Master Overview & SEO Audit'
+    label: 'Overview & Quick Setup',
+    target: 'Public Site Summary & SEO Readiness Audit'
   },
   brand: {
-    label: '2. Brand, Hero & Colors',
-    target: 'Public Site: Sticky Header, Search Logo, Hero, 3-Bar Menu & Colors'
+    label: 'Brand, Logos & Colors',
+    target: 'Header Brand, Icons, Fonts & Website Color Theme'
+  },
+  hero: {
+    label: 'Hero & Download Buttons',
+    target: 'Homepage Top Screen, 16:9 Showcase Banner & CTAs'
   },
   specs: {
-    label: '3. Package Specs Table',
-    target: 'Public Site: #technical-specifications & SHA-256 Table'
+    label: 'Package Info Table',
+    target: 'Homepage #technical-specifications & SHA-256 Checksum'
   },
   sections: {
-    label: '4. Content Sections',
-    target: 'Public Site: Homepage Body Editorial Sections'
+    label: 'Page Sections',
+    target: 'Homepage Editorial Sections & Vertical Layout Order'
   },
   news: {
-    label: '5. Daily News Publisher',
-    target: 'Public Site: Homepage #latest-news & /news/:slug'
+    label: 'Daily News',
+    target: 'Homepage Feed, /news Archive & /news/:slug Articles'
   },
   faqs: {
-    label: '6. FAQs Manager',
-    target: 'Public Site: #frequently-asked-questions & FAQPage Schema'
+    label: 'FAQs Manager',
+    target: 'Homepage Q&A Accordions & Google FAQPage Schema'
   },
   pages: {
-    label: '7. Footer & Legal Pages',
-    target: 'Public Site: Footer & /privacy-policy, /terms, /dmca'
+    label: 'Menu & Legal Pages',
+    target: '3-Bar Navigation Drawer, Footer & Standalone Pages'
+  },
+  security: {
+    label: 'MoreInfo Security Gate',
+    target: '/moreinfo AES-256-GCM Download Protection & Turnstile'
+  },
+  links: {
+    label: 'Internal Linking System',
+    target: 'Automatic Keyword Cross-Linking Across Pages & Articles'
   },
   domain: {
-    label: '8. Security, SEO & Deploy',
-    target: 'Public Site: /moreinfo Security Gate, Sitemap & GitHub Push'
+    label: 'Domain & SEO Settings',
+    target: 'Canonical Domain, Search Preview, Sitemap & Schema'
+  },
+  deploy: {
+    label: 'Firebase, GitHub & Logs',
+    target: 'Live Cloud Firestore, GitHub Static Push & Sync History'
   }
 };
 
@@ -985,17 +1025,60 @@ function toggleAdminNavDrawer() {
   backdrop?.classList.toggle('is-open', willOpen);
 }
 
-function switchTab(tabId) {
-  activeTab = tabId;
+function filterPagesSubcards(subKey) {
+  document.querySelectorAll('[data-pages-subtab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-pages-subtab') === subKey);
+  });
+  document.querySelectorAll('[data-pages-card]').forEach((card) => {
+    const key = card.getAttribute('data-pages-card');
+    card.style.display = subKey === 'all' || key === subKey ? 'block' : 'none';
+  });
+  const subLabels = {
+    all: '3-Bar Navigation Drawer, Footer & Standalone Pages',
+    legal: 'Standalone Legal & Info Pages (/privacy-policy, /terms, etc.)',
+    menu: 'Sticky Header Bar & 3-Bar Slide-Down Menu',
+    footer: 'Global Website Footer, Disclaimer & Quick Links'
+  };
+  if ($('editing-now-target') && subLabels[subKey]) {
+    $('editing-now-target').textContent = subLabels[subKey];
+  }
+}
+
+function switchTab(rawTabId, anchorKey = '') {
+  let tabId = rawTabId;
+  let resolvedAnchor = anchorKey;
+
+  if (tabId === 'domain' && anchorKey === 'security') {
+    tabId = 'security';
+    resolvedAnchor = '';
+  } else if (tabId === 'domain' && anchorKey === 'internallinks') {
+    tabId = 'links';
+    resolvedAnchor = '';
+  } else if (tabId === 'domain' && (anchorKey === 'github' || anchorKey === 'firebase')) {
+    tabId = 'deploy';
+    resolvedAnchor = '';
+  } else if (tabId === 'brand' && (anchorKey === 'hero' || anchorKey === 'ctas')) {
+    tabId = 'hero';
+    resolvedAnchor = '';
+  } else if (tabId === 'brand' && anchorKey === 'drawer') {
+    tabId = 'pages';
+    resolvedAnchor = 'menu';
+  }
+
+  activeTab = WORKSPACE_CONTEXT_MAP[tabId] ? tabId : 'overview';
   closeAdminNavDrawer();
   document.querySelectorAll('.nav-tab').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tabId);
+    btn.classList.toggle('active', btn.dataset.tab === activeTab);
   });
   document.querySelectorAll('.tab-panel').forEach((panel) => {
-    panel.classList.toggle('active', panel.id === `panel-${tabId}`);
+    panel.classList.toggle('active', panel.id === `panel-${activeTab}`);
   });
 
-  const ctx = WORKSPACE_CONTEXT_MAP[tabId] || WORKSPACE_CONTEXT_MAP.overview;
+  if (activeTab === 'pages') {
+    filterPagesSubcards(['legal', 'menu', 'footer'].includes(resolvedAnchor) ? resolvedAnchor : 'all');
+  }
+
+  const ctx = WORKSPACE_CONTEXT_MAP[activeTab] || WORKSPACE_CONTEXT_MAP.overview;
   if ($('editing-now-label')) {
     $('editing-now-label').textContent = ctx.label;
   }
@@ -1004,54 +1087,19 @@ function switchTab(tabId) {
   }
   const btnMod = $('btn-save-active-module');
   if (btnMod && !btnMod.disabled) {
-    btnMod.textContent = `Save [${getPrimaryModuleForActiveTab(tabId)}]`;
+    btnMod.textContent = 'Save Section';
+  }
+
+  if (resolvedAnchor) {
+    const activePanel = $(`panel-${activeTab}`);
+    const anchorCard = activePanel?.querySelector(`[data-section-anchor="${resolvedAnchor}"]`);
+    if (anchorCard) {
+      setTimeout(() => anchorCard.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+      return;
+    }
   }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function filterBrandSubcards(subKey) {
-  document.querySelectorAll('[data-brand-subtab]').forEach((btn) => {
-    btn.classList.toggle('active', btn.getAttribute('data-brand-subtab') === subKey);
-  });
-  document.querySelectorAll('[data-brand-card]').forEach((card) => {
-    const key = card.getAttribute('data-brand-card');
-    card.style.display = subKey === 'all' || key === subKey ? 'block' : 'none';
-  });
-  const subLabels = {
-    all: 'Public Site: Sticky Header, Search Logo, Hero, 3-Bar Menu & Colors',
-    identity: 'Public Site: Sticky Header Logo, Favicon, Search Logo & PWA Manifest',
-    hero: 'Public Site: Top Homepage H1, Intro & 16:9 LCP Banner',
-    ctas: 'Public Site: 2-Column Download Buttons & Floating Pill CTA',
-    drawer: 'Public Site: Sticky Header & 3-Bar Hamburger Slide-Down Menu',
-    theme: 'Public Site: Global Colors, Fonts & Vertical Block Order'
-  };
-  if ($('editing-now-target') && subLabels[subKey]) {
-    $('editing-now-target').textContent = subLabels[subKey];
-  }
-}
-
-function filterDomainSubcards(subKey) {
-  document.querySelectorAll('[data-domain-subtab]').forEach((btn) => {
-    btn.classList.toggle('active', btn.getAttribute('data-domain-subtab') === subKey);
-  });
-  document.querySelectorAll('[data-domain-card]').forEach((card) => {
-    const key = card.getAttribute('data-domain-card');
-    card.style.display = subKey === 'all' || key === subKey ? 'block' : 'none';
-  });
-  const subLabels = {
-    all: 'Public Site: /moreinfo Security Gate, Sitemap & GitHub Push',
-    security: 'Public Site: /moreinfo 7-Gate Security & AES-256-GCM Link Vault',
-    internallinks: 'Public Site: Smart Contextual Internal Linking Engine',
-    github: 'Public Site: GitHub Fine-Grained Token Static Bundle Publisher',
-    sitemap: 'Public Site: /sitemap.xml (<image:image>), /manifest.webmanifest & /robots.txt',
-    serp: 'Public Site: Homepage <head> Meta & Google Search Result Preview',
-    schema: 'Public Site: SoftwareApplication Star Rating JSON-LD Schema',
-    firebase: 'Admin Studio: Live Firebase Cloud Persistence & JSON Backup'
-  };
-  if ($('editing-now-target') && subLabels[subKey]) {
-    $('editing-now-target').textContent = subLabels[subKey];
-  }
 }
 
 // Expose globally for quick tests or console helpers
@@ -1094,9 +1142,9 @@ function populateAllFields() {
   }
   if ($('fb-env-badge')) {
     const srcLabel =
-      fbConfig?.source === 'admin-override'
+      fbConfig?.source === 'admin-override' || fbConfig?.source === 'localStorage'
         ? 'Runtime Keys'
-        : fbConfig?.source === 'server-env' || fbConfig?.source === 'vite-env'
+        : fbConfig?.source === 'server-env' || fbConfig?.source === 'vite-env' || fbConfig?.source === 'env'
         ? '.env / Server Secret'
         : 'Local';
     $('fb-env-badge').textContent = fbActive
@@ -1155,9 +1203,9 @@ function populateAllFields() {
   setVal('ui-bg-surface', ui.surfaceBackgroundColor || '#FFFFFF');
   setVal('ui-header-bg', ui.headerBackgroundColor || '#FFFFFF');
   setVal('ui-header-text', ui.headerTextColor || '#111827');
-  setVal('ui-footer-bg', ui.footerBackgroundColor || '#F9FAFB');
-  setVal('ui-footer-text', ui.footerTextColor || '#4B5563');
-  setVal('ui-border-color', ui.borderColor || '#E5E7EB');
+  setVal('ui-footer-bg', ui.footerBackgroundColor || '#0F172A');
+  setVal('ui-footer-text', ui.footerTextColor || '#F8FAFC');
+  setVal('ui-border-color', ui.borderColor || '#E2E8F0');
   setVal('ui-card-radius', ui.cardBorderRadius || '12px');
   setVal('ui-btn-text-color', ui.buttonTextColor || '#FFFFFF');
   setVal('ui-text-color', ui.textColor || '#1F2937');
@@ -1351,7 +1399,7 @@ function populateAllFields() {
   renderDirtyModulesSummary();
   const btnMod = $('btn-save-active-module');
   if (btnMod && !btnMod.disabled) {
-    btnMod.textContent = `Save [${getPrimaryModuleForActiveTab(activeTab)}]`;
+    btnMod.textContent = 'Save Section';
   }
 }
 
@@ -1435,17 +1483,18 @@ function renderGitHubDeployHistory() {
           </div>`
         : '';
       const isFirebaseSave = item.trigger === 'firebase-save';
+      const isSuccessStatus = item.status === 'success' || item.status === 'saved';
       const badgeStyle =
-        item.status === 'success'
+        isSuccessStatus
           ? ''
           : item.status === 'local-only'
           ? 'background:#fffbeb; color:#92400e;'
           : 'background:#fef2f2; color:#b91c1c;';
       const badgeLabel = isFirebaseSave
-        ? item.status === 'success'
+        ? isSuccessStatus
           ? '✓ Saved to Firebase'
           : '✓ Saved & Compiled'
-        : item.status === 'success'
+        : isSuccessStatus
         ? item.skipped
           ? '≡ Up to Date'
           : '✓ Pushed to GitHub'
@@ -1810,7 +1859,8 @@ async function handlePublishComposerNews() {
   renderNewsList();
   refreshOverviewAndSeoAudit();
   dirtyModules.add('newsSection');
-  await handleSaveActiveModule('newsSection');
+  const savedOk = await handleSaveActiveModule('newsSection');
+  if (!savedOk) return;
   resetNewsComposer();
   showToast(`News published & saved cleanly to [newsSection] (/news/${slug})!`, 'success');
 }
@@ -2583,8 +2633,18 @@ function syncColorPickersFromTextInputs() {
   document.querySelectorAll('[data-color-sync]').forEach((picker) => {
     const targetId = picker.getAttribute('data-color-sync');
     const txt = targetId ? $(targetId) : null;
-    if (txt && /^#[0-9A-Fa-f]{6}$/.test(txt.value.trim())) {
-      picker.value = txt.value.trim();
+    const rawHex = txt?.value.trim() || '';
+    const validHex = /^#[0-9A-Fa-f]{6}$/.test(rawHex) ? rawHex.toUpperCase() : '';
+    if (validHex) {
+      picker.value = validHex;
+      const chip = document.querySelector(`[data-color-chip-for="${targetId}"]`);
+      if (chip) chip.style.background = validHex;
+    }
+    if (targetId) {
+      document.querySelectorAll(`[data-color-choice-for="${targetId}"]`).forEach((dot) => {
+        const dotHex = (dot.getAttribute('data-color') || '').trim().toUpperCase();
+        dot.classList.toggle('active', Boolean(validHex && dotHex === validHex));
+      });
     }
   });
   updateLiveThemePreviewCard();
@@ -2820,112 +2880,119 @@ function renderInternalLinksList() {
 function collectScalarFields() {
   const c = currentConfig;
   if (!c.uiConfig) c.uiConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.uiConfig));
-
-  c.brand.name = $('brand-name')?.value.trim() || '';
-  c.brand.shortName = $('brand-short-name')?.value.trim() || c.brand.name;
-  c.brand.tagline = $('brand-tagline')?.value.trim() || '';
-  c.brand.contactEmail = $('brand-email')?.value.trim() || '';
-  c.brand.logoUrl = $('brand-logo')?.value.trim() || '';
-  c.brand.faviconUrl = $('brand-favicon')?.value.trim() || '';
-  c.brand.searchLogoUrl = $('brand-search-logo')?.value.trim() || '';
-  c.brand.appleTouchIconUrl = $('brand-apple-icon')?.value.trim() || '';
-  c.brand.accentColor = $('brand-color')?.value.trim() || '#EF4444';
-  c.brand.themeColor = $('brand-theme-color')?.value.trim() || c.brand.accentColor;
-
-  c.uiConfig.showHeroSection = Boolean($('ui-show-hero-section')?.checked);
-  c.hero.h1 = $('hero-h1')?.value.trim() || '';
-  c.hero.metaTitle = $('hero-meta-title')?.value.trim() || '';
-  c.hero.metaDescription = $('hero-meta-desc')?.value.trim() || '';
-  c.hero.introHtml = $('hero-intro-html')?.value || '';
-  c.hero.showBanner = Boolean($('hero-show-banner')?.checked);
-  c.hero.bannerImageUrl = $('hero-banner-url')?.value.trim() || '';
-  c.hero.bannerAlt = $('hero-banner-alt')?.value.trim() || '';
-  c.hero.bannerCaption = $('hero-banner-caption')?.value.trim() || '';
-
-  c.uiConfig.showHeroCtaButtons = Boolean($('ui-show-hero-ctas')?.checked);
-  c.hero.secondaryCta.label = $('cta-left-text')?.value.trim() || '';
-  c.hero.secondaryCta.url = $('cta-left-url')?.value.trim() || '';
-  c.hero.secondaryCta.relSponsored = Boolean($('cta-left-sponsored')?.checked);
-  c.hero.primaryCta.label = $('cta-right-text')?.value.trim() || '';
-  c.hero.primaryCta.url = $('cta-right-url')?.value.trim() || '';
-  c.hero.primaryCta.relSponsored = Boolean($('cta-right-sponsored')?.checked);
-  c.hero.floatingCta.enabled = Boolean($('floating-cta-enabled')?.checked);
-  c.hero.floatingCta.label = $('floating-cta-text')?.value.trim() || '';
-  c.hero.floatingCta.url = $('floating-cta-url')?.value.trim() || '';
-
-  c.uiConfig.maxContainerWidth = $('ui-max-width')?.value || '768px';
-  c.uiConfig.fontFamily = $('ui-font-family')?.value || 'system';
-  c.uiConfig.baseFontSize = $('ui-font-size')?.value || '16px';
-  c.uiConfig.pageBackgroundColor = $('ui-bg-page')?.value.trim() || '#F8FAFC';
-  c.uiConfig.surfaceBackgroundColor = $('ui-bg-surface')?.value.trim() || '#FFFFFF';
-  c.uiConfig.headerBackgroundColor = $('ui-header-bg')?.value.trim() || '#FFFFFF';
-  c.uiConfig.headerTextColor = $('ui-header-text')?.value.trim() || '#111827';
-  c.uiConfig.footerBackgroundColor = $('ui-footer-bg')?.value.trim() || '#0F172A';
-  c.uiConfig.footerTextColor = $('ui-footer-text')?.value.trim() || '#F8FAFC';
-  c.uiConfig.borderColor = $('ui-border-color')?.value.trim() || '#E2E8F0';
-  c.uiConfig.cardBorderRadius = $('ui-card-radius')?.value || '12px';
-  c.uiConfig.buttonTextColor = $('ui-btn-text-color')?.value.trim() || '#FFFFFF';
-  c.uiConfig.textColor = $('ui-text-color')?.value.trim() || '#1F2937';
-  c.uiConfig.headingColor = $('ui-heading-color')?.value.trim() || '#111827';
-  c.uiConfig.headerNewsButtonLabel = $('ui-header-news-label')?.value.trim() || 'News';
-  c.uiConfig.homepageNewsLimit = Math.max(1, Number($('ui-home-news-limit')?.value) || 5);
-  c.uiConfig.newsReadMoreLabel = $('ui-news-readmore')?.value.trim() || 'Read Full Article →';
-  c.uiConfig.newsViewAllLabel = $('ui-news-viewall')?.value.trim() || 'View All News →';
-  c.uiConfig.backToHomeLabel = $('ui-back-home-label')?.value.trim() || '← Back to Home';
-  c.uiConfig.allNewsBreadcrumbLabel = $('ui-all-news-label')?.value.trim() || 'All News →';
-  c.uiConfig.showHeaderNewsButton = Boolean($('ui-show-header-news')?.checked);
-  c.uiConfig.showNewsCountInHeader = Boolean($('ui-show-news-count')?.checked);
-  c.uiConfig.autoIncludeSectionsInDrawer = Boolean($('ui-drawer-auto-sections')?.checked);
-  c.uiConfig.showNewsInDrawer = Boolean($('ui-drawer-show-news')?.checked);
-  c.uiConfig.showLegalLinksInDrawer = Boolean($('ui-drawer-show-legal')?.checked);
-  c.uiConfig.showCtaInDrawer = Boolean($('ui-drawer-show-cta')?.checked);
-  c.uiConfig.stickyHeader = Boolean($('ui-sticky-header')?.checked);
-  c.uiConfig.showBreadcrumbs = Boolean($('ui-show-breadcrumbs')?.checked);
-  c.uiConfig.showSubpageSwitcherPills = Boolean($('ui-show-subpage-pills')?.checked);
-  c.uiConfig.showTocJumpBar = Boolean($('ui-show-toc-bar')?.checked);
-  c.uiConfig.enableFaqAccordion = Boolean($('ui-enable-faq-accordion')?.checked);
-  c.uiConfig.showFooterDisclaimer = Boolean($('ui-show-footer-disclaimer')?.checked);
-  c.uiConfig.showFooterLinksHeading = Boolean($('ui-show-footer-links-heading')?.checked);
-
   if (!c.packageSpecs) c.packageSpecs = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.packageSpecs));
-  c.packageSpecs.enabled = Boolean($('specs-enabled')?.checked);
-  c.packageSpecs.heading = $('specs-heading')?.value.trim() || 'Technical Package Specifications';
-  c.packageSpecs.appName = $('specs-app-name')?.value.trim() || c.brand.name;
-  c.packageSpecs.version = $('specs-version')?.value.trim() || '';
-  c.packageSpecs.fileSize = $('specs-size')?.value.trim() || '';
-  c.packageSpecs.operatingSystem = $('specs-os')?.value.trim() || '';
-  c.packageSpecs.packageFormat = $('specs-format')?.value.trim() || '';
-  c.packageSpecs.license = $('specs-license')?.value.trim() || '';
-  c.packageSpecs.securityStatus = $('specs-security')?.value.trim() || '';
-  c.packageSpecs.lastUpdated = $('specs-updated')?.value.trim() || '';
-  c.packageSpecs.sha256 = $('specs-sha256')?.value.trim() || '';
-  c.packageSpecs.metaTitle = $('specs-meta-title')?.value.trim() || '';
-  c.packageSpecs.metaDescription = $('specs-meta-desc')?.value.trim() || '';
-
-  c.newsSection.enabled = Boolean($('news-enabled')?.checked);
-  c.newsSection.heading = $('news-heading')?.value.trim() || 'Latest News & Updates';
-  c.newsSection.metaTitle = $('news-meta-title')?.value.trim() || '';
-  c.newsSection.metaDescription = $('news-meta-desc')?.value.trim() || '';
-
-  c.content.rawHtml = $('global-raw-html')?.value || '';
-
-  c.faqsSection.enabled = Boolean($('faqs-enabled')?.checked);
-  c.faqsSection.heading = $('faqs-heading')?.value.trim() || 'Frequently Asked Questions';
-  c.faqsSection.metaTitle = $('faqs-meta-title')?.value.trim() || '';
-  c.faqsSection.metaDescription = $('faqs-meta-desc')?.value.trim() || '';
-
-  c.navigation.showFooterBrandSummary = Boolean($('nav-show-footer-summary')?.checked);
-  c.navigation.showFooterContactEmail = Boolean($('nav-show-footer-email')?.checked);
-  c.navigation.footerSummary = $('nav-footer-summary')?.value.trim() || '';
-  c.navigation.disclaimerHeading = $('footer-disclaimer-heading')?.value.trim() || 'Legal Disclaimer';
-  c.navigation.siteLinksHeading = $('footer-links-heading')?.value.trim() || 'Legal & Support Pages';
-  c.navigation.disclaimerMetaTitle = $('footer-meta-title')?.value.trim() || '';
-  c.navigation.disclaimerMetaDescription = $('footer-meta-desc')?.value.trim() || '';
-  c.navigation.disclaimer = $('footer-disclaimer-text')?.value.trim() || '';
-  c.navigation.copyright = $('footer-copyright-text')?.value.trim() || '';
-
   if (!c.githubConfig) c.githubConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.githubConfig));
-  const newGhToken = $('gh-token')?.value.trim() || '';
+  if (!c.domainConfig) c.domainConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.domainConfig));
+  if (!c.securityGate) c.securityGate = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.securityGate));
+
+  const hasEl = (id) => Boolean($(id));
+  const readVal = (id, fallback) => (hasEl(id) ? $(id).value : fallback);
+  const readTrim = (id, fallback) => (hasEl(id) ? $(id).value.trim() : fallback);
+  const readCheck = (id, fallback) => (hasEl(id) ? Boolean($(id).checked) : Boolean(fallback));
+
+  c.brand.name = readTrim('brand-name', c.brand.name || '');
+  c.brand.shortName = readTrim('brand-short-name', '') || c.brand.name;
+  c.brand.tagline = readTrim('brand-tagline', c.brand.tagline || '');
+  c.brand.contactEmail = readTrim('brand-email', c.brand.contactEmail || '');
+  c.brand.logoUrl = readTrim('brand-logo', c.brand.logoUrl || '');
+  c.brand.faviconUrl = readTrim('brand-favicon', c.brand.faviconUrl || '');
+  c.brand.searchLogoUrl = readTrim('brand-search-logo', c.brand.searchLogoUrl || '');
+  c.brand.appleTouchIconUrl = readTrim('brand-apple-icon', c.brand.appleTouchIconUrl || '');
+  c.brand.accentColor = readTrim('brand-color', c.brand.accentColor || '#EF4444') || '#EF4444';
+  c.brand.themeColor = readTrim('brand-theme-color', c.brand.themeColor || c.brand.accentColor) || c.brand.accentColor;
+
+  c.uiConfig.showHeroSection = readCheck('ui-show-hero-section', c.uiConfig.showHeroSection);
+  c.hero.h1 = readTrim('hero-h1', c.hero.h1 || '');
+  c.hero.metaTitle = readTrim('hero-meta-title', c.hero.metaTitle || '');
+  c.hero.metaDescription = readTrim('hero-meta-desc', c.hero.metaDescription || '');
+  c.hero.introHtml = readVal('hero-intro-html', c.hero.introHtml || '');
+  c.hero.showBanner = readCheck('hero-show-banner', c.hero.showBanner);
+  c.hero.bannerImageUrl = readTrim('hero-banner-url', c.hero.bannerImageUrl || '');
+  c.hero.bannerAlt = readTrim('hero-banner-alt', c.hero.bannerAlt || '');
+  c.hero.bannerCaption = readTrim('hero-banner-caption', c.hero.bannerCaption || '');
+
+  c.uiConfig.showHeroCtaButtons = readCheck('ui-show-hero-ctas', c.uiConfig.showHeroCtaButtons);
+  c.hero.secondaryCta.label = readTrim('cta-left-text', c.hero.secondaryCta.label || '');
+  c.hero.secondaryCta.url = readTrim('cta-left-url', c.hero.secondaryCta.url || '');
+  c.hero.secondaryCta.relSponsored = readCheck('cta-left-sponsored', c.hero.secondaryCta.relSponsored);
+  c.hero.primaryCta.label = readTrim('cta-right-text', c.hero.primaryCta.label || '');
+  c.hero.primaryCta.url = readTrim('cta-right-url', c.hero.primaryCta.url || '');
+  c.hero.primaryCta.relSponsored = readCheck('cta-right-sponsored', c.hero.primaryCta.relSponsored);
+  c.hero.floatingCta.enabled = readCheck('floating-cta-enabled', c.hero.floatingCta.enabled);
+  c.hero.floatingCta.label = readTrim('floating-cta-text', c.hero.floatingCta.label || '');
+  c.hero.floatingCta.url = readTrim('floating-cta-url', c.hero.floatingCta.url || '');
+
+  c.uiConfig.maxContainerWidth = readVal('ui-max-width', c.uiConfig.maxContainerWidth || '768px') || '768px';
+  c.uiConfig.fontFamily = readVal('ui-font-family', c.uiConfig.fontFamily || 'system') || 'system';
+  c.uiConfig.baseFontSize = readVal('ui-font-size', c.uiConfig.baseFontSize || '16px') || '16px';
+  c.uiConfig.pageBackgroundColor = readTrim('ui-bg-page', c.uiConfig.pageBackgroundColor || '#F8FAFC') || '#F8FAFC';
+  c.uiConfig.surfaceBackgroundColor = readTrim('ui-bg-surface', c.uiConfig.surfaceBackgroundColor || '#FFFFFF') || '#FFFFFF';
+  c.uiConfig.headerBackgroundColor = readTrim('ui-header-bg', c.uiConfig.headerBackgroundColor || '#FFFFFF') || '#FFFFFF';
+  c.uiConfig.headerTextColor = readTrim('ui-header-text', c.uiConfig.headerTextColor || '#111827') || '#111827';
+  c.uiConfig.footerBackgroundColor = readTrim('ui-footer-bg', c.uiConfig.footerBackgroundColor || '#0F172A') || '#0F172A';
+  c.uiConfig.footerTextColor = readTrim('ui-footer-text', c.uiConfig.footerTextColor || '#F8FAFC') || '#F8FAFC';
+  c.uiConfig.borderColor = readTrim('ui-border-color', c.uiConfig.borderColor || '#E2E8F0') || '#E2E8F0';
+  c.uiConfig.cardBorderRadius = readVal('ui-card-radius', c.uiConfig.cardBorderRadius || '12px') || '12px';
+  c.uiConfig.buttonTextColor = readTrim('ui-btn-text-color', c.uiConfig.buttonTextColor || '#FFFFFF') || '#FFFFFF';
+  c.uiConfig.textColor = readTrim('ui-text-color', c.uiConfig.textColor || '#1F2937') || '#1F2937';
+  c.uiConfig.headingColor = readTrim('ui-heading-color', c.uiConfig.headingColor || '#111827') || '#111827';
+  c.uiConfig.headerNewsButtonLabel = readTrim('ui-header-news-label', c.uiConfig.headerNewsButtonLabel || 'News') || 'News';
+  c.uiConfig.homepageNewsLimit = Math.max(1, Number(readVal('ui-home-news-limit', c.uiConfig.homepageNewsLimit || 5)) || 5);
+  c.uiConfig.newsReadMoreLabel = readTrim('ui-news-readmore', c.uiConfig.newsReadMoreLabel || 'Read Full Article →') || 'Read Full Article →';
+  c.uiConfig.newsViewAllLabel = readTrim('ui-news-viewall', c.uiConfig.newsViewAllLabel || 'View All News →') || 'View All News →';
+  c.uiConfig.backToHomeLabel = readTrim('ui-back-home-label', c.uiConfig.backToHomeLabel || '← Back to Home') || '← Back to Home';
+  c.uiConfig.allNewsBreadcrumbLabel = readTrim('ui-all-news-label', c.uiConfig.allNewsBreadcrumbLabel || 'All News →') || 'All News →';
+  c.uiConfig.showHeaderNewsButton = readCheck('ui-show-header-news', c.uiConfig.showHeaderNewsButton);
+  c.uiConfig.showNewsCountInHeader = readCheck('ui-show-news-count', c.uiConfig.showNewsCountInHeader);
+  c.uiConfig.autoIncludeSectionsInDrawer = readCheck('ui-drawer-auto-sections', c.uiConfig.autoIncludeSectionsInDrawer);
+  c.uiConfig.showNewsInDrawer = readCheck('ui-drawer-show-news', c.uiConfig.showNewsInDrawer);
+  c.uiConfig.showLegalLinksInDrawer = readCheck('ui-drawer-show-legal', c.uiConfig.showLegalLinksInDrawer);
+  c.uiConfig.showCtaInDrawer = readCheck('ui-drawer-show-cta', c.uiConfig.showCtaInDrawer);
+  c.uiConfig.stickyHeader = readCheck('ui-sticky-header', c.uiConfig.stickyHeader);
+  c.uiConfig.showBreadcrumbs = readCheck('ui-show-breadcrumbs', c.uiConfig.showBreadcrumbs);
+  c.uiConfig.showSubpageSwitcherPills = readCheck('ui-show-subpage-pills', c.uiConfig.showSubpageSwitcherPills);
+  c.uiConfig.showTocJumpBar = readCheck('ui-show-toc-bar', c.uiConfig.showTocJumpBar);
+  c.uiConfig.enableFaqAccordion = readCheck('ui-enable-faq-accordion', c.uiConfig.enableFaqAccordion);
+  c.uiConfig.showFooterDisclaimer = readCheck('ui-show-footer-disclaimer', c.uiConfig.showFooterDisclaimer);
+  c.uiConfig.showFooterLinksHeading = readCheck('ui-show-footer-links-heading', c.uiConfig.showFooterLinksHeading);
+
+  c.packageSpecs.enabled = readCheck('specs-enabled', c.packageSpecs.enabled);
+  c.packageSpecs.heading = readTrim('specs-heading', c.packageSpecs.heading || 'Technical Package Specifications') || 'Technical Package Specifications';
+  c.packageSpecs.appName = readTrim('specs-app-name', '') || c.brand.name;
+  c.packageSpecs.version = readTrim('specs-version', c.packageSpecs.version || '');
+  c.packageSpecs.fileSize = readTrim('specs-size', c.packageSpecs.fileSize || '');
+  c.packageSpecs.operatingSystem = readTrim('specs-os', c.packageSpecs.operatingSystem || '');
+  c.packageSpecs.packageFormat = readTrim('specs-format', c.packageSpecs.packageFormat || '');
+  c.packageSpecs.license = readTrim('specs-license', c.packageSpecs.license || '');
+  c.packageSpecs.securityStatus = readTrim('specs-security', c.packageSpecs.securityStatus || '');
+  c.packageSpecs.lastUpdated = readTrim('specs-updated', c.packageSpecs.lastUpdated || '');
+  c.packageSpecs.sha256 = readTrim('specs-sha256', c.packageSpecs.sha256 || '');
+  c.packageSpecs.metaTitle = readTrim('specs-meta-title', c.packageSpecs.metaTitle || '');
+  c.packageSpecs.metaDescription = readTrim('specs-meta-desc', c.packageSpecs.metaDescription || '');
+
+  c.newsSection.enabled = readCheck('news-enabled', c.newsSection.enabled);
+  c.newsSection.heading = readTrim('news-heading', c.newsSection.heading || 'Latest News & Updates') || 'Latest News & Updates';
+  c.newsSection.metaTitle = readTrim('news-meta-title', c.newsSection.metaTitle || '');
+  c.newsSection.metaDescription = readTrim('news-meta-desc', c.newsSection.metaDescription || '');
+
+  c.content.rawHtml = readVal('global-raw-html', c.content?.rawHtml || '');
+
+  c.faqsSection.enabled = readCheck('faqs-enabled', c.faqsSection.enabled);
+  c.faqsSection.heading = readTrim('faqs-heading', c.faqsSection.heading || 'Frequently Asked Questions') || 'Frequently Asked Questions';
+  c.faqsSection.metaTitle = readTrim('faqs-meta-title', c.faqsSection.metaTitle || '');
+  c.faqsSection.metaDescription = readTrim('faqs-meta-desc', c.faqsSection.metaDescription || '');
+
+  c.navigation.showFooterBrandSummary = readCheck('nav-show-footer-summary', c.navigation.showFooterBrandSummary);
+  c.navigation.showFooterContactEmail = readCheck('nav-show-footer-email', c.navigation.showFooterContactEmail);
+  c.navigation.footerSummary = readTrim('nav-footer-summary', c.navigation.footerSummary || '');
+  c.navigation.disclaimerHeading = readTrim('footer-disclaimer-heading', c.navigation.disclaimerHeading || 'Legal Disclaimer') || 'Legal Disclaimer';
+  c.navigation.siteLinksHeading = readTrim('footer-links-heading', c.navigation.siteLinksHeading || 'Legal & Support Pages') || 'Legal & Support Pages';
+  c.navigation.disclaimerMetaTitle = readTrim('footer-meta-title', c.navigation.disclaimerMetaTitle || '');
+  c.navigation.disclaimerMetaDescription = readTrim('footer-meta-desc', c.navigation.disclaimerMetaDescription || '');
+  c.navigation.disclaimer = readTrim('footer-disclaimer-text', c.navigation.disclaimer || '');
+  c.navigation.copyright = readTrim('footer-copyright-text', c.navigation.copyright || '');
+
+  const newGhToken = readTrim('gh-token', '');
   if (pendingClearGithubToken) {
     c.githubConfig.fineGrainedToken = '';
     c.githubConfig.clearFineGrainedToken = true;
@@ -2936,79 +3003,63 @@ function collectScalarFields() {
     c.githubConfig.fineGrainedToken = '';
     delete c.githubConfig.clearFineGrainedToken;
   }
-  c.githubConfig.repoOwner = $('gh-owner')?.value.trim() || '';
-  c.githubConfig.repoName = $('gh-repo')?.value.trim() || '';
-  c.githubConfig.branch = $('gh-branch')?.value.trim() || 'main';
-  c.githubConfig.targetDirectory = $('gh-dir')?.value.trim() ?? 'dist-public';
+  c.githubConfig.repoOwner = readTrim('gh-owner', c.githubConfig.repoOwner || '');
+  c.githubConfig.repoName = readTrim('gh-repo', c.githubConfig.repoName || '');
+  c.githubConfig.branch = readTrim('gh-branch', c.githubConfig.branch || 'main') || 'main';
+  c.githubConfig.targetDirectory = hasEl('gh-dir') ? ($('gh-dir').value.trim() ?? 'dist-public') : (c.githubConfig.targetDirectory ?? 'dist-public');
   c.githubConfig.commitMessageTemplate =
-    $('gh-commit-msg')?.value.trim() ||
+    readTrim('gh-commit-msg', c.githubConfig.commitMessageTemplate || 'chore(static-publish): sync compiled static public site from Admin Studio') ||
     'chore(static-publish): sync compiled static public site from Admin Studio';
-  c.githubConfig.autoPushOnPublish = Boolean($('gh-auto-push')?.checked);
+  c.githubConfig.autoPushOnPublish = readCheck('gh-auto-push', c.githubConfig.autoPushOnPublish);
 
-  if (!c.domainConfig) c.domainConfig = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.domainConfig));
-  const primaryDom = $('domain-primary')?.value.trim() || $('seo-canonical')?.value.trim() || '';
-  c.domainConfig.primaryDomain = primaryDom;
-  c.domainConfig.googleAnalyticsId = $('domain-ga-id')?.value.trim() || '';
-  c.domainConfig.googleSiteVerification = $('domain-gsc')?.value.trim() || '';
-  c.domainConfig.bingSiteVerification = $('domain-bing')?.value.trim() || '';
-  c.domainConfig.enableImageSitemap = Boolean($('domain-image-sitemap')?.checked);
-  c.domainConfig.enableSitemapXml = Boolean($('domain-enable-sitemap')?.checked);
-  c.domainConfig.enableRssFeed = Boolean($('domain-enable-rss')?.checked);
-  c.domainConfig.enableWebManifest = Boolean($('domain-web-manifest')?.checked);
-  c.domainConfig.forceHttps = Boolean($('domain-force-https')?.checked);
-  c.domainConfig.enableAutoInternalLinks = Boolean($('domain-auto-internal-links')?.checked);
-  c.domainConfig.customRobotsTxt = $('domain-robots-txt')?.value || '';
-
-  c.seo.metaTitle = $('seo-meta-title')?.value.trim() || c.hero.metaTitle || c.hero.h1;
-  c.seo.metaDescription = $('seo-meta-desc')?.value.trim() || c.hero.metaDescription;
-  c.seo.canonicalUrl = primaryDom;
-  c.seo.ogImageUrl = $('seo-og-image')?.value.trim() || c.hero.bannerImageUrl;
-
-  c.seo.enableSoftwareSchema = Boolean($('schema-app-enabled')?.checked);
-  c.seo.softwareDetails.name = $('schema-app-name')?.value.trim() || c.brand.name;
-  c.seo.softwareDetails.operatingSystem = $('schema-app-os')?.value.trim() || '';
-  c.seo.softwareDetails.applicationCategory = $('schema-app-category')?.value.trim() || 'UtilitiesApplication';
-  c.seo.softwareDetails.price = $('schema-app-price')?.value.trim() || '0.00';
-  c.seo.softwareDetails.priceCurrency = $('schema-app-currency')?.value.trim() || 'USD';
-  c.seo.softwareDetails.ratingValue = $('schema-app-rating')?.value.trim() || '5.0';
-  c.seo.softwareDetails.reviewCount = $('schema-app-votes')?.value.trim() || '0';
-  c.seo.rawJsonLd = $('seo-raw-jsonld')?.value.trim() || '';
-
-  if (!c.securityGate) c.securityGate = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG.securityGate));
-  c.securityGate.enabled = Boolean($('sec-enabled')?.checked);
-  c.securityGate.showSpecsOnGateway = Boolean($('sec-show-specs')?.checked);
-  c.securityGate.devicePolicyMode =
-    $('sec-device-policy')?.value === 'strict_mobile_only' ? 'strict_mobile_only' : 'universal_human';
-  c.securityGate.proceedButtonLabel = $('sec-btn-label')?.value.trim() || 'PROCEED';
-  c.securityGate.customHeading = $('sec-custom-heading')?.value.trim() || '';
-  c.securityGate.customNoteHtml = $('sec-custom-note')?.value || '';
-  c.securityGate.appSlug =
-    generateSlug($('sec-app-slug')?.value.trim() || c.brand.shortName || c.brand.name || '') || '';
-  c.securityGate.appSerialId = $('sec-serial-id')?.value.trim() || '';
-
-  let resolvedProtectedUrl =
-    $('sec-primary-url')?.value.trim() ||
-    c.securityGate.primaryDownloadUrl ||
+  const primaryDom =
+    (hasEl('domain-primary') ? $('domain-primary').value.trim() : '') ||
+    (hasEl('seo-canonical') ? $('seo-canonical').value.trim() : '') ||
+    c.domainConfig.primaryDomain ||
+    c.seo.canonicalUrl ||
     '';
-  if (c.securityGate.enabled) {
-    const rawHeroUrl = c.hero.primaryCta.url.trim();
-    const rawFloatUrl = c.hero.floatingCta.url.trim();
-    if (rawHeroUrl && rawHeroUrl !== '/moreinfo' && !rawHeroUrl.startsWith('#')) {
-      resolvedProtectedUrl = rawHeroUrl;
-      c.hero.primaryCta.url = '/moreinfo';
-      setVal('cta-right-url', '/moreinfo');
-    } else if (rawFloatUrl && rawFloatUrl !== '/moreinfo' && !rawFloatUrl.startsWith('#')) {
-      resolvedProtectedUrl = rawFloatUrl;
-      c.hero.floatingCta.url = '/moreinfo';
-      setVal('floating-cta-url', '/moreinfo');
-    }
-  }
-  c.securityGate.primaryDownloadUrl = resolvedProtectedUrl;
-  setVal('sec-primary-url', resolvedProtectedUrl);
+  c.domainConfig.primaryDomain = primaryDom;
+  c.domainConfig.googleAnalyticsId = readTrim('domain-ga-id', c.domainConfig.googleAnalyticsId || '');
+  c.domainConfig.googleSiteVerification = readTrim('domain-gsc', c.domainConfig.googleSiteVerification || '');
+  c.domainConfig.bingSiteVerification = readTrim('domain-bing', c.domainConfig.bingSiteVerification || '');
+  c.domainConfig.enableImageSitemap = readCheck('domain-image-sitemap', c.domainConfig.enableImageSitemap);
+  c.domainConfig.enableSitemapXml = readCheck('domain-enable-sitemap', c.domainConfig.enableSitemapXml);
+  c.domainConfig.enableRssFeed = readCheck('domain-enable-rss', c.domainConfig.enableRssFeed);
+  c.domainConfig.enableWebManifest = readCheck('domain-web-manifest', c.domainConfig.enableWebManifest);
+  c.domainConfig.forceHttps = readCheck('domain-force-https', c.domainConfig.forceHttps);
+  c.domainConfig.enableAutoInternalLinks = readCheck('domain-auto-internal-links', c.domainConfig.enableAutoInternalLinks);
+  c.domainConfig.customRobotsTxt = readVal('domain-robots-txt', c.domainConfig.customRobotsTxt || '');
 
-  c.securityGate.encryptedPrimaryUrl = $('sec-encrypted-url')?.value.trim() || '';
-  c.securityGate.turnstileSiteKey = $('sec-turnstile-site-key')?.value.trim() || '';
-  const newTsSecret = $('sec-turnstile-secret-key')?.value.trim() || '';
+  c.seo.metaTitle = readTrim('seo-meta-title', '') || c.hero.metaTitle || c.hero.h1;
+  c.seo.metaDescription = readTrim('seo-meta-desc', '') || c.hero.metaDescription;
+  c.seo.canonicalUrl = primaryDom;
+  c.seo.ogImageUrl = readTrim('seo-og-image', '') || c.hero.bannerImageUrl;
+
+  c.seo.enableSoftwareSchema = readCheck('schema-app-enabled', c.seo.enableSoftwareSchema);
+  c.seo.softwareDetails.name = readTrim('schema-app-name', '') || c.brand.name;
+  c.seo.softwareDetails.operatingSystem = readTrim('schema-app-os', c.seo.softwareDetails.operatingSystem || '');
+  c.seo.softwareDetails.applicationCategory = readTrim('schema-app-category', c.seo.softwareDetails.applicationCategory || 'UtilitiesApplication') || 'UtilitiesApplication';
+  c.seo.softwareDetails.price = readTrim('schema-app-price', c.seo.softwareDetails.price || '0.00') || '0.00';
+  c.seo.softwareDetails.priceCurrency = readTrim('schema-app-currency', c.seo.softwareDetails.priceCurrency || 'USD') || 'USD';
+  c.seo.softwareDetails.ratingValue = readTrim('schema-app-rating', c.seo.softwareDetails.ratingValue || '5.0') || '5.0';
+  c.seo.softwareDetails.reviewCount = readTrim('schema-app-votes', c.seo.softwareDetails.reviewCount || '0') || '0';
+  c.seo.rawJsonLd = readTrim('seo-raw-jsonld', c.seo.rawJsonLd || '');
+
+  c.securityGate.enabled = readCheck('sec-enabled', c.securityGate.enabled);
+  c.securityGate.showSpecsOnGateway = readCheck('sec-show-specs', c.securityGate.showSpecsOnGateway);
+  c.securityGate.devicePolicyMode =
+    readVal('sec-device-policy', c.securityGate.devicePolicyMode) === 'strict_mobile_only' ? 'strict_mobile_only' : 'universal_human';
+  c.securityGate.proceedButtonLabel = readTrim('sec-btn-label', c.securityGate.proceedButtonLabel || 'PROCEED') || 'PROCEED';
+  c.securityGate.customHeading = readTrim('sec-custom-heading', c.securityGate.customHeading || '');
+  c.securityGate.customNoteHtml = readVal('sec-custom-note', c.securityGate.customNoteHtml || '');
+  c.securityGate.appSlug =
+    generateSlug(readTrim('sec-app-slug', '') || c.brand.shortName || c.brand.name || '') || '';
+  c.securityGate.appSerialId = readTrim('sec-serial-id', c.securityGate.appSerialId || '');
+
+  c.securityGate.primaryDownloadUrl = readTrim('sec-primary-url', c.securityGate.primaryDownloadUrl || '');
+  c.securityGate.encryptedPrimaryUrl = readTrim('sec-encrypted-url', c.securityGate.encryptedPrimaryUrl || '');
+  c.securityGate.turnstileSiteKey = readTrim('sec-turnstile-site-key', c.securityGate.turnstileSiteKey || '');
+  const newTsSecret = readTrim('sec-turnstile-secret-key', '');
   if (pendingClearTurnstileSecret) {
     c.securityGate.turnstileSecretKey = '';
     c.securityGate.clearTurnstileSecretKey = true;
@@ -3019,12 +3070,12 @@ function collectScalarFields() {
     c.securityGate.turnstileSecretKey = '';
     delete c.securityGate.clearTurnstileSecretKey;
   }
-  c.securityGate.isPaused = Boolean($('sec-paused')?.checked);
-  c.securityGate.isComingSoon = Boolean($('sec-coming-soon')?.checked);
-  c.securityGate.dailyIssueCap = Math.max(0, Number($('sec-daily-cap')?.value) || 0);
-  c.securityGate.unavailableMessage = $('sec-unavailable-msg')?.value.trim() || '';
-  c.securityGate.helplineWhatsapp = $('sec-whatsapp')?.value.trim() || '';
-  c.securityGate.helplineTelegram = $('sec-telegram')?.value.trim() || '';
+  c.securityGate.isPaused = readCheck('sec-paused', c.securityGate.isPaused);
+  c.securityGate.isComingSoon = readCheck('sec-coming-soon', c.securityGate.isComingSoon);
+  c.securityGate.dailyIssueCap = Math.max(0, Number(readVal('sec-daily-cap', c.securityGate.dailyIssueCap ?? 0)) || 0);
+  c.securityGate.unavailableMessage = readTrim('sec-unavailable-msg', c.securityGate.unavailableMessage || '');
+  c.securityGate.helplineWhatsapp = readTrim('sec-whatsapp', c.securityGate.helplineWhatsapp || '');
+  c.securityGate.helplineTelegram = readTrim('sec-telegram', c.securityGate.helplineTelegram || '');
 }
 
 function updateSerpSimulator() {
@@ -3052,11 +3103,16 @@ async function handleVerifyGitHubAccess() {
   const gh = currentConfig.githubConfig;
   const feedbackEl = $('gh-verify-feedback');
   const btn = $('btn-verify-github');
+  const hasTokenAvailable = Boolean(
+    gh.fineGrainedToken ||
+      gh.hasFineGrainedToken ||
+      getLastEnvDiagnostics()?.githubTokenConfigured
+  );
 
-  if (!gh.fineGrainedToken || !gh.repoOwner || !gh.repoName) {
+  if (!hasTokenAvailable || !gh.repoOwner || !gh.repoName) {
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
-      feedbackEl.innerHTML = `<strong style="color:#b91c1c;">Missing GitHub Details:</strong> Please enter your Fine-Grained Token, GitHub Owner, and Repository Name above first.`;
+      feedbackEl.innerHTML = `<strong style="color:#b91c1c;">Missing GitHub Details:</strong> Please enter your Fine-Grained Token (or configure GITHUB_FINE_GRAINED_TOKEN), GitHub Owner, and Repository Name above first.`;
     }
     showToast('Enter GitHub Token, Owner & Repo Name first', 'error');
     return;
@@ -3069,25 +3125,58 @@ async function handleVerifyGitHubAccess() {
 
   try {
     const res = await verifyGitHubRepoRemote(gh);
+    const verifiedOk = Boolean(res?.success || res?.ok);
+    const fullName = res?.fullName || res?.repoFullName || `${gh.repoOwner}/${gh.repoName}`;
+    const isPrivate = Boolean(res?.private ?? res?.privateRepo);
+    const canPush = res?.canPush !== undefined ? Boolean(res.canPush) : Boolean(res?.permissions?.push || res?.permissions?.admin || verifiedOk);
+    const errMsg = res?.error || res?.message || 'Unable to verify repository.';
+    if (verifiedOk) {
+      if (res?.config?.githubConfig) {
+        currentConfig.githubConfig = {
+          ...currentConfig.githubConfig,
+          ...res.config.githubConfig,
+          fineGrainedToken: '',
+          hasFineGrainedToken: true
+        };
+      } else {
+        currentConfig.githubConfig.hasFineGrainedToken = true;
+        currentConfig.githubConfig.fineGrainedToken = '';
+      }
+      pendingClearGithubToken = false;
+      dirtyModules.delete('githubConfig');
+      const ghTokenInput = $('gh-token');
+      if (ghTokenInput) {
+        ghTokenInput.value = '';
+        ghTokenInput.placeholder = 'Token configured on server (Leave blank to keep stored token)';
+      }
+      const ghTokenStatusTag = $('gh-token-status-tag');
+      if (ghTokenStatusTag) {
+        ghTokenStatusTag.textContent = '✓ Token Stored Server-Side';
+        ghTokenStatusTag.className = 'card-tag emerald';
+      }
+      const clearGhBtn = $('btn-clear-gh-token');
+      if (clearGhBtn) clearGhBtn.style.display = 'inline-flex';
+      renderDirtyModulesSummary();
+    }
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
-      if (res.success) {
+      if (verifiedOk) {
         feedbackEl.innerHTML = `
           <div style="color:#065f46; font-weight:700;">✓ Connected to GitHub Repository: ${escapeHtml(
-            res.fullName || `${gh.repoOwner}/${gh.repoName}`
+            fullName
           )}</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">
-            Visibility: ${res.private ? 'Private' : 'Public'} • Default Branch: <code>${escapeHtml(
+            Visibility: ${isPrivate ? 'Private' : 'Public'} • Default Branch: <code>${escapeHtml(
           res.defaultBranch || 'main'
-        )}</code> • Fine-Grained Token Write Permission: <strong>${res.canPush ? 'Verified ✓' : 'Read-Only ⚠️'}</strong>
+        )}</code> • Fine-Grained Token Write Permission: <strong>${canPush ? 'Verified ✓' : 'Read-Only ⚠️'}</strong>
           </div>
         `;
-        showToast('GitHub repository access verified!', 'success');
+        showToast('GitHub repository access verified & saved!', 'success');
       } else {
         feedbackEl.innerHTML = `<strong style="color:#b91c1c;">GitHub Verification Failed:</strong> ${escapeHtml(
-          res.error || 'Unable to verify repository.'
+          errMsg
         )}`;
-        showToast(res.error || 'GitHub verification failed', 'error');
+        showToast(errMsg, 'error');
       }
     }
   } finally {
@@ -3188,6 +3277,13 @@ async function handleCompileAndPushToGitHub() {
   collectScalarFields();
   currentConfig.updatedAt = Date.now();
 
+  if (currentConfig.githubConfig?.fineGrainedToken || pendingClearGithubToken) {
+    dirtyModules.add('githubConfig');
+  }
+
+  const activeGhConfig = JSON.parse(JSON.stringify(currentConfig.githubConfig || {}));
+  const configSnapshot = JSON.parse(JSON.stringify(currentConfig));
+
   const btn = $('btn-publish-github');
   const feedbackEl = $('gh-verify-feedback');
   const pipeEl = $('gh-sync-pipeline-log');
@@ -3201,20 +3297,35 @@ async function handleCompileAndPushToGitHub() {
   }
 
   try {
-    const pendingEdits = Array.from(dirtyModules);
+    const pendingEdits = Array.from(dirtyModules).filter((mk) => isCmsModuleKey(mk));
     if (pendingEdits.length > 0) {
       appendPipelineStep(`1/3 Batch-saving ${pendingEdits.length} edited module(s) [${pendingEdits.join(', ')}] to Live Firebase...`);
       const batchMap = {};
       for (const mk of pendingEdits) {
-        batchMap[mk] = extractConfigModule(currentConfig, mk);
+        batchMap[mk] = extractConfigModule(configSnapshot, mk);
       }
-      await saveSiteConfigModulesBatchRemote(batchMap, pendingEdits);
+      const batchRes = await saveSiteConfigModulesBatchRemote(batchMap, pendingEdits);
+      if (!batchRes || !batchRes.success) {
+        const batchErr = batchRes?.error || 'Failed saving edited modules to Firebase before GitHub publish.';
+        appendPipelineStep(`1/3 ✗ Firebase batch save failed: ${batchErr}`);
+        if (feedbackEl) {
+          feedbackEl.style.display = 'block';
+          feedbackEl.innerHTML = `<strong style="color:#b91c1c;">Firebase Save Failed Before GitHub Push:</strong> ${escapeHtml(batchErr)}`;
+        }
+        showToast(batchErr, 'error');
+        return;
+      }
+      pendingEdits.forEach((mk) => dirtyModules.delete(mk));
     } else {
       appendPipelineStep('1/3 Verifying live Firebase workspace...');
     }
 
     appendPipelineStep('2/3 Compiling full static public HTML, assets, sitemap.xml, robots.txt & diffing GitHub blobs...');
-    const res = await publishStaticSiteToGitHubRemote(currentConfig.githubConfig, currentConfig);
+    const res = await publishStaticSiteToGitHubRemote(
+      activeGhConfig,
+      configSnapshot,
+      pendingEdits
+    );
     pendingClearGithubToken = false;
 
     if (res?.compiledBundle) {
@@ -3226,11 +3337,28 @@ async function handleCompileAndPushToGitHub() {
       populateAllFields();
     }
 
+    const pub = res?.publishResult || res || {};
+    const addedCount = res?.addedCount ?? pub.addedCount ?? 0;
+    const updatedCount = res?.updatedCount ?? pub.updatedCount ?? 0;
+    const deletedCount = res?.deletedCount ?? pub.deletedCount ?? 0;
+    const unchangedCount = res?.unchangedCount ?? pub.unchangedCount ?? 0;
+    const isSkipped = Boolean(res?.skipped ?? pub.skipped);
+    const filesCount = res?.filesCount ?? pub.filesPushed ?? res?.compiledBundle?.totalFiles ?? 0;
+    const commitSha = res?.commitSha || pub.commitSha || '';
+    const commitUrl = res?.commitUrl || pub.commitUrl || '#';
+    const compiledLocalCount = res?.compiledLocalFiles ?? res?.compiledBundle?.totalFiles ?? 0;
+    const errText =
+      res?.error ||
+      pub.message ||
+      res?.message ||
+      res?.syncLog?.errorDetail ||
+      'Check your GitHub Fine-Grained Token, Owner, and Repo Name.';
+
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
-      if (res.success) {
-        const diffSummary = `+${res.addedCount || 0} added, ~${res.updatedCount || 0} updated, -${res.deletedCount || 0} deleted, =${res.unchangedCount || 0} unchanged`;
-        if (res.skipped) {
+      if (res && res.success) {
+        const diffSummary = `+${addedCount} added, ~${updatedCount} updated, -${deletedCount} deleted, =${unchangedCount} unchanged`;
+        if (isSkipped) {
           appendPipelineStep(`3/3 ≡ Remote GitHub branch already identical (${diffSummary}) — skipped redundant commit.`);
           feedbackEl.innerHTML = `
             <div style="color:#065f46; font-weight:700;">≡ GitHub Static Site Already Up to Date (0 Changed Files)</div>
@@ -3241,31 +3369,31 @@ async function handleCompileAndPushToGitHub() {
           markClean('Verified live Firebase & confirmed GitHub public site is up to date');
           showToast('GitHub static site already up to date (0 changed files)', 'success');
         } else {
-          appendPipelineStep(`3/3 ✓ Pushed ${res.filesCount || 0} changed file(s) to GitHub (${(res.commitSha || '').slice(0, 7)}): ${diffSummary}.`);
+          appendPipelineStep(`3/3 ✓ Pushed ${filesCount} changed file(s) to GitHub (${commitSha.slice(0, 7)}): ${diffSummary}.`);
           feedbackEl.innerHTML = `
             <div style="color:#065f46; font-weight:700;">✓ Successfully Compiled &amp; Pushed Static Website to GitHub!</div>
             <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; font-variant-numeric:tabular-nums;">
-              ${escapeHtml(diffSummary)} • Commit SHA: <code>${escapeHtml((res.commitSha || '').slice(0, 10))}</code> •
+              ${escapeHtml(diffSummary)} • Commit SHA: <code>${escapeHtml(commitSha.slice(0, 10))}</code> •
               <a href="${escapeHtml(
-                res.commitUrl || '#'
+                commitUrl
               )}" target="_blank" rel="noopener" style="color:var(--accent); font-weight:700;">Open Commit on GitHub ↗</a>
             </div>
           `;
           markClean(`Synced Firebase & pushed static update (${diffSummary})`);
-          showToast(`Pushed static update to GitHub (+${res.addedCount || 0} / ~${res.updatedCount || 0} / -${res.deletedCount || 0})!`, 'success');
+          showToast(`Pushed static update to GitHub (+${addedCount} / ~${updatedCount} / -${deletedCount})!`, 'success');
         }
       } else {
-        appendPipelineStep(`3/3 ⚠️ Local static bundle compiled (${res.compiledLocalFiles || 0} files), GitHub notice: ${res.error}`);
+        appendPipelineStep(`3/3 ⚠️ Local static bundle compiled (${compiledLocalCount} files), GitHub notice: ${errText}`);
         feedbackEl.innerHTML = `
           <div style="color:#b91c1c; font-weight:700;">Local Static Bundle Compiled (${
-            res.compiledLocalFiles || 0
+            compiledLocalCount
           } files in /dist-public), GitHub Push Notice:</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">${escapeHtml(
-            res.error || 'Check your GitHub Fine-Grained Token, Owner, and Repo Name.'
+            errText
           )}</div>
         `;
         renderGitHubDeployHistory();
-        showToast(res.error || 'GitHub push needs valid token & repo', 'error');
+        showToast(errText, 'error');
       }
     }
   } finally {
@@ -3278,28 +3406,41 @@ async function handleCompileAndPushToGitHub() {
 
 async function handleSaveActiveModule(explicitModuleKey = null) {
   collectScalarFields();
-  const targetModule = isCmsModuleKey(explicitModuleKey)
-    ? explicitModuleKey
-    : getPrimaryModuleForActiveTab();
-  const moduleSlice = extractConfigModule(currentConfig, targetModule);
+  const singleExplicit = isCmsModuleKey(explicitModuleKey) ? explicitModuleKey : null;
+  const tabModules = TAB_MODULES_MAP[activeTab] || [getPrimaryModuleForActiveTab(activeTab)];
+  const targetModules = singleExplicit
+    ? [singleExplicit]
+    : Array.from(new Set([...tabModules, ...Array.from(dirtyModules).filter((mk) => isCmsModuleKey(mk) && tabModules.includes(mk))]));
 
   const btnModule = $('btn-save-active-module');
   if (btnModule) {
     btnModule.disabled = true;
-    btnModule.textContent = `Saving [${targetModule}]...`;
+    btnModule.textContent = 'Saving...';
   }
 
   const siblingDirtySlices = {};
   for (const mk of dirtyModules) {
-    if (mk !== targetModule && isCmsModuleKey(mk)) {
+    if (!targetModules.includes(mk) && isCmsModuleKey(mk)) {
       siblingDirtySlices[mk] = extractConfigModule(currentConfig, mk);
     }
   }
 
   try {
-    const res = await saveSiteConfigModuleRemote(targetModule, moduleSlice, Array.from(dirtyModules));
-    if (targetModule === 'githubConfig') pendingClearGithubToken = false;
-    if (targetModule === 'securityGate') pendingClearTurnstileSecret = false;
+    let res;
+    if (targetModules.length > 1) {
+      const modulesMap = {};
+      for (const mk of targetModules) {
+        modulesMap[mk] = extractConfigModule(currentConfig, mk);
+      }
+      res = await saveSiteConfigModulesBatchRemote(modulesMap, targetModules);
+    } else {
+      const targetModule = targetModules[0];
+      const moduleSlice = extractConfigModule(currentConfig, targetModule);
+      res = await saveSiteConfigModuleRemote(targetModule, moduleSlice, Array.from(dirtyModules));
+    }
+
+    if (targetModules.includes('githubConfig')) pendingClearGithubToken = false;
+    if (targetModules.includes('securityGate')) pendingClearTurnstileSecret = false;
 
     if (res && res.success) {
       if (res.config) {
@@ -3309,22 +3450,38 @@ async function handleSaveActiveModule(explicitModuleKey = null) {
         }
         currentConfig = merged;
       }
-      dirtyModules.delete(targetModule);
-      if (dirtyModules.size === 0) {
-        markClean(res.message);
-      } else {
+      targetModules.forEach((mk) => dirtyModules.delete(mk));
+      const fb = $('save-feedback-text');
+      if (res.firestoreSaved === false && res.firestoreNotice) {
+        if (fb) {
+          fb.textContent = res.firestoreNotice;
+          fb.style.color = '#b91c1c';
+        }
         renderDirtyModulesSummary();
+        showToast(res.firestoreNotice, 'error');
+      } else {
+        if (dirtyModules.size === 0) {
+          markClean(res.message || 'Section saved to Firebase & compiled');
+        } else {
+          renderDirtyModulesSummary();
+          if (fb) {
+            fb.textContent = res.message || 'Section saved cleanly';
+            fb.style.color = '#059669';
+          }
+        }
+        showToast(res.message || 'Section saved cleanly!', 'success');
       }
       renderGitHubDeployHistory();
       refreshOverviewAndSeoAudit();
-      showToast(res.message, 'success');
+      return true;
     } else {
-      showToast(res?.error || `Failed saving module [${targetModule}].`, 'error');
+      showToast(res?.error || 'Failed saving section to Firebase.', 'error');
+      return false;
     }
   } finally {
     if (btnModule) {
       btnModule.disabled = false;
-      btnModule.textContent = `Save [${getPrimaryModuleForActiveTab()}]`;
+      btnModule.textContent = 'Save Section';
     }
   }
 }
@@ -3332,6 +3489,13 @@ async function handleSaveActiveModule(explicitModuleKey = null) {
 async function handleSaveAndPublish() {
   collectScalarFields();
   currentConfig.updatedAt = Date.now();
+
+  if (currentConfig.githubConfig?.fineGrainedToken || pendingClearGithubToken) {
+    dirtyModules.add('githubConfig');
+  }
+  if (currentConfig.securityGate?.turnstileSecretKey || pendingClearTurnstileSecret) {
+    dirtyModules.add('securityGate');
+  }
 
   const btnTop = $('btn-top-save');
   const btnBottom = $('btn-bottom-save');
@@ -3345,49 +3509,58 @@ async function handleSaveAndPublish() {
   }
 
   try {
-    const editedModules = Array.from(dirtyModules);
-    const shouldAutoPush = Boolean(currentConfig.githubConfig?.autoPushOnPublish);
+    const gh = currentConfig.githubConfig || {};
+    const hasGhToken = Boolean(
+      gh.fineGrainedToken ||
+        gh.hasFineGrainedToken ||
+        getLastEnvDiagnostics()?.githubTokenConfigured
+    );
+    const isGhConfigured = Boolean(hasGhToken && gh.repoOwner && gh.repoName);
+    const shouldAutoPush = Boolean(gh.autoPushOnPublish && isGhConfigured);
 
-    // Single atomic batch commit for all edited modules (zero sequential loops & zero full-DB rewrite)
-    if (!shouldAutoPush && editedModules.length > 0 && editedModules.length <= 8) {
+    if (shouldAutoPush || (activeTab === 'deploy' && isGhConfigured)) {
+      await handleCompileAndPushToGitHub();
+      refreshOverviewAndSeoAudit();
+      return;
+    }
+
+    const dirtyList = Array.from(dirtyModules).filter((mk) => isCmsModuleKey(mk));
+    const tabModules = TAB_MODULES_MAP[activeTab] || [getPrimaryModuleForActiveTab(activeTab)];
+    const targetModules = dirtyList.length > 0 ? dirtyList : tabModules;
+
+    if (targetModules.length > 0) {
       const modulesMap = {};
-      for (const modKey of editedModules) {
+      for (const modKey of targetModules) {
         modulesMap[modKey] = extractConfigModule(currentConfig, modKey);
       }
-      const batchRes = await saveSiteConfigModulesBatchRemote(modulesMap, editedModules);
+      const batchRes = await saveSiteConfigModulesBatchRemote(modulesMap, targetModules);
       if (!batchRes?.success) {
-        throw new Error(batchRes?.error || 'Error saving edited modules');
+        throw new Error(batchRes?.error || 'Error saving modules to Firebase');
       }
       if (batchRes.config) {
         currentConfig = mergeSiteConfig(batchRes.config, EMPTY_ADMIN_CONFIG);
       }
-      for (const modKey of editedModules) dirtyModules.delete(modKey);
+      targetModules.forEach((modKey) => dirtyModules.delete(modKey));
       pendingClearGithubToken = false;
       pendingClearTurnstileSecret = false;
-      const summaryMsg = batchRes.message || `Saved [${editedModules.join(', ')}] to Live Firebase & compiled static public routes`;
       populateAllFields();
-      markClean(summaryMsg);
-      showToast(summaryMsg, 'success');
+
+      if (batchRes.firestoreSaved === false && batchRes.firestoreNotice) {
+        const fb = $('save-feedback-text');
+        if (fb) {
+          fb.textContent = batchRes.firestoreNotice;
+          fb.style.color = '#b91c1c';
+        }
+        showToast(batchRes.firestoreNotice, 'error');
+      } else {
+        const summaryMsg = batchRes.message || `Saved [${targetModules.join(', ')}] to Live Firebase & compiled static routes`;
+        markClean(summaryMsg);
+        showToast(summaryMsg, 'success');
+      }
+      renderGitHubDeployHistory();
+      refreshOverviewAndSeoAudit();
       return;
     }
-
-    const res = await saveSiteConfigRemote(currentConfig, editedModules);
-    pendingClearGithubToken = false;
-    pendingClearTurnstileSecret = false;
-
-    if (res && res.success === false) {
-      showToast(res.error || 'Saved locally, but server sync returned a warning.', 'error');
-    } else {
-      dirtyModules.clear();
-      if (res?.config) {
-        currentConfig = mergeSiteConfig(res.config, EMPTY_ADMIN_CONFIG);
-        populateAllFields();
-      }
-      markClean(res.message || 'Published to Live Firebase & compiled static public website');
-      showToast(res.message || 'Published & compiled static website', 'success');
-    }
-    renderGitHubDeployHistory();
-    refreshOverviewAndSeoAudit();
   } catch (err) {
     showToast(err.message || 'Error saving configuration.', 'error');
   } finally {
@@ -3397,7 +3570,7 @@ async function handleSaveAndPublish() {
     }
     if (btnBottom) {
       btnBottom.disabled = false;
-      btnBottom.textContent = 'Publish Edited Modules';
+      btnBottom.textContent = dirtyModules.size > 0 ? 'Publish Edited Modules' : 'Publish Changes';
     }
   }
 }
@@ -3859,20 +4032,23 @@ function bindWorkspaceDomEvents() {
     });
   });
 
-  // Workspace 2 (Brand & Colors) Sub-Card Filter Pills
-  document.querySelectorAll('[data-brand-subtab]').forEach((btn) => {
+  // Menu & Pages Sub-Area Filter Pills
+  document.querySelectorAll('[data-pages-subtab]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const subKey = btn.getAttribute('data-brand-subtab') || 'all';
-      filterBrandSubcards(subKey);
+      const subKey = btn.getAttribute('data-pages-subtab') || 'all';
+      filterPagesSubcards(subKey);
     });
   });
 
-  // Workspace 8 (Security, SEO & Deploy) Sub-Card Filter Pills
-  document.querySelectorAll('[data-domain-subtab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const subKey = btn.getAttribute('data-domain-subtab') || 'all';
-      filterDomainSubcards(subKey);
-    });
+  // Toggle Collapsible Individual Area Color Customizer
+  $('btn-toggle-custom-colors')?.addEventListener('click', () => {
+    const panel = $('ui-custom-colors-panel');
+    const btn = $('btn-toggle-custom-colors');
+    if (!panel || !btn) return;
+    const willShow = panel.hidden;
+    panel.hidden = !willShow;
+    btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+    btn.textContent = willShow ? 'Hide Individual Colors ▴' : 'Customize Individual Colors ▾';
   });
 
   // Smartphone 1-Tap Quick-Add Content Bar on Overview
@@ -4334,28 +4510,55 @@ function bindWorkspaceDomEvents() {
     });
   });
 
-  // Color Picker Two-Way Binding (`data-color-sync`) with 60fps requestAnimationFrame throttling
+  // Color Choice Circular Dots + Native Custom Color Picker Two-Way Binding
   let colorRafId = 0;
+  document.querySelectorAll('[data-color-choice-for]').forEach((dot) => {
+    dot.addEventListener('click', () => {
+      const targetId = dot.getAttribute('data-color-choice-for');
+      const hex = (dot.getAttribute('data-color') || '').trim().toUpperCase();
+      const hiddenEl = targetId ? $(targetId) : null;
+      if (!hiddenEl || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+      hiddenEl.value = hex;
+      if (targetId === 'brand-color' && $('brand-theme-color')) {
+        $('brand-theme-color').value = hex;
+      }
+      syncColorPickersFromTextInputs();
+      if (targetId !== 'qc-accent-color') {
+        const modKey = inferModuleKeyFromElement(hiddenEl);
+        collectScalarFields();
+        markDirty('Selected new color — tap Publish or Save Section to persist', modKey);
+      }
+    });
+  });
+
   document.querySelectorAll('[data-color-sync]').forEach((picker) => {
     picker.addEventListener('input', (e) => {
       const targetId = picker.getAttribute('data-color-sync');
       const val = e.target.value.toUpperCase();
       if (colorRafId) cancelAnimationFrame(colorRafId);
       colorRafId = requestAnimationFrame(() => {
-        const txt = targetId ? $(targetId) : null;
-        if (txt) txt.value = val;
-        updateLiveThemePreviewCard();
-        markDirty('Updated theme color', 'uiConfig');
+        const hiddenEl = targetId ? $(targetId) : null;
+        if (hiddenEl) {
+          hiddenEl.value = val;
+          if (targetId === 'brand-color' && $('brand-theme-color')) {
+            $('brand-theme-color').value = val;
+          }
+          syncColorPickersFromTextInputs();
+          if (targetId !== 'qc-accent-color') {
+            const modKey = inferModuleKeyFromElement(hiddenEl);
+            markDirty('Updated custom color — tap Publish or Save Section to persist', modKey);
+          }
+        }
       });
     });
   });
 
-  // Live Theme Preview updates when typing hex colors or changing radius/brand name
-  ['brand-name', 'brand-color', 'brand-theme-color', 'ui-bg-page', 'ui-bg-surface', 'ui-border-color', 'ui-header-bg', 'ui-header-text', 'ui-btn-text-color', 'ui-footer-bg', 'ui-footer-text', 'ui-text-color', 'ui-heading-color', 'ui-card-radius'].forEach((id) => {
+  // Live Theme Preview updates when changing radius or brand name
+  ['brand-name', 'ui-card-radius'].forEach((id) => {
     $(id)?.addEventListener('input', () => {
       if (colorRafId) cancelAnimationFrame(colorRafId);
       colorRafId = requestAnimationFrame(() => {
-        syncColorPickersFromTextInputs();
+        updateLiveThemePreviewCard();
       });
     });
   });
@@ -4600,14 +4803,29 @@ function bindWorkspaceDomEvents() {
 
   // Clear Admin Data (Empty Live Firebase State)
   $('btn-reset-defaults')?.addEventListener('click', async () => {
-    const fresh = await resetSiteConfigRemote();
-    currentConfig = mergeSiteConfig(fresh, EMPTY_ADMIN_CONFIG);
-    openSectionIndex = -1;
-    openNewsIndex = -1;
-    openFaqIndex = -1;
-    populateAllFields();
-    markClean('Cleared all Admin content to clean Empty Firebase State');
-    showToast('Cleared Admin workspace to empty Firebase state', 'success');
+    const btn = $('btn-reset-defaults');
+    const origText = btn?.textContent || 'Clear All Admin Content (Empty State)';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Clearing...';
+    }
+    try {
+      const fresh = await resetSiteConfigRemote();
+      currentConfig = mergeSiteConfig(fresh, EMPTY_ADMIN_CONFIG);
+      openSectionIndex = -1;
+      openNewsIndex = -1;
+      openFaqIndex = -1;
+      populateAllFields();
+      markClean('Cleared all Admin content to clean Empty Firebase State');
+      showToast('Cleared Admin workspace to empty Firebase state', 'success');
+    } catch (err) {
+      showToast(err?.message || 'Failed clearing Admin content.', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
   });
 }
 
@@ -4624,8 +4842,8 @@ function initAuthEvents() {
     showToast('Uploading image...', 'default');
     const result = await uploadImageRemote(file);
     if (result.success && result.url) {
-      pendingUploadCallback(result.url);
-      markDirty();
+      const uploadedMod = pendingUploadCallback(result.url);
+      markDirty('Image uploaded — tap Publish or Save Section to persist', isCmsModuleKey(uploadedMod) ? uploadedMod : getPrimaryModuleForActiveTab());
       showToast('Image uploaded and linked!', 'success');
     } else {
       showToast(result.error || 'Image upload failed.', 'error');
@@ -4682,19 +4900,14 @@ function initAuthEvents() {
       return;
     }
 
-    // 0B. Delegated Jump-to-Tab & Exact Subcard Filter (Overview Page Map + Dynamic SEO Audit "Configure →" Buttons)
+    // 0B. Delegated Jump-to-Tab & Subcard Anchor Routing
     const jumpBtn = target.closest('[data-jump-tab]');
     if (jumpBtn) {
       e.preventDefault();
       const targetTab = jumpBtn.getAttribute('data-jump-tab');
       const subtab = jumpBtn.getAttribute('data-jump-subtab') || '';
       if (targetTab) {
-        switchTab(targetTab);
-        if (targetTab === 'brand') {
-          filterBrandSubcards(subtab || 'all');
-        } else if (targetTab === 'domain') {
-          filterDomainSubcards(subtab || 'all');
-        }
+        switchTab(targetTab, subtab);
         if (jumpBtn.id === 'btn-quick-jump-logs') {
           setTimeout(() => {
             $('gh-deploy-history-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4713,10 +4926,12 @@ function initAuthEvents() {
       triggerDeviceImageUpload((uploadedUrl) => {
         if (inputId && $(inputId)) {
           $(inputId).value = uploadedUrl;
+          refreshBrandThumbs();
         }
         if (previewId && $(previewId)) {
           setImagePreview($(previewId), uploadedUrl);
         }
+        return inferModuleKeyFromElement(inputId ? $(inputId) : null);
       });
       return;
     }
@@ -4734,6 +4949,7 @@ function initAuthEvents() {
           list[index][key] = uploadedUrl;
           rerenderCollection(collection);
         }
+        return inferModuleKeyFromElement({ dataset: { collection } });
       });
       return;
     }
@@ -4842,7 +5058,7 @@ function initAuthEvents() {
         if (col === 'news') openNewsIndex = idx;
         rerenderCollection(col);
         syncUrlQuickPickers();
-        markDirty();
+        markDirty(`Generated slug in [${col}]`, inferModuleKeyFromElement({ dataset: { collection: col } }));
         showToast(`Generated slug: ${list[idx].slug}`, 'success');
       }
       return;
@@ -4865,7 +5081,7 @@ function initAuthEvents() {
         if (col === 'sections') openSectionIndex = idx;
         if (col === 'news') openNewsIndex = idx;
         rerenderCollection(col);
-        markDirty();
+        markDirty(`Updated SEO meta tags in [${col}]`, inferModuleKeyFromElement({ dataset: { collection: col } }));
         showToast('Auto-filled SEO Meta Title & Description!', 'success');
       }
       return;
@@ -4942,7 +5158,7 @@ function initAuthEvents() {
       if (previewId && $(previewId)) {
         $(previewId).innerHTML = textarea.value;
       }
-      markDirty();
+      markDirty(`Inserted snippet in [${collection || 'content'}]`, inferModuleKeyFromElement(collection ? { dataset: { collection } } : textarea));
       return;
     }
 
@@ -4955,6 +5171,7 @@ function initAuthEvents() {
       const idx = Number(actionBtn.dataset.index);
       const list = getCollectionRef(collection);
       if (!list || Number.isNaN(idx)) return;
+      const colModKey = inferModuleKeyFromElement({ dataset: { collection } });
 
       if (action === 'delete') {
         list.splice(idx, 1);
@@ -4966,7 +5183,7 @@ function initAuthEvents() {
         if (collection === 'faqs') openFaqIndex = -1;
         rerenderCollection(collection);
         syncUrlQuickPickers();
-        markDirty(`Removed item from [${collection}]`);
+        markDirty(`Removed item from [${collection}]`, colModKey);
         showToast('Item removed');
       } else if (action === 'clone') {
         const src = list[idx];
@@ -4987,7 +5204,7 @@ function initAuthEvents() {
         if (collection === 'faqs') openFaqIndex = idx + 1;
         rerenderCollection(collection);
         syncUrlQuickPickers();
-        markDirty(`Cloned item in [${collection}]`);
+        markDirty(`Cloned item in [${collection}]`, colModKey);
         showToast('Duplicated item cleanly!', 'success');
       } else if ((action === 'move-up' || action === 'move-left') && idx > 0) {
         [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]];
@@ -4996,7 +5213,7 @@ function initAuthEvents() {
         if (collection === 'news') openNewsIndex = idx - 1;
         if (collection === 'faqs') openFaqIndex = idx - 1;
         rerenderCollection(collection);
-        markDirty();
+        markDirty(`Reordered [${collection}]`, colModKey);
       } else if ((action === 'move-down' || action === 'move-right') && idx < list.length - 1) {
         [list[idx + 1], list[idx]] = [list[idx], list[idx + 1]];
         if (collection === 'pages') activeLegalPageIndex = idx + 1;
@@ -5004,7 +5221,7 @@ function initAuthEvents() {
         if (collection === 'news') openNewsIndex = idx + 1;
         if (collection === 'faqs') openFaqIndex = idx + 1;
         rerenderCollection(collection);
-        markDirty();
+        markDirty(`Reordered [${collection}]`, colModKey);
       }
       return;
     }
@@ -5025,36 +5242,59 @@ function initAuthEvents() {
     }
   });
 
-  // Quick-Pick Route Dropdown Handler (`data-url-picker-for` and `data-url-index-for`)
+  // Quick-Pick Route Dropdowns, Checkboxes & Select Changes
   document.addEventListener('change', (e) => {
-    const sel = e.target;
-    if (!(sel instanceof HTMLSelectElement)) return;
-    const pickedUrl = sel.value;
-    if (!pickedUrl) return;
+    const target = e.target;
+    if (target instanceof HTMLSelectElement) {
+      const scalarTargetId = target.getAttribute('data-url-picker-for');
+      const collTargetId = target.getAttribute('data-url-index-for');
 
-    const scalarTargetId = sel.getAttribute('data-url-picker-for');
-    if (scalarTargetId && $(scalarTargetId)) {
-      $(scalarTargetId).value = pickedUrl;
-      sel.value = '';
-      markDirty();
-      showToast(`Selected route: ${pickedUrl}`, 'success');
-      return;
+      if (scalarTargetId) {
+        const pickedUrl = target.value;
+        if (!pickedUrl) return;
+        const targetInp = $(scalarTargetId);
+        if (targetInp) targetInp.value = pickedUrl;
+        target.value = '';
+        markDirty('Selected link destination', inferModuleKeyFromElement(targetInp || target));
+        showToast(`Selected route: ${pickedUrl}`, 'success');
+        return;
+      }
+
+      if (collTargetId) {
+        const pickedUrl = target.value;
+        if (!pickedUrl) return;
+        const inp = $(collTargetId);
+        if (inp) inp.value = pickedUrl;
+        const col = target.getAttribute('data-collection');
+        const idx = Number(target.getAttribute('data-index'));
+        const key = target.getAttribute('data-key');
+        const list = col ? getCollectionRef(col) : null;
+        if (list && list[idx] && key) {
+          list[idx][key] = pickedUrl;
+        }
+        target.value = '';
+        markDirty(`Selected route in [${col}]`, inferModuleKeyFromElement(target));
+        showToast(`Selected route: ${pickedUrl}`, 'success');
+        return;
+      }
     }
 
-    const collTargetId = sel.getAttribute('data-url-index-for');
-    if (collTargetId) {
-      const inp = $(collTargetId);
-      if (inp) inp.value = pickedUrl;
-      const col = sel.getAttribute('data-collection');
-      const idx = Number(sel.getAttribute('data-index'));
-      const key = sel.getAttribute('data-key');
-      const list = col ? getCollectionRef(col) : null;
-      if (list && list[idx] && key) {
-        list[idx][key] = pickedUrl;
+    if (
+      (target instanceof HTMLInputElement && target.type === 'checkbox') ||
+      target instanceof HTMLSelectElement
+    ) {
+      if (
+        !target.id?.startsWith('login-') &&
+        !target.id?.startsWith('composer-') &&
+        !target.id?.startsWith('modal-') &&
+        !target.id?.startsWith('vb-') &&
+        !target.id?.startsWith('preview-')
+      ) {
+        const modKey = inferModuleKeyFromElement(target);
+        if (modKey) {
+          markDirty(`Unsaved toggle in [${modKey}] — tap Save or Publish`, modKey);
+        }
       }
-      sel.value = '';
-      markDirty();
-      showToast(`Selected route: ${pickedUrl}`, 'success');
     }
   });
 
@@ -5110,11 +5350,15 @@ function initAuthEvents() {
       !target.id?.startsWith('composer-') &&
       !target.id?.startsWith('modal-') &&
       !target.id?.startsWith('vb-') &&
+      !target.id?.startsWith('fb-') &&
+      !target.id?.startsWith('qc-') &&
       !target.id?.endsWith('-search-input') &&
       !target.id?.startsWith('preview-')
     ) {
       const modKey = inferModuleKeyFromElement(target);
-      markDirty(`Unsaved edit in [${modKey}] — click Save or Publish`, modKey);
+      if (modKey) {
+        markDirty(`Unsaved edit in [${modKey}] — tap Save or Publish`, modKey);
+      }
     }
   });
 }

@@ -1369,6 +1369,468 @@ test('Real index.html SSR injects configured content cleanly, unhides email/logo
   assert.ok(manifest.icons.some((ic: any) => ic.src === 'https://cdn.example.org/kestrel-512.png'));
 });
 
+test('Admin workspace shell exposes all 12 dedicated panels, visual color dots without visible hex text inputs, and matches Edge shell byte-for-byte', async () => {
+  const { getAdminWorkspaceShellHtml } = await import('./admin-workspace-html');
+  const edgeWorkspaceHtml = await import('../../functions/_shared/admin-workspace-html.js');
+  const html = getAdminWorkspaceShellHtml();
 
+  assert.equal(html, edgeWorkspaceHtml.getAdminWorkspaceShellHtml());
+
+  const expectedPanels = [
+    'panel-overview',
+    'panel-brand',
+    'panel-hero',
+    'panel-specs',
+    'panel-sections',
+    'panel-news',
+    'panel-faqs',
+    'panel-pages',
+    'panel-security',
+    'panel-links',
+    'panel-domain',
+    'panel-deploy'
+  ];
+  for (const panelId of expectedPanels) {
+    assert.ok(html.includes(`id="${panelId}"`), `Missing workspace panel ${panelId}`);
+  }
+
+  assert.ok(html.includes('id="btn-toggle-custom-colors"'));
+  assert.ok(html.includes('id="ui-custom-colors-panel"'));
+  assert.ok(html.includes('data-color-choice-for="brand-color"'));
+
+  const colorFieldIds = [
+    'qc-accent-color',
+    'brand-color',
+    'brand-theme-color',
+    'ui-bg-page',
+    'ui-bg-surface',
+    'ui-header-bg',
+    'ui-header-text',
+    'ui-footer-bg',
+    'ui-footer-text',
+    'ui-border-color',
+    'ui-text-color',
+    'ui-heading-color',
+    'ui-btn-text-color'
+  ];
+  for (const fieldId of colorFieldIds) {
+    assert.ok(
+      html.includes(`type="hidden" id="${fieldId}"`),
+      `Color field "${fieldId}" must use hidden backing input instead of visible hex text input`
+    );
+    assert.ok(
+      !html.includes(`type="text" id="${fieldId}"`),
+      `Visible type="text" hex input must not exist for "${fieldId}"`
+    );
+    assert.ok(
+      html.includes(`data-color-sync="${fieldId}"`),
+      `Missing native color picker sync control for "${fieldId}"`
+    );
+  }
+});
+
+test('Edge /api/config handler fails closed with 503 when Firebase env is missing and batches cmsModules writes when configured', async () => {
+  const edgeConfig = await import('../../functions/api/config.js');
+  const edgeAuth = await import('../../functions/_shared/auth.js');
+  const edgeLogin = await import('../../functions/api/admin/login.js');
+
+  const unconfiguredEnv = {
+    CF_PAGES: '1',
+    ADMIN_EMAIL: 'owner@test.example',
+    ADMIN_PASSWORD: 'StrongPassword#2026'
+  };
+
+  // Sign in to obtain valid admin session cookie
+  const loginRes = await edgeLogin.onRequestPost({
+    request: new Request('https://cms.test.example/api/admin/login', {
+      method: 'POST',
+      headers: {
+        host: 'cms.test.example',
+        origin: 'https://cms.test.example',
+        'content-type': 'application/json',
+        'x-admin-csrf': '1'
+      },
+      body: JSON.stringify({ email: 'owner@test.example', password: 'StrongPassword#2026' })
+    }),
+    env: unconfiguredEnv
+  });
+  assert.equal(loginRes.status, 200);
+  const cookiePair = (loginRes.headers.get('set-cookie') || '').split(';')[0];
+
+  // PATCH without Firebase env vars must fail closed with 503
+  const failClosedPatch = await edgeConfig.onRequestPatch({
+    request: new Request('https://cms.test.example/api/config', {
+      method: 'PATCH',
+      headers: {
+        host: 'cms.test.example',
+        origin: 'https://cms.test.example',
+        cookie: cookiePair,
+        'content-type': 'application/json',
+        'x-admin-csrf': '1'
+      },
+      body: JSON.stringify({ moduleKey: 'brand', data: { ...EMPTY_ADMIN_CONFIG.brand, name: 'DemoBrand' } })
+    }),
+    env: unconfiguredEnv
+  });
+  assert.equal(failClosedPatch.status, 503);
+  const failBody = await failClosedPatch.json();
+  assert.equal(failBody.success, false);
+  assert.equal(failBody.firestoreSaved, false);
+
+  // writeSiteConfigToFirestoreRest syncs both siteConfig/main and cmsModules/* batch commit
+  const fetchCalls: Array<{ url: string; method: string; body: string }> = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls.push({
+      url: String(input),
+      method: String(init?.method || 'GET'),
+      body: String(init?.body || '')
+    });
+    return new Response(JSON.stringify({ writeResults: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }) as typeof fetch;
+
+  try {
+    const fbCfg = { projectId: 'real-prod-proj', apiKey: 'AIzaRealKey1234567890', databaseId: '(default)' };
+    const writeRes = await edgeAuth.writeSiteConfigToFirestoreRest(fbCfg, {
+      ...EMPTY_ADMIN_CONFIG,
+      brand: { ...EMPTY_ADMIN_CONFIG.brand, name: 'SyncedBrand' }
+    });
+    assert.equal(writeRes.ok, true);
+    assert.ok(fetchCalls.some((c) => c.url.includes('/documents/siteConfig/main')));
+    const commitCall = fetchCalls.find((c) => c.url.includes('/documents:commit'));
+    assert.ok(commitCall, 'Expected Firestore documents:commit batch write');
+    assert.ok(commitCall.body.includes('/cmsModules/brand'));
+    assert.ok(commitCall.body.includes('/cmsModules/securityGate'));
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('Edge catch-all router fails closed on Firestore read errors, persists syncLogs atomically on module saves, and handles masked API keys in /api/firebase/test', async () => {
+  const edgeCatchall = await import('../../functions/api/[[catchall]].js');
+  const edgeLogin = await import('../../functions/api/admin/login.js');
+  const edgeGithub = await import('../../functions/_shared/github.js');
+  const { verifyGitHubRepoAccess } = await import('./github-publisher.js');
+
+  const configuredEnv = {
+    CF_PAGES: '1',
+    ADMIN_EMAIL: 'owner@test.example',
+    ADMIN_PASSWORD: 'StrongPassword#2026',
+    FIREBASE_API_KEY: 'AIzaRealServerEnvKey999999999',
+    FIREBASE_PROJECT_ID: 'live-prod-cms'
+  };
+
+  const loginRes = await edgeLogin.onRequestPost({
+    request: new Request('https://cms.test.example/api/admin/login', {
+      method: 'POST',
+      headers: {
+        host: 'cms.test.example',
+        origin: 'https://cms.test.example',
+        'content-type': 'application/json',
+        'x-admin-csrf': '1'
+      },
+      body: JSON.stringify({ email: 'owner@test.example', password: 'StrongPassword#2026' })
+    }),
+    env: configuredEnv
+  });
+  assert.equal(loginRes.status, 200);
+  const cookiePair = (loginRes.headers.get('set-cookie') || '').split(';')[0];
+
+  const origFetch = globalThis.fetch;
+  try {
+    // 1. Simulate Firestore 403 PERMISSION_DENIED on cmsModules while siteConfig/main is 404:
+    // PATCH /api/config/module MUST return 502 and NEVER overwrite Firestore with EMPTY_ADMIN_CONFIG!
+    let commitCalledOnReadError = false;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/documents:commit')) {
+        commitCalledOnReadError = true;
+      }
+      if (url.includes('/documents/siteConfig/main')) {
+        return new Response(JSON.stringify({ error: { code: 404, message: 'Not found' } }), { status: 404 });
+      }
+      return new Response(
+        JSON.stringify({ error: { code: 403, status: 'PERMISSION_DENIED', message: 'Missing permissions' } }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const failReadRes = await edgeCatchall.onRequest({
+      request: new Request('https://cms.test.example/api/config/module', {
+        method: 'PATCH',
+        headers: {
+          host: 'cms.test.example',
+          origin: 'https://cms.test.example',
+          cookie: cookiePair,
+          'content-type': 'application/json',
+          'x-admin-csrf': '1'
+        },
+        body: JSON.stringify({ moduleKey: 'brand', data: { ...EMPTY_ADMIN_CONFIG.brand, name: 'SafeBrand' } })
+      }),
+      env: configuredEnv,
+      params: { catchall: ['config', 'module'] }
+    });
+    assert.equal(failReadRes.status, 502);
+    assert.equal(commitCalledOnReadError, false, 'Must not commit to Firestore when pre-save read fails');
+
+    // 2. Simulate healthy Firestore (404 empty initially, 200 on commit):
+    // PATCH /api/config/module must atomically commit brand + syncLogs + githubConfig in 1 batch request
+    const commitPayloads: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/documents:commit')) {
+        commitPayloads.push(String(init?.body || ''));
+        return new Response(JSON.stringify({ writeResults: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify({ error: { code: 404, message: 'Not found' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }) as typeof fetch;
+
+    const okPatchRes = await edgeCatchall.onRequest({
+      request: new Request('https://cms.test.example/api/config/module', {
+        method: 'PATCH',
+        headers: {
+          host: 'cms.test.example',
+          origin: 'https://cms.test.example',
+          cookie: cookiePair,
+          'content-type': 'application/json',
+          'x-admin-csrf': '1'
+        },
+        body: JSON.stringify({ moduleKey: 'brand', data: { ...EMPTY_ADMIN_CONFIG.brand, name: 'AtomicBrand' } })
+      }),
+      env: configuredEnv,
+      params: { catchall: ['config', 'module'] }
+    });
+    assert.equal(okPatchRes.status, 200);
+    const okPatchJson = await okPatchRes.json();
+    assert.equal(okPatchJson.success, true);
+    assert.equal(okPatchJson.firestoreSaved, true);
+    assert.equal(okPatchJson.config.brand.name, 'AtomicBrand');
+    assert.equal(okPatchJson.config.syncLogs.length, 1);
+    assert.equal(okPatchJson.config.syncLogs[0].trigger, 'firebase-save');
+    assert.equal(commitPayloads.length, 1, 'Expected exactly 1 atomic Firestore commit');
+    assert.ok(commitPayloads[0].includes('/cmsModules/brand'));
+    assert.ok(commitPayloads[0].includes('/cmsModules/syncLogs'));
+    assert.ok(commitPayloads[0].includes('/cmsModules/githubConfig'));
+
+    // 3. POST /api/firebase/test with masked '__SECRET_CONFIGURED__' apiKey falls back to server env key
+    let testedFirestoreUrl = '';
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      testedFirestoreUrl = String(input);
+      return new Response(JSON.stringify({ fields: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }) as typeof fetch;
+
+    const fbTestRes = await edgeCatchall.onRequest({
+      request: new Request('https://cms.test.example/api/firebase/test', {
+        method: 'POST',
+        headers: {
+          host: 'cms.test.example',
+          origin: 'https://cms.test.example',
+          cookie: cookiePair,
+          'content-type': 'application/json',
+          'x-admin-csrf': '1'
+        },
+        body: JSON.stringify({
+          firebaseConfig: {
+            apiKey: '__SECRET_CONFIGURED__',
+            projectId: 'live-prod-cms'
+          }
+        })
+      }),
+      env: configuredEnv,
+      params: { catchall: ['firebase', 'test'] }
+    });
+    assert.equal(fbTestRes.status, 200);
+    assert.ok(
+      testedFirestoreUrl.includes('key=AIzaRealServerEnvKey999999999'),
+      'Must substitute server env key instead of sending __SECRET_CONFIGURED__'
+    );
+
+    // 4. Verify GitHub repo access normalized schema on both Node and Edge
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          full_name: 'acme/public-site',
+          default_branch: 'main',
+          private: true,
+          size: 12,
+          permissions: { push: true, admin: false }
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const nodeVerify = await verifyGitHubRepoAccess({
+      repoOwner: 'acme',
+      repoName: 'public-site',
+      branch: 'main',
+      fineGrainedToken: 'github_pat_test123'
+    });
+    const edgeVerify = await edgeGithub.verifyGitHubRepoAccessEdge({
+      repoOwner: 'acme',
+      repoName: 'public-site',
+      branch: 'main',
+      fineGrainedToken: 'github_pat_test123'
+    });
+    for (const v of [nodeVerify, edgeVerify] as any[]) {
+      assert.equal(v.success, true);
+      assert.equal(v.ok, true);
+      assert.equal(v.fullName, 'acme/public-site');
+      assert.equal(v.repoFullName, 'acme/public-site');
+      assert.equal(v.private, true);
+      assert.equal(v.privateRepo, true);
+      assert.equal(v.canPush, true);
+    }
+
+    // 5. Verify Firestore AES-256-GCM secret encryption at rest & Step 1 (batch save) -> Step 2 (GitHub publish)
+    const firestoreDocs = new Map<string, any>();
+    let capturedGithubAuthHeader = '';
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method || 'GET').toUpperCase();
+
+      if (url.includes('firestore.googleapis.com') && url.includes('/documents:commit')) {
+        const bodyObj = JSON.parse(String(init?.body || '{}'));
+        for (const w of bodyObj.writes || []) {
+          if (w.update?.name && w.update?.fields) {
+            const docKey = String(w.update.name).split('/documents/')[1];
+            firestoreDocs.set(docKey, { name: w.update.name, fields: w.update.fields });
+          }
+        }
+        return new Response(JSON.stringify({ writeResults: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url.includes('firestore.googleapis.com') && url.includes('/documents/cmsModules')) {
+        const docs = Array.from(firestoreDocs.entries())
+          .filter(([k]) => k.startsWith('cmsModules/'))
+          .map(([, v]) => v);
+        return new Response(JSON.stringify({ documents: docs }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url.includes('firestore.googleapis.com') && url.includes('/documents/siteConfig/main')) {
+        const mainDoc = firestoreDocs.get('siteConfig/main');
+        if (!mainDoc) {
+          return new Response(JSON.stringify({ error: { code: 404, message: 'Not found' } }), { status: 404 });
+        }
+        return new Response(JSON.stringify(mainDoc), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url.includes('api.github.com/repos/acme/daman-portal')) {
+        const headersObj = new Headers(init?.headers);
+        capturedGithubAuthHeader = headersObj.get('Authorization') || '';
+        if (url.endsWith('/git/ref/heads/main')) {
+          return new Response(JSON.stringify({ object: { sha: '1111111111111111111111111111111111111111' } }), { status: 200 });
+        }
+        if (url.includes('/git/commits/1111111111111111111111111111111111111111')) {
+          return new Response(JSON.stringify({ tree: { sha: '2222222222222222222222222222222222222222' } }), { status: 200 });
+        }
+        if (url.includes('/git/trees/2222222222222222222222222222222222222222')) {
+          return new Response(JSON.stringify({ tree: [], truncated: false }), { status: 200 });
+        }
+        if (url.endsWith('/git/trees') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: '3333333333333333333333333333333333333333' }), { status: 201 });
+        }
+        if (url.endsWith('/git/commits') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: '4444444444444444444444444444444444444444' }), { status: 201 });
+        }
+        if (url.endsWith('/git/refs/heads/main') && method === 'PATCH') {
+          return new Response(JSON.stringify({ object: { sha: '4444444444444444444444444444444444444444' } }), { status: 200 });
+        }
+      }
+
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as typeof fetch;
+
+    // Step 1: Batch-save githubConfig with a Fine-Grained Token via PATCH /api/config/modules
+    const step1Res = await edgeCatchall.onRequest({
+      request: new Request('https://cms.test.example/api/config/modules', {
+        method: 'PATCH',
+        headers: {
+          host: 'cms.test.example',
+          origin: 'https://cms.test.example',
+          cookie: cookiePair,
+          'content-type': 'application/json',
+          'x-admin-csrf': '1'
+        },
+        body: JSON.stringify({
+          modules: {
+            brand: { ...EMPTY_ADMIN_CONFIG.brand, name: 'Daman Game' },
+            githubConfig: {
+              ...EMPTY_ADMIN_CONFIG.githubConfig,
+              repoOwner: 'acme',
+              repoName: 'daman-portal',
+              branch: 'main',
+              targetDirectory: 'dist-public',
+              fineGrainedToken: 'github_pat_LIVE_SECRET_TOKEN_999'
+            }
+          }
+        })
+      }),
+      env: configuredEnv,
+      params: { catchall: ['config', 'modules'] }
+    });
+    assert.equal(step1Res.status, 200);
+    const step1Data = await step1Res.json();
+    assert.equal(step1Data.success, true);
+    assert.equal(step1Data.config.githubConfig.fineGrainedToken, '', 'Client response must mask token');
+    assert.equal(step1Data.config.githubConfig.hasFineGrainedToken, true);
+
+    // Confirm Firestore stored AES-256-GCM ciphertext (`v2.*`), NOT plaintext or empty string!
+    const rawStoredGhDoc = JSON.stringify(firestoreDocs.get('cmsModules/githubConfig') || {});
+    assert.ok(!rawStoredGhDoc.includes('github_pat_LIVE_SECRET_TOKEN_999'), 'Plaintext token must not be stored in Firestore');
+    assert.ok(rawStoredGhDoc.includes('v2.'), 'Token must be encrypted with AES-256-GCM (v2.*) in Firestore');
+
+    // Step 2: Call POST /api/github/publish WITH masked/empty client token — server must decrypt token from Firestore and push!
+    const step2Res = await edgeCatchall.onRequest({
+      request: new Request('https://cms.test.example/api/github/publish', {
+        method: 'POST',
+        headers: {
+          host: 'cms.test.example',
+          origin: 'https://cms.test.example',
+          cookie: cookiePair,
+          'content-type': 'application/json',
+          'x-admin-csrf': '1'
+        },
+        body: JSON.stringify({
+          config: step1Data.config,
+          githubConfig: step1Data.config.githubConfig,
+          modulesChanged: ['brand', 'githubConfig']
+        })
+      }),
+      env: configuredEnv,
+      params: { catchall: ['github', 'publish'] }
+    });
+    assert.equal(step2Res.status, 200);
+    const step2Data = await step2Res.json();
+    assert.equal(step2Data.success, true, `Expected GitHub publish to succeed, got: ${step2Data.error || step2Data.message}`);
+    assert.equal(capturedGithubAuthHeader, 'Bearer github_pat_LIVE_SECRET_TOKEN_999');
+    assert.equal(step2Data.commitSha, '4444444444444444444444444444444444444444');
+    assert.equal(step2Data.config.dirtyModulesSinceSync.length, 0);
+    assert.equal(step2Data.config.githubConfig.hasFineGrainedToken, true);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
 
 

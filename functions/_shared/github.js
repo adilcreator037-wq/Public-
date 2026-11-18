@@ -87,9 +87,14 @@ export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '')
   const updated = [];
   const unchanged = [];
 
-  for (const file of files) {
+  const resolveFullGitPath = (file) => {
     const cleanRel = String(file.path || '').replace(/^\/+/, '');
-    const fullPath = prefix ? `${prefix}${cleanRel}` : cleanRel;
+    if (file.rootRelative) return cleanRel;
+    return prefix ? `${prefix}${cleanRel}` : cleanRel;
+  };
+
+  for (const file of files) {
+    const fullPath = resolveFullGitPath(file);
     desiredFullPaths.add(fullPath);
 
     const existingSha = remoteBlobMap.get(fullPath);
@@ -130,8 +135,8 @@ export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '')
   }
 
   const changedPaths = [
-    ...added.map((f) => (prefix ? `${prefix}${f.path.replace(/^\/+/, '')}` : f.path.replace(/^\/+/, ''))),
-    ...updated.map((f) => (prefix ? `${prefix}${f.path.replace(/^\/+/, '')}` : f.path.replace(/^\/+/, ''))),
+    ...added.map((f) => resolveFullGitPath(f)),
+    ...updated.map((f) => resolveFullGitPath(f)),
     ...deletedPaths
   ];
 
@@ -145,9 +150,12 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
   const token = cleanEnvVal(ghConfig.fineGrainedToken);
 
   if (!owner || !repo || !token) {
+    const msg = 'Please provide Repository Owner, Repository Name, and Fine-Grained Token.';
     return {
+      success: false,
       ok: false,
-      message: 'Please provide Repository Owner, Repository Name, and Fine-Grained Token.'
+      error: msg,
+      message: msg
     };
   }
 
@@ -166,9 +174,12 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
 
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
+      const msg = `GitHub returned ${res.status}: ${errJson?.message || res.statusText}`;
       return {
+        success: false,
         ok: false,
-        message: `GitHub returned ${res.status}: ${errJson?.message || res.statusText}`
+        error: msg,
+        message: msg
       };
     }
 
@@ -177,21 +188,33 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
       ? Boolean(repoData.permissions.push || repoData.permissions.admin)
       : true;
     const isEmptyRepo = Number(repoData?.size) === 0;
+    const fullName = repoData.full_name || `${owner}/${repo}`;
+    const isPrivate = Boolean(repoData.private);
+    const msg = canPush
+      ? `Verified write access to ${fullName} (branch: ${branch}${isEmptyRepo ? ' — empty repo auto-initializes on publish' : ''}).`
+      : `Read access to ${fullName} succeeded, but Contents write permission is missing.`;
     return {
+      success: canPush,
       ok: canPush,
-      fullName: repoData.full_name,
-      defaultBranch: repoData.default_branch,
+      fullName,
+      repoFullName: fullName,
+      defaultBranch: repoData.default_branch || 'main',
       branchChecked: branch,
+      private: isPrivate,
+      privateRepo: isPrivate,
+      permissions: repoData.permissions,
       canPush,
       isEmptyRepo,
-      message: canPush
-        ? `Verified write access to ${repoData.full_name} (branch: ${branch}${isEmptyRepo ? ' — empty repo auto-initializes on publish' : ''}).`
-        : `Read access to ${repoData.full_name} succeeded, but Contents write permission is missing.`
+      message: msg,
+      ...(canPush ? {} : { error: msg })
     };
   } catch (err) {
+    const msg = `GitHub verification failed: ${err?.message || 'Network error'}`;
     return {
+      success: false,
       ok: false,
-      message: `GitHub verification failed: ${err?.message || 'Network error'}`
+      error: msg,
+      message: msg
     };
   }
 }
@@ -316,7 +339,32 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
       }
     }
 
-    const diff = await diffEdgeGitTrees(files, remoteEntries, targetDir);
+    const isViteCloudflareRepo = remoteEntries.some(
+      (e) => e.path === 'vite.config.ts' || e.path.startsWith('public/')
+    );
+    const effectiveFiles = [...files];
+    if (isViteCloudflareRepo && targetDir) {
+      const PUBLIC_MIRROR_FILES = new Set([
+        'sitemap.xml',
+        'robots.txt',
+        'feed.xml',
+        'manifest.webmanifest',
+        '_headers'
+      ]);
+      for (const f of files) {
+        if (f.rootRelative) continue;
+        const cleanRel = String(f.path || '').replace(/^\/+/, '');
+        if (cleanRel.startsWith('static-routes/') || PUBLIC_MIRROR_FILES.has(cleanRel)) {
+          effectiveFiles.push({
+            ...f,
+            path: `public/${cleanRel}`,
+            rootRelative: true
+          });
+        }
+      }
+    }
+
+    const diff = await diffEdgeGitTrees(effectiveFiles, remoteEntries, targetDir);
     const totalChanged = diff.added.length + diff.updated.length + diff.deletedPaths.length;
 
     if (baseTreeSha && remoteEntries.length > 0 && totalChanged === 0) {
@@ -337,11 +385,11 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
       };
     }
 
-    const filesToUpload = remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : files;
+    const filesToUpload = remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : effectiveFiles;
     const treeItems = [];
     for (const file of filesToUpload) {
       const cleanRel = String(file.path || '').replace(/^\/+/, '');
-      const finalPath = targetDir ? `${targetDir}/${cleanRel}` : cleanRel;
+      const finalPath = file.rootRelative ? cleanRel : targetDir ? `${targetDir}/${cleanRel}` : cleanRel;
       if (file.encoding === 'base64') {
         const blobRes = await fetch(`${baseUrl}/git/blobs`, {
           method: 'POST',

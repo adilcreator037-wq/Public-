@@ -83,7 +83,7 @@ export async function onRequestPost(context) {
   }
 
   const fbEnv = getFirebaseEnvFromEnv(env);
-  const siteConfig = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config) : null;
+  const siteConfig = fbEnv.isConfigured ? await readSiteConfigFromFirestoreRest(fbEnv.config, env) : null;
   const sec = siteConfig?.securityGate || {};
   const policyMode =
     sec.devicePolicyMode === 'strict_mobile_only' ||

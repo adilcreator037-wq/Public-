@@ -1,5 +1,22 @@
+import fs from 'fs';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
+
+function copyDirectoryRecursiveSync(srcDir: string, destDir: string, skipRootNames: Set<string> = new Set()) {
+  if (!fs.existsSync(srcDir)) return;
+  fs.mkdirSync(destDir, { recursive: true });
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (skipRootNames.has(entry.name)) continue;
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectoryRecursiveSync(srcPath, destPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
 
 export default defineConfig(() => {
   return {
@@ -7,12 +24,25 @@ export default defineConfig(() => {
       {
         name: 'admin-route-rewrite',
         configureServer(server) {
-          server.middlewares.use((req, res, next) => {
+          server.middlewares.use((req, _res, next) => {
             if (req.url === '/admin' || req.url === '/admin/') {
               req.url = '/admin.html';
             }
             next();
           });
+        }
+      },
+      {
+        name: 'static-public-bundle-overlay',
+        closeBundle() {
+          const distPublicDir = path.resolve(__dirname, 'dist-public');
+          const distDir = path.resolve(__dirname, 'dist');
+          if (fs.existsSync(distPublicDir) && fs.existsSync(distDir)) {
+            // Overlay compiled static public routes (index.html, news/**, <page>/index.html,
+            // moreinfo/index.html, static-routes/**, sitemap.xml, robots.txt, app.js, moreinfo.js)
+            // into dist/ while preserving Vite's bundled admin.html and dist/assets/*.
+            copyDirectoryRecursiveSync(distPublicDir, distDir, new Set(['admin.html', 'admin.js', 'admin.css', 'functions']));
+          }
         }
       }
     ],
@@ -39,4 +69,3 @@ export default defineConfig(() => {
     },
   };
 });
-

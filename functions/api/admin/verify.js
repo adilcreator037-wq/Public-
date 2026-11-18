@@ -31,7 +31,7 @@ export async function onRequestGet(context) {
 
   const fbEnv = getFirebaseEnvFromEnv(env);
   const siteConfig = fbEnv.isConfigured
-    ? await readSiteConfigFromFirestoreRest(fbEnv.config)
+    ? await readSiteConfigFromFirestoreRest(fbEnv.config, env)
     : null;
 
   return jsonResponse(

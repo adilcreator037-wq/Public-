@@ -45,7 +45,7 @@ export interface SyncLogEntry {
   id: string;
   timestamp: number;
   trigger: 'manual-push' | 'auto-push' | 'module-compile' | 'full-compile' | 'verify' | 'firebase-save';
-  status: 'success' | 'local-only' | 'error';
+  status: 'success' | 'saved' | 'local-only' | 'error';
   modulesChanged: string[];
   filesCount: number;
   addedCount?: number;
@@ -338,8 +338,12 @@ export function preserveSecretsOnSave(
   const prev = existing || {};
 
   if (next.githubConfig && typeof next.githubConfig === 'object') {
-    const rawToken = String(next.githubConfig.fineGrainedToken || '').trim();
-    const clearToken = Boolean(next.githubConfig.clearFineGrainedToken);
+    next.githubConfig = {
+      ...(prev.githubConfig || {}),
+      ...next.githubConfig
+    };
+    const rawToken = String((incoming as any)?.githubConfig?.fineGrainedToken || '').trim();
+    const clearToken = Boolean((incoming as any)?.githubConfig?.clearFineGrainedToken);
     if (clearToken) {
       next.githubConfig.fineGrainedToken = '';
       next.githubConfig.hasFineGrainedToken = false;
@@ -348,14 +352,19 @@ export function preserveSecretsOnSave(
       next.githubConfig.fineGrainedToken = prevToken;
       next.githubConfig.hasFineGrainedToken = Boolean(prevToken);
     } else {
+      next.githubConfig.fineGrainedToken = rawToken;
       next.githubConfig.hasFineGrainedToken = true;
     }
     delete next.githubConfig.clearFineGrainedToken;
   }
 
   if (next.securityGate && typeof next.securityGate === 'object') {
-    const rawTs = String(next.securityGate.turnstileSecretKey || '').trim();
-    const clearTs = Boolean(next.securityGate.clearTurnstileSecretKey);
+    next.securityGate = {
+      ...(prev.securityGate || {}),
+      ...next.securityGate
+    };
+    const rawTs = String((incoming as any)?.securityGate?.turnstileSecretKey || '').trim();
+    const clearTs = Boolean((incoming as any)?.securityGate?.clearTurnstileSecretKey);
     if (clearTs) {
       next.securityGate.turnstileSecretKey = '';
       next.securityGate.hasTurnstileSecretKey = false;
@@ -364,6 +373,7 @@ export function preserveSecretsOnSave(
       next.securityGate.turnstileSecretKey = prevTs;
       next.securityGate.hasTurnstileSecretKey = Boolean(prevTs);
     } else {
+      next.securityGate.turnstileSecretKey = rawTs;
       next.securityGate.hasTurnstileSecretKey = true;
     }
     delete next.securityGate.clearTurnstileSecretKey;
@@ -388,7 +398,7 @@ export function sanitizeConfigForClient(
         clone.githubConfig.fineGrainedToken !== SECRET_MASK
     );
     clone.githubConfig.hasFineGrainedToken = Boolean(
-      hasStoredToken || clone.githubConfig.hasFineGrainedToken || envFlags?.hasEnvGithubToken
+      hasStoredToken || envFlags?.hasEnvGithubToken
     );
     clone.githubConfig.fineGrainedToken = '';
   }
@@ -399,7 +409,7 @@ export function sanitizeConfigForClient(
         clone.securityGate.turnstileSecretKey !== SECRET_MASK
     );
     clone.securityGate.hasTurnstileSecretKey = Boolean(
-      hasStoredSecret || clone.securityGate.hasTurnstileSecretKey || envFlags?.hasEnvTurnstileSecret
+      hasStoredSecret || envFlags?.hasEnvTurnstileSecret
     );
     clone.securityGate.turnstileSecretKey = '';
   }

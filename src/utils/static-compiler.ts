@@ -36,6 +36,8 @@ export interface CompiledStaticFile {
   encoding?: 'utf-8' | 'base64';
   /** Description of the generated static artifact */
   description: string;
+  /** When true, path is relative to the Git repository root regardless of targetDirectory */
+  rootRelative?: boolean;
 }
 
 export interface StaticBundleCompilationResult {
@@ -327,45 +329,9 @@ export function compileStaticSiteBundle(
     }
   }
 
-  // 10. Include Cloudflare Pages Functions (/functions) in the bundle
-  const functionsDir = path.resolve(process.cwd(), 'functions');
-  if (fs.existsSync(functionsDir)) {
-    const collectFuncs = (baseDir: string, relSub: string = ''): Array<{ rel: string; full: string }> => {
-      const cur = path.join(baseDir, relSub);
-      if (!fs.existsSync(cur)) return [];
-      let out: Array<{ rel: string; full: string }> = [];
-      const entries = fs.readdirSync(cur, { withFileTypes: true });
-      for (const ent of entries) {
-        const itemRel = relSub ? `${relSub}/${ent.name}` : ent.name;
-        const itemFull = path.join(baseDir, itemRel);
-        if (ent.isDirectory()) {
-          out = out.concat(collectFuncs(baseDir, itemRel));
-        } else if (ent.isFile()) {
-          out.push({ rel: itemRel, full: itemFull });
-        }
-      }
-      return out;
-    };
-
-    const funcList = collectFuncs(functionsDir);
-    for (const item of funcList) {
-      try {
-        const content = fs.readFileSync(item.full, 'utf-8');
-        files.push({
-          path: `functions/${item.rel}`,
-          content,
-          encoding: 'utf-8',
-          description: `Cloudflare Pages Edge Function (${item.rel})`
-        });
-      } catch {
-        // Skip unreadable files
-      }
-    }
-  }
-
-  // NOTE: Admin Studio files (`admin.html`, `admin.js`, `admin.css`, `firebase-config.js`) are
-  // strictly excluded from the compiled public static website bundle so the public portal and
-  // the Admin CMS remain 100% isolated in separate worlds with zero interconnection.
+  // NOTE: Admin Studio files (`admin.html`, `admin.js`, `admin.css`, `firebase-config.js`) and
+  // server/edge functions (`functions/*`) are strictly excluded from `/dist-public` so the
+  // public static bundle and Admin CMS remain 100% isolated.
 
   // 11. Write to disk if requested (populates `/public/static-routes` and `/dist-public`)
   if (options?.writeToDisk) {
@@ -426,3 +392,81 @@ export function compileStaticSiteBundle(
     files
   };
 }
+
+/**
+ * Collect root-level Cloudflare Pages runtime & build files (`functions/**`, `admin.*`,
+ * `firebase-config.js`, `moreinfo.*`, `app.js`, `vite.config.ts`, `src/utils/**`)
+ * with `rootRelative: true` so full-repo Cloudflare Pages deployments stay synchronized.
+ */
+export function collectCloudflarePagesRepoSyncFiles(): CompiledStaticFile[] {
+  const out: CompiledStaticFile[] = [];
+  const cwd = process.cwd();
+
+  const walkDir = (baseDir: string, prefixRel: string, filterFn?: (relPath: string) => boolean) => {
+    if (!fs.existsSync(baseDir)) return;
+    const visit = (sub: string) => {
+      const dirPath = sub ? path.join(baseDir, sub) : baseDir;
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const ent of entries) {
+        const relInBase = sub ? `${sub}/${ent.name}` : ent.name;
+        if (ent.isDirectory()) {
+          visit(relInBase);
+        } else if (ent.isFile()) {
+          const repoRel = `${prefixRel}/${relInBase}`;
+          if (filterFn && !filterFn(repoRel)) continue;
+          try {
+            const content = fs.readFileSync(path.join(baseDir, relInBase), 'utf-8');
+            out.push({
+              path: repoRel,
+              content,
+              encoding: 'utf-8',
+              description: `Cloudflare Pages runtime source (${repoRel})`,
+              rootRelative: true
+            });
+          } catch {
+            // ignore unreadable file
+          }
+        }
+      }
+    };
+    visit('');
+  };
+
+  walkDir(path.join(cwd, 'functions'), 'functions');
+  walkDir(
+    path.join(cwd, 'src', 'utils'),
+    'src/utils',
+    (rel) => !rel.endsWith('.test.ts')
+  );
+
+  const rootRuntimeFiles = [
+    'admin.html',
+    'admin.js',
+    'admin.css',
+    'firebase-config.js',
+    'app.js',
+    'moreinfo.html',
+    'moreinfo.js',
+    'vite.config.ts'
+  ];
+
+  for (const rel of rootRuntimeFiles) {
+    const full = path.join(cwd, rel);
+    if (fs.existsSync(full)) {
+      try {
+        out.push({
+          path: rel,
+          content: fs.readFileSync(full, 'utf-8'),
+          encoding: 'utf-8',
+          description: `Root runtime file (${rel})`,
+          rootRelative: true
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return out;
+}
+

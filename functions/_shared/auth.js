@@ -816,9 +816,7 @@ export function sanitizeConfigForClientEdge(config, env = {}) {
       cleanEnvVal(clone.githubConfig.fineGrainedToken) &&
         clone.githubConfig.fineGrainedToken !== SECRET_MASK
     );
-    clone.githubConfig.hasFineGrainedToken = Boolean(
-      hasStored || clone.githubConfig.hasFineGrainedToken || envGhToken
-    );
+    clone.githubConfig.hasFineGrainedToken = Boolean(hasStored || envGhToken);
     clone.githubConfig.fineGrainedToken = '';
   }
 
@@ -827,9 +825,7 @@ export function sanitizeConfigForClientEdge(config, env = {}) {
       cleanEnvVal(clone.securityGate.turnstileSecretKey) &&
         clone.securityGate.turnstileSecretKey !== SECRET_MASK
     );
-    clone.securityGate.hasTurnstileSecretKey = Boolean(
-      hasStored || clone.securityGate.hasTurnstileSecretKey || envTsSecret
-    );
+    clone.securityGate.hasTurnstileSecretKey = Boolean(hasStored || envTsSecret);
     clone.securityGate.turnstileSecretKey = '';
   }
 
@@ -837,12 +833,22 @@ export function sanitizeConfigForClientEdge(config, env = {}) {
 }
 
 export function preserveSecretsEdge(incoming, existing = {}) {
-  const next = JSON.parse(JSON.stringify(incoming || {}));
+  const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
   const prev = existing || {};
+  const next = {
+    ...base,
+    ...prev,
+    ...JSON.parse(JSON.stringify(incoming || {}))
+  };
 
   if (next.githubConfig && typeof next.githubConfig === 'object') {
-    const raw = cleanEnvVal(next.githubConfig.fineGrainedToken);
-    const clr = Boolean(next.githubConfig.clearFineGrainedToken);
+    next.githubConfig = {
+      ...base.githubConfig,
+      ...(prev.githubConfig || {}),
+      ...next.githubConfig
+    };
+    const raw = cleanEnvVal(incoming?.githubConfig?.fineGrainedToken);
+    const clr = Boolean(incoming?.githubConfig?.clearFineGrainedToken);
     if (clr) {
       next.githubConfig.fineGrainedToken = '';
       next.githubConfig.hasFineGrainedToken = false;
@@ -851,14 +857,20 @@ export function preserveSecretsEdge(incoming, existing = {}) {
       next.githubConfig.fineGrainedToken = prevTok;
       next.githubConfig.hasFineGrainedToken = Boolean(prevTok);
     } else {
+      next.githubConfig.fineGrainedToken = raw;
       next.githubConfig.hasFineGrainedToken = true;
     }
     delete next.githubConfig.clearFineGrainedToken;
   }
 
   if (next.securityGate && typeof next.securityGate === 'object') {
-    const raw = cleanEnvVal(next.securityGate.turnstileSecretKey);
-    const clr = Boolean(next.securityGate.clearTurnstileSecretKey);
+    next.securityGate = {
+      ...base.securityGate,
+      ...(prev.securityGate || {}),
+      ...next.securityGate
+    };
+    const raw = cleanEnvVal(incoming?.securityGate?.turnstileSecretKey);
+    const clr = Boolean(incoming?.securityGate?.clearTurnstileSecretKey);
     if (clr) {
       next.securityGate.turnstileSecretKey = '';
       next.securityGate.hasTurnstileSecretKey = false;
@@ -867,6 +879,7 @@ export function preserveSecretsEdge(incoming, existing = {}) {
       next.securityGate.turnstileSecretKey = prevTok;
       next.securityGate.hasTurnstileSecretKey = Boolean(prevTok);
     } else {
+      next.securityGate.turnstileSecretKey = raw;
       next.securityGate.hasTurnstileSecretKey = true;
     }
     delete next.securityGate.clearTurnstileSecretKey;
@@ -882,10 +895,35 @@ export function applyModulePatchEdge(existingConfig, moduleKey, moduleValue) {
     ...(existingConfig || {})
   };
 
+  const mergedSlice =
+    Array.isArray(moduleValue) || Array.isArray(base[moduleKey])
+      ? Array.isArray(moduleValue)
+        ? moduleValue
+        : mergedExisting[moduleKey] || []
+      : typeof moduleValue === 'object' && moduleValue !== null
+      ? {
+          ...(base[moduleKey] || {}),
+          ...(mergedExisting[moduleKey] || {}),
+          ...moduleValue
+        }
+      : moduleValue;
+
   const withSecrets = preserveSecretsEdge(
-    { ...mergedExisting, [moduleKey]: moduleValue },
+    { ...mergedExisting, [moduleKey]: mergedSlice },
     mergedExisting
   );
+
+  if (moduleKey === 'domainConfig' && moduleValue?.primaryDomain !== undefined) {
+    withSecrets.seo = {
+      ...(withSecrets.seo || base.seo),
+      canonicalUrl: withSecrets.domainConfig.primaryDomain
+    };
+  } else if (moduleKey === 'seo' && moduleValue?.canonicalUrl !== undefined) {
+    withSecrets.domainConfig = {
+      ...(withSecrets.domainConfig || base.domainConfig),
+      primaryDomain: withSecrets.seo.canonicalUrl
+    };
+  }
 
   const prevDirty = Array.isArray(mergedExisting.dirtyModulesSinceSync)
     ? mergedExisting.dirtyModulesSinceSync
@@ -1116,8 +1154,10 @@ function encodeFirestoreValue(val) {
   return { stringValue: String(val) };
 }
 
-export async function readSiteConfigFromFirestoreRest(fbCfg) {
-  if (!fbCfg?.projectId || !fbCfg?.apiKey) return null;
+export async function readSiteConfigWithStatusEdge(fbCfg, env = {}) {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) {
+    return { status: 'error', config: null, error: 'Missing Firebase config' };
+  }
   const dbId = encodeURIComponent(fbCfg.databaseId || '(default)');
   const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
     fbCfg.projectId
@@ -1132,8 +1172,22 @@ export async function readSiteConfigFromFirestoreRest(fbCfg) {
     }).catch(() => null)
   ]);
 
+  if (!modulesRes || !mainRes) {
+    return { status: 'error', config: null, error: 'Network error reaching Firestore REST API' };
+  }
+
+  if (
+    (mainRes.status !== 200 && mainRes.status !== 404) ||
+    (modulesRes.status !== 200 && modulesRes.status !== 404)
+  ) {
+    const failedRes = mainRes.status !== 200 && mainRes.status !== 404 ? mainRes : modulesRes;
+    const errBody = await failedRes.json().catch(() => ({}));
+    const errMsg = errBody?.error?.message || `Firestore HTTP ${failedRes.status}`;
+    return { status: 'error', config: null, error: errMsg };
+  }
+
   let mainObj = null;
-  if (mainRes && mainRes.ok) {
+  if (mainRes.ok) {
     const docData = await mainRes.json().catch(() => null);
     if (docData?.fields) {
       mainObj = {};
@@ -1153,7 +1207,7 @@ export async function readSiteConfigFromFirestoreRest(fbCfg) {
     }
   }
 
-  if (modulesRes && modulesRes.ok) {
+  if (modulesRes.ok) {
     const listData = await modulesRes.json().catch(() => null);
     const docs = Array.isArray(listData?.documents) ? listData.documents : [];
     for (const docItem of docs) {
@@ -1172,16 +1226,61 @@ export async function readSiteConfigFromFirestoreRest(fbCfg) {
   }
 
   if (modulesCount === 0 && !mainObj) {
-    return null;
+    return { status: 'empty', config: null };
   }
-  return assembled;
+
+  if (assembled.githubConfig && typeof assembled.githubConfig === 'object') {
+    const rawTok = cleanEnvVal(assembled.githubConfig.fineGrainedToken);
+    const decryptedTok = rawTok && rawTok !== SECRET_MASK ? await decryptVaultValueWeb(rawTok, env) : '';
+    assembled.githubConfig.fineGrainedToken = decryptedTok;
+    assembled.githubConfig.hasFineGrainedToken = Boolean(decryptedTok);
+  }
+
+  if (assembled.securityGate && typeof assembled.securityGate === 'object') {
+    const rawTs = cleanEnvVal(assembled.securityGate.turnstileSecretKey);
+    const decryptedTs = rawTs && rawTs !== SECRET_MASK ? await decryptVaultValueWeb(rawTs, env) : '';
+    assembled.securityGate.turnstileSecretKey = decryptedTs;
+    assembled.securityGate.hasTurnstileSecretKey = Boolean(decryptedTs);
+  }
+
+  return { status: 'ok', config: assembled };
+}
+
+export async function readSiteConfigFromFirestoreRest(fbCfg, env = {}) {
+  const res = await readSiteConfigWithStatusEdge(fbCfg, env);
+  return res.status === 'ok' ? res.config : null;
+}
+
+async function prepareModuleForFirestoreEdge(moduleKey, moduleData, env = {}) {
+  if (!moduleData || typeof moduleData !== 'object') return moduleData;
+  const clone = JSON.parse(JSON.stringify(moduleData));
+  if (moduleKey === 'githubConfig') {
+    const rawTok = cleanEnvVal(clone.fineGrainedToken);
+    if (rawTok && rawTok !== SECRET_MASK) {
+      clone.fineGrainedToken = await encryptVaultValueWeb(rawTok, env);
+      clone.hasFineGrainedToken = true;
+    } else {
+      clone.fineGrainedToken = '';
+      clone.hasFineGrainedToken = false;
+    }
+  } else if (moduleKey === 'securityGate') {
+    const rawTs = cleanEnvVal(clone.turnstileSecretKey);
+    if (rawTs && rawTs !== SECRET_MASK) {
+      clone.turnstileSecretKey = await encryptVaultValueWeb(rawTs, env);
+      clone.hasTurnstileSecretKey = true;
+    } else {
+      clone.turnstileSecretKey = '';
+      clone.hasTurnstileSecretKey = false;
+    }
+  }
+  return clone;
 }
 
 /**
  * Atomic single-request batch write to Cloud Firestore REST API (`documents:commit`).
- * Eliminates multiple sequential/parallel REST calls and metadata race conditions.
+ * Encrypts write-only secrets (`fineGrainedToken`, `turnstileSecretKey`) with AES-256-GCM at rest.
  */
-export async function writeBatchToFirestoreRest(fbCfg, modulesMap = {}, meta = {}) {
+export async function writeBatchToFirestoreRest(fbCfg, modulesMap = {}, meta = {}, env = {}) {
   if (!fbCfg?.projectId || !fbCfg?.apiKey) {
     return { ok: false, error: 'Missing Firebase config' };
   }
@@ -1195,11 +1294,12 @@ export async function writeBatchToFirestoreRest(fbCfg, modulesMap = {}, meta = {
   const writes = [];
   for (const [moduleKey, moduleData] of Object.entries(modulesMap || {})) {
     if (!isCmsModuleKey(moduleKey) || moduleData === undefined) continue;
+    const preparedData = await prepareModuleForFirestoreEdge(moduleKey, moduleData, env);
     writes.push({
       update: {
         name: `${docRoot}/cmsModules/${moduleKey}`,
         fields: {
-          data: encodeFirestoreValue(moduleData),
+          data: encodeFirestoreValue(preparedData),
           updatedAt: encodeFirestoreValue(now)
         }
       }
@@ -1236,11 +1336,11 @@ export async function writeBatchToFirestoreRest(fbCfg, modulesMap = {}, meta = {
   }
 }
 
-export async function writeModuleToFirestoreRest(fbCfg, moduleKey, moduleData, meta = {}) {
+export async function writeModuleToFirestoreRest(fbCfg, moduleKey, moduleData, meta = {}, env = {}) {
   if (!fbCfg?.projectId || !fbCfg?.apiKey || !isCmsModuleKey(moduleKey)) {
     return { ok: false, error: 'Missing Firebase config or valid moduleKey' };
   }
-  return writeBatchToFirestoreRest(fbCfg, { [moduleKey]: moduleData }, meta);
+  return writeBatchToFirestoreRest(fbCfg, { [moduleKey]: moduleData }, meta, env);
 }
 
 export async function writeSiteConfigToFirestoreRest(fbCfg, siteConfig, env = {}) {
@@ -1248,9 +1348,14 @@ export async function writeSiteConfigToFirestoreRest(fbCfg, siteConfig, env = {}
     return { ok: false, error: 'Missing Firebase config or payload' };
   }
 
-  // Strip secrets cleanly before writing to client-accessible Firestore documents
-  const safeCopy = sanitizeConfigForClientEdge(siteConfig, env);
-  safeCopy.updatedAt = siteConfig.updatedAt || Date.now();
+  const storeCopy = JSON.parse(JSON.stringify(siteConfig));
+  storeCopy.updatedAt = siteConfig.updatedAt || Date.now();
+  if (storeCopy.githubConfig) {
+    storeCopy.githubConfig = await prepareModuleForFirestoreEdge('githubConfig', storeCopy.githubConfig, env);
+  }
+  if (storeCopy.securityGate) {
+    storeCopy.securityGate = await prepareModuleForFirestoreEdge('securityGate', storeCopy.securityGate, env);
+  }
 
   const dbId = encodeURIComponent(fbCfg.databaseId || '(default)');
   const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
@@ -1259,7 +1364,7 @@ export async function writeSiteConfigToFirestoreRest(fbCfg, siteConfig, env = {}
 
   try {
     const fields = {};
-    for (const [k, v] of Object.entries(safeCopy)) {
+    for (const [k, v] of Object.entries(storeCopy)) {
       if (v !== undefined) fields[k] = encodeFirestoreValue(v);
     }
     const res = await fetch(url, {
@@ -1271,7 +1376,30 @@ export async function writeSiteConfigToFirestoreRest(fbCfg, siteConfig, env = {}
       const errBody = await res.json().catch(() => ({}));
       return { ok: false, error: errBody?.error?.message || `HTTP ${res.status}` };
     }
-    return { ok: true };
+
+    // Keep modular cmsModules/* documents synchronized so readSiteConfigFromFirestoreRest never overwrites with stale module data
+    const allModulesMap = {};
+    for (const key of CMS_MODULE_KEYS) {
+      if (storeCopy[key] !== undefined) {
+        allModulesMap[key] = storeCopy[key];
+      }
+    }
+    const batchRes = await writeBatchToFirestoreRest(
+      fbCfg,
+      allModulesMap,
+      {
+        updatedAt: storeCopy.updatedAt,
+        dirtyModulesSinceSync: Array.isArray(storeCopy.dirtyModulesSinceSync)
+          ? storeCopy.dirtyModulesSinceSync
+          : []
+      },
+      env
+    );
+    if (!batchRes.ok) {
+      return { ok: false, error: batchRes.error || 'Failed syncing modular Firestore docs' };
+    }
+
+    return { ok: true, writesCommitted: batchRes.writesCommitted };
   } catch (err) {
     return { ok: false, error: err?.message || 'Firestore write failed' };
   }
