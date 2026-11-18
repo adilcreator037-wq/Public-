@@ -2,7 +2,7 @@
   "viewType": "news-hub",
   "isConfigured": true,
   "canonicalPath": "/news",
-  "canonicalUrl": "https://example.com/news",
+  "canonicalUrl": "https://officialdaman.com/news",
   "metaTitle": "Daily News & Updates | Daman Game",
   "metaDescription": "",
   "ogImage": "",
@@ -15,28 +15,35 @@
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://example.com/#website",
-        "url": "https://example.com/",
+        "@id": "https://officialdaman.com/#website",
+        "url": "https://officialdaman.com/",
         "name": "Daman Game",
         "alternateName": "Daman Game",
         "publisher": {
-          "@id": "https://example.com/#organization"
+          "@id": "https://officialdaman.com/#organization"
         }
       },
       {
         "@type": "Organization",
-        "@id": "https://example.com/#organization",
+        "@id": "https://officialdaman.com/#organization",
         "name": "Daman Game",
-        "url": "https://example.com/"
+        "url": "https://officialdaman.com/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+          "width": 512,
+          "height": 512
+        },
+        "image": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png"
       },
       {
         "@type": "CollectionPage",
-        "@id": "https://example.com/news#webpage",
-        "url": "https://example.com/news",
+        "@id": "https://officialdaman.com/news#webpage",
+        "url": "https://officialdaman.com/news",
         "name": "Daily News & Updates | Daman Game",
         "description": "",
         "isPartOf": {
-          "@id": "https://example.com/#website"
+          "@id": "https://officialdaman.com/#website"
         }
       }
     ]
@@ -46,32 +53,32 @@
       "name": "Daman Game",
       "shortName": "Daman Game",
       "tagline": "",
-      "logoUrl": "",
-      "faviconUrl": "",
-      "searchLogoUrl": "",
-      "appleTouchIconUrl": "",
-      "accentColor": "#EF4444",
-      "themeColor": "#EF4444",
+      "logoUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+      "faviconUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+      "searchLogoUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+      "appleTouchIconUrl": "https://res.cloudinary.com/veqj16xh/image/upload/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+      "accentColor": "#EA580C",
+      "themeColor": "#EA580C",
       "contactEmail": "support@officiladaman.com"
     },
     "brandName": "Daman Game",
-    "logoUrl": "",
-    "faviconUrl": "",
-    "accentColor": "#EF4444",
+    "logoUrl": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+    "faviconUrl": "https://res.cloudinary.com/veqj16xh/image/upload/f_auto,q_auto/v1794972879/rummydex_uploads/ibtpx4p4rr9qpt431nol.png",
+    "accentColor": "#EA580C",
     "buttonTextColor": "#FFFFFF",
     "uiConfig": {
       "maxContainerWidth": "768px",
-      "pageBackgroundColor": "#F8FAFC",
+      "pageBackgroundColor": "#FFFBEB",
       "surfaceBackgroundColor": "#FFFFFF",
       "headerBackgroundColor": "#FFFFFF",
-      "headerTextColor": "#111827",
-      "footerBackgroundColor": "#0F172A",
-      "footerTextColor": "#F8FAFC",
-      "borderColor": "#E2E8F0",
+      "headerTextColor": "#1C1917",
+      "footerBackgroundColor": "#1C1917",
+      "footerTextColor": "#FEF3C7",
+      "borderColor": "#FDE68A",
       "cardBorderRadius": "12px",
       "buttonTextColor": "#FFFFFF",
-      "textColor": "#1F2937",
-      "headingColor": "#111827",
+      "textColor": "#292524",
+      "headingColor": "#1C1917",
       "fontFamily": "system",
       "baseFontSize": "16px",
       "showHeaderNewsButton": true,
@@ -137,5 +144,5 @@
       "showAdminLink": false
     }
   },
-  "compiledAt": 1794971439231
+  "compiledAt": 1794973130379
 }
