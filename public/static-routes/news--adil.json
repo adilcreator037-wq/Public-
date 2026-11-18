@@ -161,6 +161,11 @@
         "label": "Privacy Policy",
         "slug": "privacy-policy",
         "metaTitle": "Privacy Policy – Daman Game Official Portal | Daman"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "slug": "disclaimer",
+        "metaTitle": "Disclaimer – Daman Game Official Web Portal"
       }
     ],
     "allSubpagePills": [
@@ -171,6 +176,10 @@
       {
         "label": "Privacy Policy",
         "href": "/privacy-policy"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "href": "/disclaimer"
       }
     ],
     "newsCount": 1,
@@ -179,11 +188,11 @@
       "showFooterBrandSummary": false,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "Disclaimer & Fair Play Notice | Daman",
-      "disclaimer": "<section class=\"legal-disclaimer\">\n  <h2>Disclaimer</h2>\n  <p><strong>Effective Date:</strong> November 18, 2026</p>\n\n  <h3>1. What Daman Game Actually Is</h3>\n  <p>\n    Daman Game is a casual, skill-based reflex arcade game built purely for fun and focus. You control an eight-bladed wheel using two thumbs, rotating it to match incoming colored nodes with the right blade on the beat, smashing white Breaker Orbs with the Silver bumper, and keeping the vulnerable Dark Slate blade out of harm's way while racing against a countdown clock. Every single score, streak, and survival time comes down to your own timing and hand-eye coordination. Every run follows a seeded pattern system so the gameplay stays fair, predictable, and 100% skill-driven.\n  </p>\n\n  <h3>2. No Real-Money Gambling or Betting</h3>\n  <p>\n    Let's be completely clear: <strong>Daman Game is not a gambling app, betting site, or real-money color-prediction platform.</strong> We do not accept or process real money in any form. Specifically:\n  </p>\n  <ul>\n    <li>There are no cash deposits, wallet recharges, or payment gateways anywhere on this site.</li>\n    <li>You cannot withdraw money, win cash prizes, or redeem points for gift cards or real-world currency.</li>\n    <li>There is no wagering, chance-based color betting, or paid mystery boxes.</li>\n    <li>We do not run referral payout schemes, agent commissions, or affiliate cash bonuses.</li>\n  </ul>\n  <p>\n    Everything you earn in the game—points, extra clock seconds, Full Spectrum streaks, Trial stars, Blade Mastery levels, and visual finishes like Brushed Steel or Neon Glass—stays inside the game. None of it has any cash value or can be traded outside the browser.\n  </p>\n\n  <h3>3. Brand Independence &amp; Watch Out for Impersonators</h3>\n  <p>\n    We know the word \"Daman\" sounds similar to certain third-party websites or real-money color-prediction apps operating in some regions. <strong>Daman Game (officialdaman.com) is an independent arcade project and has zero connection, partnership, or affiliation with any real-money gaming or betting operator.</strong>\n  </p>\n  <p>\n    If another website, Telegram channel, WhatsApp group, or social media page uses our name and asks you to deposit money, recharge an account, bet on colors, or hand over UPI or bank details, it is a scam and has nothing to do with us. We will never ask you for financial information.\n  </p>\n\n  <h3>4. Informational Guides Only</h3>\n  <p>\n    All gameplay tips, timing breakdowns, tier guides, and updates published on this website are written to help you improve your arcade skills. Nothing here should be taken as financial, legal, or investment advice, and our color-matching wheel mechanics have nothing to do with trading or predictive betting.\n  </p>\n\n  <h3>5. Flashing Lights &amp; Motion Sensitivity</h3>\n  <p>\n    Daman Game uses bright neon visuals, color flashes when you slice nodes, prism-white lighting during Full Spectrum mode, and subtle screen movement synced to the music. Even though we cap full-screen flashes at three per second, players who are sensitive to flashing lights or fast motion should be careful.\n  </p>\n  <p>\n    If bright flashes bother your eyes, open the in-game <strong>Settings</strong> menu before playing and turn on <strong>Reduced Motion and Flashes</strong> (which turns off screen shake and softens light effects) or <strong>Color-Blind Symbol Support</strong> (which adds clear shapes like circles, triangles, and squares onto every blade and node). Stop playing right away and rest if you feel dizzy, strained, or uncomfortable.\n  </p>\n\n  <h3>6. Browser Performance &amp; Local Save Data</h3>\n  <p>\n    We built Daman Game as a fast, offline-ready web app designed to run smoothly at 60 to 120 fps on modern phones and computers. Still, every device and browser handles touch latency differently, which is why we included an audio and touch calibration tool right inside Settings.\n  </p>\n  <p>\n    Because your high scores, settings, and unlocked cosmetics are saved locally in your browser's storage (IndexedDB) rather than on a forced user account, clearing your browser cache, resetting site data, or playing in Incognito/Private mode will wipe your saved progress. We cannot recover locally cleared data.\n  </p>\n\n  <h3>7. External Links</h3>\n  <p>\n    From time to time, our guides or update posts may link to external resources or social sharing tools. We do not control those third-party sites and are not responsible for their content or privacy practices.\n  </p>\n\n  <h3>8. Limitation of Liability</h3>\n  <p>\n    Daman Game is provided \"as is.\" To the fullest extent permitted by law, the creators of Daman Game are not liable for any damages, lost local save data, or losses caused by third-party impersonators misusing our name elsewhere online.\n  </p>\n\n  <h3>9. Contact &amp; Report Fake Sites</h3>\n  <p>\n    If you spot someone impersonating Daman Game or have any questions about this disclaimer, reach out to us directly at <strong>support@officialdaman.com</strong>.\n  </p>\n</section>",
+      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimer": "",
       "siteLinksHeading": "Legal & Support Pages",
       "copyright": "© 2026 officialdaman. All rights reserved."
     }
   },
-  "updatedAt": 1794992540068
+  "updatedAt": 1794993067818
 }
