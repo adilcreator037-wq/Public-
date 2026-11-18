@@ -1116,80 +1116,6 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Top Header Bar -->
                   />
                 </div>
 
-                <div class="field">
-                  <label class="field-label" for="composer-news-slug">
-                    <span>Article Web URL (<code>/news/:slug</code>)</span>
-                    <button type="button" id="btn-composer-autoslug" class="btn btn-sm">Auto-Slug</button>
-                  </label>
-                  <input type="text" id="composer-news-slug" class="input" placeholder="auto-generated-from-headline" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-category">
-                    <span>Category Label</span>
-                  </label>
-                  <input type="text" id="composer-news-category" class="input" list="news-category-presets" placeholder="Daily Update" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-date">Publish Date</label>
-                  <input type="text" id="composer-news-date" class="input" placeholder="November 17, 2026" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-author">Author / Team Name</label>
-                  <input type="text" id="composer-news-author" class="input" placeholder="Editorial Team" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-readtime">Read Time Label</label>
-                  <input type="text" id="composer-news-readtime" class="input" placeholder="2 min read" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label">Highlight Article</label>
-                  <div class="toggle-box">
-                    <span>Mark as Featured Article</span>
-                    <input type="checkbox" id="composer-news-featured" />
-                  </div>
-                </div>
-
-                <div class="field span-full">
-                  <label class="field-label" for="composer-news-cover-url">
-                    <span>Cover Image (Optional)</span>
-                    <button
-                      type="button"
-                      class="btn btn-sm"
-                      data-upload-target="composer-news-cover-url"
-                      data-preview-target="composer-news-cover-preview"
-                    >
-                      Upload Image
-                    </button>
-                  </label>
-                  <input type="text" id="composer-news-cover-url" class="input" placeholder="Paste image URL or tap Upload Image..." />
-                  <img id="composer-news-cover-preview" class="img-mini-preview" alt="Cover Preview" hidden />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-cover-alt">Cover Image Alt Text (SEO)</label>
-                  <input type="text" id="composer-news-cover-alt" class="input" placeholder="Describe the cover image..." />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-cover-caption">Cover Caption (Optional)</label>
-                  <input type="text" id="composer-news-cover-caption" class="input" placeholder="Caption under cover image..." />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-cta-label">In-Article Button Text (Optional)</label>
-                  <input type="text" id="composer-news-cta-label" class="input" placeholder="e.g., Download Patched Build" />
-                </div>
-
-                <div class="field">
-                  <label class="field-label" for="composer-news-cta-url">In-Article Button Link (Optional)</label>
-                  <input type="text" id="composer-news-cta-url" class="input" placeholder="e.g., /#technical-specifications" />
-                </div>
-
                 <div class="field span-full">
                   <label class="field-label" for="composer-news-summary">Short Summary (Shown on News Feed Cards)</label>
                   <textarea id="composer-news-summary" class="textarea" rows="2" placeholder="Write a 1-2 sentence summary..."></textarea>
@@ -1197,7 +1123,7 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Top Header Bar -->
 
                 <div class="field span-full">
                   <label class="field-label" for="composer-news-html">
-                    <span>Full Article Content (Visual Blocks or HTML)</span>
+                    <span>Full Article Content</span>
                     <button type="button" id="btn-toggle-composer-preview" class="btn btn-sm">Preview</button>
                   </label>
                   <div class="html-toolbar">
@@ -1219,28 +1145,113 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Top Header Bar -->
                     id="composer-news-html"
                     class="textarea code"
                     rows="6"
-                    placeholder="<p>Write your news article here or tap '+ Visual Block Builder' above...</p>"
+                    placeholder="Type or paste your story text here... paragraphs are automatically formatted cleanly."
                   ></textarea>
                   <div id="composer-live-preview" class="live-preview-box"></div>
                 </div>
+
+                <div class="field span-full">
+                  <label class="field-label" for="composer-news-cover-url">
+                    <span>Cover Image (Optional)</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      data-upload-target="composer-news-cover-url"
+                      data-preview-target="composer-news-cover-preview"
+                    >
+                      Upload Image
+                    </button>
+                  </label>
+                  <input type="text" id="composer-news-cover-url" class="input" placeholder="Paste image URL or tap Upload Image..." />
+                  <img id="composer-news-cover-preview" class="img-mini-preview" alt="Cover Preview" hidden />
+                </div>
               </div>
 
-              <div class="seo-subbox">
-                <div class="seo-subbox-title">
-                  <span>Google Search Meta Tags for This Post</span>
-                  <span class="field-tag">NewsArticle Schema</span>
-                </div>
-                <div class="form-grid cols-2">
-                  <div class="field">
-                    <label class="field-label" for="composer-news-meta-title">Article Meta Title</label>
-                    <input type="text" id="composer-news-meta-title" class="input" placeholder="Search title for Google..." />
+              <!-- Collapsible Optional Settings: keeps UI clean, professional, and beginner-friendly -->
+              <details class="advanced-settings-box">
+                <summary class="advanced-settings-summary">
+                  <span>⚙️ Optional Post Details (Category, Author, In-Article Button, SEO Meta)</span>
+                  <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">Click to configure</span>
+                </summary>
+                <div class="advanced-settings-content">
+                  <div class="form-grid cols-2">
+                    <div class="field">
+                      <label class="field-label" for="composer-news-slug">
+                        <span>Article Web URL (<code>/news/:slug</code>)</span>
+                        <button type="button" id="btn-composer-autoslug" class="btn btn-sm">Auto-Slug</button>
+                      </label>
+                      <input type="text" id="composer-news-slug" class="input" placeholder="auto-generated-from-headline" />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-category">
+                        <span>Category Label</span>
+                      </label>
+                      <input type="text" id="composer-news-category" class="input" list="news-category-presets" placeholder="Daily Update" />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-date">Publish Date</label>
+                      <input type="text" id="composer-news-date" class="input" placeholder="November 17, 2026" />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-author">Author / Team Name</label>
+                      <input type="text" id="composer-news-author" class="input" placeholder="Editorial Team" />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-readtime">Read Time Label</label>
+                      <input type="text" id="composer-news-readtime" class="input" placeholder="2 min read" />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label">Highlight Article</label>
+                      <div class="toggle-box">
+                        <span>Mark as Featured Article</span>
+                        <input type="checkbox" id="composer-news-featured" />
+                      </div>
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-cover-alt">Cover Image Alt Text (SEO)</label>
+                      <input type="text" id="composer-news-cover-alt" class="input" placeholder="Describe the cover image..." />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-cover-caption">Cover Caption (Optional)</label>
+                      <input type="text" id="composer-news-cover-caption" class="input" placeholder="Caption under cover image..." />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-cta-label">In-Article Button Text (Optional)</label>
+                      <input type="text" id="composer-news-cta-label" class="input" placeholder="e.g., Download Patched Build" />
+                    </div>
+
+                    <div class="field">
+                      <label class="field-label" for="composer-news-cta-url">In-Article Button Link (Optional)</label>
+                      <input type="text" id="composer-news-cta-url" class="input" placeholder="e.g., /#technical-specifications" />
+                    </div>
                   </div>
-                  <div class="field">
-                    <label class="field-label" for="composer-news-meta-desc">Article Meta Description</label>
-                    <input type="text" id="composer-news-meta-desc" class="input" placeholder="Short description (120-160 chars)..." />
+
+                  <div class="seo-subbox">
+                    <div class="seo-subbox-title">
+                      <span>Google Search Meta Tags for This Post</span>
+                      <span class="field-tag">NewsArticle Schema</span>
+                    </div>
+                    <div class="form-grid cols-2">
+                      <div class="field">
+                        <label class="field-label" for="composer-news-meta-title">Article Meta Title</label>
+                        <input type="text" id="composer-news-meta-title" class="input" placeholder="Search title for Google..." />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="composer-news-meta-desc">Article Meta Description</label>
+                        <input type="text" id="composer-news-meta-desc" class="input" placeholder="Short description (120-160 chars)..." />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
 
               <div style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap">
                 <button type="button" id="btn-publish-single-news" class="btn btn-primary">Publish News Post Now</button>

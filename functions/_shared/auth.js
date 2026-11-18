@@ -929,6 +929,43 @@ export function preserveSecretsEdge(incoming, existing = {}) {
   return next;
 }
 
+export function mergeRemoteConfigPreservingUserContentEdge(remoteConfig, fallbackConfig) {
+  if (!remoteConfig || typeof remoteConfig !== 'object') return fallbackConfig;
+  const merged = preserveSecretsEdge(remoteConfig, fallbackConfig);
+
+  if (Array.isArray(fallbackConfig.sections) && fallbackConfig.sections.length > 0) {
+    if (!Array.isArray(remoteConfig.sections) || remoteConfig.sections.length === 0) {
+      merged.sections = fallbackConfig.sections;
+    }
+  }
+  if (Array.isArray(fallbackConfig.newsSection?.articles) && fallbackConfig.newsSection.articles.length > 0) {
+    if (!Array.isArray(remoteConfig.newsSection?.articles) || remoteConfig.newsSection.articles.length === 0) {
+      merged.newsSection = merged.newsSection || {};
+      merged.newsSection.articles = fallbackConfig.newsSection.articles;
+    }
+  }
+  if (Array.isArray(fallbackConfig.faqsSection?.items) && fallbackConfig.faqsSection.items.length > 0) {
+    if (!Array.isArray(remoteConfig.faqsSection?.items) || remoteConfig.faqsSection.items.length === 0) {
+      merged.faqsSection = merged.faqsSection || {};
+      merged.faqsSection.items = fallbackConfig.faqsSection.items;
+    }
+  }
+  if (Array.isArray(fallbackConfig.pages) && fallbackConfig.pages.length > 0) {
+    if (!Array.isArray(remoteConfig.pages) || remoteConfig.pages.length === 0) {
+      merged.pages = fallbackConfig.pages;
+    }
+  }
+  if (fallbackConfig.brand?.name && (!remoteConfig.brand?.name || remoteConfig.brand?.name === 'Official Release')) {
+    merged.brand = merged.brand || {};
+    merged.brand.name = fallbackConfig.brand.name;
+  }
+  if (fallbackConfig.hero?.h1 && !remoteConfig.hero?.h1) {
+    merged.hero = merged.hero || {};
+    merged.hero.h1 = fallbackConfig.hero.h1;
+  }
+  return merged;
+}
+
 export function applyModulePatchEdge(existingConfig, moduleKey, moduleValue) {
   const base = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
   const mergedExisting = {

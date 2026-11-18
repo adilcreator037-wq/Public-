@@ -5,7 +5,9 @@ import {
   mergeSiteConfig,
   generateSlug,
   generateSmartLegalHtml,
-  auditSiteSeoHealth
+  auditSiteSeoHealth,
+  ensureCleanHtmlParagraphs,
+  stripHtmlToExcerpt
 } from './src/utils/cms-engine.ts';
 
 import {
@@ -138,6 +140,27 @@ function inferModuleKeyFromElement(el) {
   return getPrimaryModuleForActiveTab();
 }
 
+const MODULE_HUMAN_LABELS = {
+  brand: 'Brand',
+  hero: 'Hero',
+  uiConfig: 'Theme',
+  packageSpecs: 'Specs',
+  sections: 'Sections',
+  newsSection: 'Daily News',
+  faqsSection: 'FAQs',
+  content: 'Extra HTML',
+  pages: 'Pages',
+  navigation: 'Menu',
+  domainConfig: 'Domain',
+  seo: 'SEO',
+  securityGate: 'Gateway',
+  githubConfig: 'GitHub'
+};
+
+function getHumanModuleLabel(key) {
+  return MODULE_HUMAN_LABELS[key] || key;
+}
+
 function renderDirtyModulesSummary() {
   const summaryEl = $('dirty-modules-summary');
   const edited = Array.from(dirtyModules);
@@ -146,7 +169,7 @@ function renderDirtyModulesSummary() {
       summaryEl.innerHTML = '';
     } else {
       summaryEl.innerHTML = edited
-        .map((m) => `<span class="sync-module-chip">${escapeHtml(m)}</span>`)
+        .map((m) => `<span class="sync-module-chip" title="${escapeHtml(m)}">${escapeHtml(getHumanModuleLabel(m))}</span>`)
         .join('');
     }
   }
@@ -162,14 +185,14 @@ function renderDirtyModulesSummary() {
     pendingTextEl.innerHTML =
       pendingArr.length === 0
         ? '<span style="color:#059669;font-weight:700;">All modules synced to Public</span>'
-        : pendingArr.map((m) => `<span class="sync-module-chip">${escapeHtml(m)}</span>`).join(' ');
+        : pendingArr.map((m) => `<span class="sync-module-chip" title="${escapeHtml(m)}">${escapeHtml(getHumanModuleLabel(m))}</span>`).join(' ');
   }
   if (pendingTagEl) {
     pendingTagEl.textContent = `${pendingArr.length} pending`;
   }
 }
 
-function markDirty(message = 'Unsaved edits — click "Publish Edited Modules" to go live', moduleKey = null) {
+function markDirty(message = 'Unsaved changes — click "Save Section" or "Publish Changes"', moduleKey = null) {
   isDirty = true;
   if (moduleKey && isCmsModuleKey(moduleKey)) {
     dirtyModules.add(moduleKey);
@@ -916,6 +939,44 @@ async function mountAuthenticatedWorkspaceDom() {
   }
 }
 
+/**
+ * Merge remote configuration into the workspace without ever allowing an empty or
+ * unseeded remote server response to wipe out user-entered sections, news, faqs, or pages.
+ */
+function mergeRemoteConfigPreservingUserContent(remoteConfig, fallbackConfig) {
+  if (!remoteConfig || typeof remoteConfig !== 'object') return fallbackConfig;
+  const merged = mergeSiteConfig(remoteConfig, fallbackConfig);
+
+  // Safety Shield: Never let empty remote arrays wipe out non-empty user content
+  if (Array.isArray(fallbackConfig.sections) && fallbackConfig.sections.length > 0) {
+    if (!Array.isArray(remoteConfig.sections) || remoteConfig.sections.length === 0) {
+      merged.sections = fallbackConfig.sections;
+    }
+  }
+  if (Array.isArray(fallbackConfig.newsSection?.articles) && fallbackConfig.newsSection.articles.length > 0) {
+    if (!Array.isArray(remoteConfig.newsSection?.articles) || remoteConfig.newsSection.articles.length === 0) {
+      merged.newsSection.articles = fallbackConfig.newsSection.articles;
+    }
+  }
+  if (Array.isArray(fallbackConfig.faqsSection?.items) && fallbackConfig.faqsSection.items.length > 0) {
+    if (!Array.isArray(remoteConfig.faqsSection?.items) || remoteConfig.faqsSection.items.length === 0) {
+      merged.faqsSection.items = fallbackConfig.faqsSection.items;
+    }
+  }
+  if (Array.isArray(fallbackConfig.pages) && fallbackConfig.pages.length > 0) {
+    if (!Array.isArray(remoteConfig.pages) || remoteConfig.pages.length === 0) {
+      merged.pages = fallbackConfig.pages;
+    }
+  }
+  if (fallbackConfig.brand?.name && (!remoteConfig.brand?.name || remoteConfig.brand?.name === 'Official Release')) {
+    merged.brand.name = fallbackConfig.brand.name;
+  }
+  if (fallbackConfig.hero?.h1 && !remoteConfig.hero?.h1) {
+    merged.hero.h1 = fallbackConfig.hero.h1;
+  }
+  return merged;
+}
+
 async function unlockAdminStudio() {
   const mounted = await mountAuthenticatedWorkspaceDom();
   const overlay = $('auth-overlay');
@@ -938,10 +999,10 @@ async function unlockAdminStudio() {
   try {
     const remote = await getSiteConfigRemote();
     if (remote) {
-      currentConfig = mergeSiteConfig(remote, EMPTY_ADMIN_CONFIG);
+      currentConfig = mergeRemoteConfigPreservingUserContent(remote, currentConfig);
     }
   } catch {
-    currentConfig = mergeSiteConfig(getCachedSiteConfigSync(), EMPTY_ADMIN_CONFIG);
+    currentConfig = mergeRemoteConfigPreservingUserContent(getCachedSiteConfigSync(), currentConfig);
   }
 
   pendingClearGithubToken = false;
@@ -1087,9 +1148,10 @@ function switchTab(rawTabId, anchorKey = '') {
   if ($('editing-now-target')) {
     $('editing-now-target').textContent = ctx.target;
   }
+  const targetModule = getPrimaryModuleForActiveTab(activeTab);
   const btnMod = $('btn-save-active-module');
   if (btnMod && !btnMod.disabled) {
-    btnMod.textContent = 'Save Section';
+    btnMod.textContent = `Save ${getHumanModuleLabel(targetModule)} to Firebase`;
   }
 
   if (resolvedAnchor) {
@@ -1399,9 +1461,10 @@ function populateAllFields() {
   updateSerpSimulator();
   refreshOverviewAndSeoAudit();
   renderDirtyModulesSummary();
+  const targetModule = getPrimaryModuleForActiveTab(activeTab);
   const btnMod = $('btn-save-active-module');
   if (btnMod && !btnMod.disabled) {
-    btnMod.textContent = 'Save Section';
+    btnMod.textContent = `Save ${getHumanModuleLabel(targetModule)} to Firebase`;
   }
 }
 
@@ -1928,102 +1991,24 @@ function renderSectionsList() {
         <div class="item-card-body">
           <div class="form-grid cols-2">
             <div class="field span-full">
-              <div class="toggle-box">
-                <div>
-                  <strong>Show This Section on Homepage</strong>
-                  <div class="field-help">Uncheck to temporarily hide this section without deleting its content.</div>
-                </div>
-                <input type="checkbox" ${
-                  sec.visible !== false ? 'checked' : ''
-                } data-collection="sections" data-index="${idx}" data-key="visible" />
-              </div>
-            </div>
-            <div class="field">
-              <label class="field-label">Section Heading (&lt;h2&gt;)</label>
+              <label class="field-label" for="sec-heading-${idx}">
+                <span>Section Heading (&lt;h2&gt;)</span>
+                <span class="field-tag">Required</span>
+              </label>
               <input type="text" id="sec-heading-${idx}" class="input" value="${escapeHtml(
                 sec.heading
-              )}" data-collection="sections" data-index="${idx}" data-key="heading" />
+              )}" data-collection="sections" data-index="${idx}" data-key="heading" placeholder="e.g., About Our Platform" />
             </div>
-            <div class="field">
-              <div class="field-label">
-                <span>Anchor ID Slug (<code>#slug</code>)</span>
-                <button type="button" class="btn btn-sm" data-autoslug-collection="sections" data-index="${idx}">Auto-Slug</button>
-              </div>
-              <input type="text" class="input" value="${escapeHtml(
-                sec.slug
-              )}" data-collection="sections" data-index="${idx}" data-key="slug" />
-            </div>
-            <div class="field">
-              <label class="field-label">Eyebrow Category Badge (Optional)</label>
-              <input type="text" class="input" value="${escapeHtml(
-                sec.badgeText || ''
-              )}" data-collection="sections" data-index="${idx}" data-key="badgeText" placeholder="e.g., ARCHITECTURE" />
-            </div>
-            <div class="field">
-              <label class="field-label">Section Featured Image Position</label>
-              <select class="select" data-collection="sections" data-index="${idx}" data-key="imagePosition">
-                <option value="none" ${sec.imagePosition === 'none' || !sec.imagePosition ? 'selected' : ''}>No Section Banner Image</option>
-                <option value="top" ${sec.imagePosition === 'top' ? 'selected' : ''}>Show Image Above Content</option>
-                <option value="bottom" ${sec.imagePosition === 'bottom' ? 'selected' : ''}>Show Image Below Content</option>
-              </select>
-            </div>
+
             <div class="field span-full">
               <div class="field-label">
-                <span>Section Image URL (Optional — Select Position Above)</span>
+                <span>Featured Section Image (Optional)</span>
                 <button type="button" class="btn btn-sm" data-upload-collection="sections" data-index="${idx}" data-key="imageUrl">Upload Image</button>
               </div>
               <input type="text" class="input" id="sec-img-url-${idx}" value="${escapeHtml(
         sec.imageUrl || ''
       )}" data-collection="sections" data-index="${idx}" data-key="imageUrl" data-thumb-target="sec-img-thumb-${idx}" placeholder="Paste image URL or click Upload Image..." />
               <img id="sec-img-thumb-${idx}" class="img-mini-preview" ${sec.imageUrl ? `src="${escapeHtml(sec.imageUrl)}"` : 'hidden'} alt="Section Image Preview" />
-            </div>
-            <div class="field">
-              <label class="field-label">Section Image Alt Text</label>
-              <input type="text" class="input" value="${escapeHtml(
-                sec.imageAlt || ''
-              )}" data-collection="sections" data-index="${idx}" data-key="imageAlt" />
-            </div>
-            <div class="field">
-              <label class="field-label">Section Image Caption (Optional)</label>
-              <input type="text" class="input" value="${escapeHtml(
-                sec.imageCaption || ''
-              )}" data-collection="sections" data-index="${idx}" data-key="imageCaption" />
-            </div>
-            <div class="field">
-              <label class="field-label">Section Button Text (Optional CTA)</label>
-              <input type="text" class="input" value="${escapeHtml(
-                sec.ctaLabel || ''
-              )}" data-collection="sections" data-index="${idx}" data-key="ctaLabel" placeholder="e.g., View Benchmarks" />
-            </div>
-            <div class="field">
-              <label class="field-label">Section Button Target URL (Optional)</label>
-              <div class="url-picker-row">
-                <input type="text" class="input" id="sec-cta-url-${idx}" value="${escapeHtml(
-                  sec.ctaUrl || ''
-                )}" data-collection="sections" data-index="${idx}" data-key="ctaUrl" placeholder="e.g., /#technical-specifications" />
-                <select class="select url-quick-select" data-url-index-for="sec-cta-url-${idx}" data-collection="sections" data-index="${idx}" data-key="ctaUrl" aria-label="Quick select URL">${routeOptionsHtml}</select>
-              </div>
-            </div>
-          </div>
-
-          <div class="seo-subbox">
-            <div class="seo-subbox-title">
-              <span>Section SEO Meta Title &amp; Meta Description</span>
-              <button type="button" class="btn btn-sm" data-autoseo-collection="sections" data-index="${idx}">Auto-Fill SEO</button>
-            </div>
-            <div class="form-grid cols-2">
-              <div class="field">
-                <label class="field-label">Section Meta Title</label>
-                <input type="text" class="input" value="${escapeHtml(
-                  sec.metaTitle
-                )}" data-collection="sections" data-index="${idx}" data-key="metaTitle" />
-              </div>
-              <div class="field">
-                <label class="field-label">Section Meta Description</label>
-                <input type="text" class="input" value="${escapeHtml(
-                  sec.metaDescription
-                )}" data-collection="sections" data-index="${idx}" data-key="metaDescription" />
-              </div>
             </div>
           </div>
 
@@ -2052,8 +2037,102 @@ function renderSectionsList() {
       )}</textarea>
             <div id="sec-preview-${idx}" class="live-preview-box"></div>
           </div>
+
+          <details class="advanced-settings-box" style="margin-top:14px;">
+            <summary class="advanced-settings-summary">
+              <span>⚙️ Optional Settings (Position, Button CTA, Slug & SEO)</span>
+              <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">Click to configure</span>
+            </summary>
+            <div class="advanced-settings-content">
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <div class="toggle-box">
+                    <div>
+                      <strong>Show This Section on Homepage</strong>
+                      <div class="field-help">Uncheck to temporarily hide this section without deleting its content.</div>
+                    </div>
+                    <input type="checkbox" ${
+                      sec.visible !== false ? 'checked' : ''
+                    } data-collection="sections" data-index="${idx}" data-key="visible" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <span>Anchor ID Slug (<code>#slug</code>)</span>
+                    <button type="button" class="btn btn-sm" data-autoslug-collection="sections" data-index="${idx}">Auto-Slug</button>
+                  </div>
+                  <input type="text" class="input" value="${escapeHtml(
+                    sec.slug
+                  )}" data-collection="sections" data-index="${idx}" data-key="slug" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Eyebrow Category Badge (Optional)</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    sec.badgeText || ''
+                  )}" data-collection="sections" data-index="${idx}" data-key="badgeText" placeholder="e.g., ARCHITECTURE" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Section Featured Image Position</label>
+                  <select class="select" data-collection="sections" data-index="${idx}" data-key="imagePosition">
+                    <option value="none" ${sec.imagePosition === 'none' || !sec.imagePosition ? 'selected' : ''}>No Section Banner Image</option>
+                    <option value="top" ${sec.imagePosition === 'top' ? 'selected' : ''}>Show Image Above Content</option>
+                    <option value="bottom" ${sec.imagePosition === 'bottom' ? 'selected' : ''}>Show Image Below Content</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label">Section Image Alt Text</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    sec.imageAlt || ''
+                  )}" data-collection="sections" data-index="${idx}" data-key="imageAlt" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Section Image Caption (Optional)</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    sec.imageCaption || ''
+                  )}" data-collection="sections" data-index="${idx}" data-key="imageCaption" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Section Button Text (Optional CTA)</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    sec.ctaLabel || ''
+                  )}" data-collection="sections" data-index="${idx}" data-key="ctaLabel" placeholder="e.g., View Benchmarks" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Section Button Target URL (Optional)</label>
+                  <div class="url-picker-row">
+                    <input type="text" class="input" id="sec-cta-url-${idx}" value="${escapeHtml(
+                      sec.ctaUrl || ''
+                    )}" data-collection="sections" data-index="${idx}" data-key="ctaUrl" placeholder="e.g., /#technical-specifications" />
+                    <select class="select url-quick-select" data-url-index-for="sec-cta-url-${idx}" data-collection="sections" data-index="${idx}" data-key="ctaUrl" aria-label="Quick select URL">${routeOptionsHtml}</select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="seo-subbox">
+                <div class="seo-subbox-title">
+                  <span>Section SEO Meta Title &amp; Meta Description</span>
+                  <button type="button" class="btn btn-sm" data-autoseo-collection="sections" data-index="${idx}">Auto-Fill SEO</button>
+                </div>
+                <div class="form-grid cols-2">
+                  <div class="field">
+                    <label class="field-label">Section Meta Title</label>
+                    <input type="text" class="input" value="${escapeHtml(
+                      sec.metaTitle
+                    )}" data-collection="sections" data-index="${idx}" data-key="metaTitle" />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Section Meta Description</label>
+                    <input type="text" class="input" value="${escapeHtml(
+                      sec.metaDescription
+                    )}" data-collection="sections" data-index="${idx}" data-key="metaDescription" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
           <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="sections">Save [sections] to Firebase</button>
+            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="sections">Save Section to Firebase</button>
           </div>
         </div>
       </div>
@@ -2117,50 +2196,22 @@ function renderNewsList() {
         <div class="item-card-body">
           <div class="form-grid cols-2">
             <div class="field span-full">
-              <div class="toggle-box" style="min-height: 40px; padding: 6px 12px">
-                <span>Pin ★ Featured Badge on This Article</span>
-                <input type="checkbox" ${art.featured ? 'checked' : ''} data-collection="news" data-index="${idx}" data-key="featured" />
-              </div>
-            </div>
-            <div class="field">
-              <label class="field-label">News Article Headline (&lt;h1&gt;)</label>
+              <label class="field-label" for="news-title-${idx}">
+                <span>News Article Headline (&lt;h1&gt;)</span>
+                <span class="field-tag">Required</span>
+              </label>
               <input type="text" id="news-title-${idx}" class="input" value="${escapeHtml(
                 art.title
-              )}" data-collection="news" data-index="${idx}" data-key="title" />
+              )}" data-collection="news" data-index="${idx}" data-key="title" placeholder="e.g., Official Announcement: New Update Released" />
             </div>
-            <div class="field">
-              <div class="field-label">
-                <span>Standalone URL Slug (<code>/news/:slug</code>)</span>
-                <button type="button" class="btn btn-sm" data-autoslug-collection="news" data-index="${idx}">Auto-Slug</button>
-              </div>
-              <input type="text" class="input" value="${escapeHtml(
-                art.slug
-              )}" data-collection="news" data-index="${idx}" data-key="slug" />
+
+            <div class="field span-full">
+              <label class="field-label">Short Summary (Shown on News Feed Cards)</label>
+              <textarea class="textarea" rows="2" data-collection="news" data-index="${idx}" data-key="summary" placeholder="Brief 1-2 sentence overview...">${escapeHtml(
+        art.summary
+      )}</textarea>
             </div>
-            <div class="field">
-              <label class="field-label">Publish Date</label>
-              <input type="text" class="input" value="${escapeHtml(
-                art.date
-              )}" data-collection="news" data-index="${idx}" data-key="date" />
-            </div>
-            <div class="field">
-              <label class="field-label">Category Label</label>
-              <input type="text" class="input" list="news-category-presets" value="${escapeHtml(
-                art.category
-              )}" data-collection="news" data-index="${idx}" data-key="category" />
-            </div>
-            <div class="field">
-              <label class="field-label">Author / Team</label>
-              <input type="text" class="input" value="${escapeHtml(
-                art.author || ''
-              )}" data-collection="news" data-index="${idx}" data-key="author" />
-            </div>
-            <div class="field">
-              <label class="field-label">Reading Time Badge</label>
-              <input type="text" class="input" value="${escapeHtml(
-                art.readTime || '2 min read'
-              )}" data-collection="news" data-index="${idx}" data-key="readTime" />
-            </div>
+
             <div class="field span-full">
               <div class="field-label">
                 <span>Featured Cover Image URL (Optional)</span>
@@ -2168,62 +2219,8 @@ function renderNewsList() {
               </div>
               <input type="text" class="input" id="news-img-url-${idx}" value="${escapeHtml(
         art.coverImageUrl || ''
-      )}" data-collection="news" data-index="${idx}" data-key="coverImageUrl" data-thumb-target="news-img-thumb-${idx}" />
+      )}" data-collection="news" data-index="${idx}" data-key="coverImageUrl" data-thumb-target="news-img-thumb-${idx}" placeholder="Paste image URL or click Upload Image..." />
               <img id="news-img-thumb-${idx}" class="img-mini-preview" ${art.coverImageUrl ? `src="${escapeHtml(art.coverImageUrl)}"` : 'hidden'} alt="Cover Preview" />
-            </div>
-            <div class="field">
-              <label class="field-label">Cover Image Alt Text</label>
-              <input type="text" class="input" value="${escapeHtml(
-                art.coverImageAlt || ''
-              )}" data-collection="news" data-index="${idx}" data-key="coverImageAlt" />
-            </div>
-            <div class="field">
-              <label class="field-label">Cover Image Caption</label>
-              <input type="text" class="input" value="${escapeHtml(
-                art.coverImageCaption || ''
-              )}" data-collection="news" data-index="${idx}" data-key="coverImageCaption" />
-            </div>
-            <div class="field">
-              <label class="field-label">In-Article CTA Button Text (Optional)</label>
-              <input type="text" class="input" value="${escapeHtml(
-                art.ctaLabel || ''
-              )}" data-collection="news" data-index="${idx}" data-key="ctaLabel" />
-            </div>
-            <div class="field">
-              <label class="field-label">In-Article CTA Button URL (Optional)</label>
-              <div class="url-picker-row">
-                <input type="text" class="input" id="news-cta-url-${idx}" value="${escapeHtml(
-                  art.ctaUrl || ''
-                )}" data-collection="news" data-index="${idx}" data-key="ctaUrl" />
-                <select class="select url-quick-select" data-url-index-for="news-cta-url-${idx}" data-collection="news" data-index="${idx}" data-key="ctaUrl" aria-label="Quick select URL">${routeOptionsHtml}</select>
-              </div>
-            </div>
-            <div class="field span-full">
-              <label class="field-label">Short Summary</label>
-              <textarea class="textarea" rows="2" data-collection="news" data-index="${idx}" data-key="summary">${escapeHtml(
-        art.summary
-      )}</textarea>
-            </div>
-          </div>
-
-          <div class="seo-subbox">
-            <div class="seo-subbox-title">
-              <span>Article SEO Meta Title &amp; Meta Description</span>
-              <button type="button" class="btn btn-sm" data-autoseo-collection="news" data-index="${idx}">Auto-Fill SEO</button>
-            </div>
-            <div class="form-grid cols-2">
-              <div class="field">
-                <label class="field-label">Article Meta Title (&lt;title&gt;)</label>
-                <input type="text" class="input" value="${escapeHtml(
-                  art.metaTitle
-                )}" data-collection="news" data-index="${idx}" data-key="metaTitle" />
-              </div>
-              <div class="field">
-                <label class="field-label">Article Meta Description</label>
-                <input type="text" class="input" value="${escapeHtml(
-                  art.metaDescription
-                )}" data-collection="news" data-index="${idx}" data-key="metaDescription" />
-              </div>
             </div>
           </div>
 
@@ -2249,8 +2246,107 @@ function renderNewsList() {
       )}</textarea>
             <div id="news-preview-${idx}" class="live-preview-box"></div>
           </div>
+
+          <details class="advanced-settings-box" style="margin-top:14px;">
+            <summary class="advanced-settings-summary">
+              <span>⚙️ Optional Post Details (Slug, Category, Author, Date, Button CTA, SEO)</span>
+              <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">Click to configure</span>
+            </summary>
+            <div class="advanced-settings-content">
+              <div class="form-grid cols-2">
+                <div class="field span-full">
+                  <div class="toggle-box" style="min-height: 40px; padding: 6px 12px">
+                    <span>Pin ★ Featured Badge on This Article</span>
+                    <input type="checkbox" ${art.featured ? 'checked' : ''} data-collection="news" data-index="${idx}" data-key="featured" />
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <span>Standalone URL Slug (<code>/news/:slug</code>)</span>
+                    <button type="button" class="btn btn-sm" data-autoslug-collection="news" data-index="${idx}">Auto-Slug</button>
+                  </div>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.slug
+                  )}" data-collection="news" data-index="${idx}" data-key="slug" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Publish Date</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.date
+                  )}" data-collection="news" data-index="${idx}" data-key="date" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Category Label</label>
+                  <input type="text" class="input" list="news-category-presets" value="${escapeHtml(
+                    art.category
+                  )}" data-collection="news" data-index="${idx}" data-key="category" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Author / Team</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.author || ''
+                  )}" data-collection="news" data-index="${idx}" data-key="author" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Reading Time Badge</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.readTime || '2 min read'
+                  )}" data-collection="news" data-index="${idx}" data-key="readTime" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Cover Image Alt Text</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.coverImageAlt || ''
+                  )}" data-collection="news" data-index="${idx}" data-key="coverImageAlt" />
+                </div>
+                <div class="field">
+                  <label class="field-label">Cover Image Caption</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.coverImageCaption || ''
+                  )}" data-collection="news" data-index="${idx}" data-key="coverImageCaption" />
+                </div>
+                <div class="field">
+                  <label class="field-label">In-Article CTA Button Text (Optional)</label>
+                  <input type="text" class="input" value="${escapeHtml(
+                    art.ctaLabel || ''
+                  )}" data-collection="news" data-index="${idx}" data-key="ctaLabel" />
+                </div>
+                <div class="field">
+                  <label class="field-label">In-Article CTA Button URL (Optional)</label>
+                  <div class="url-picker-row">
+                    <input type="text" class="input" id="news-cta-url-${idx}" value="${escapeHtml(
+                      art.ctaUrl || ''
+                    )}" data-collection="news" data-index="${idx}" data-key="ctaUrl" />
+                    <select class="select url-quick-select" data-url-index-for="news-cta-url-${idx}" data-collection="news" data-index="${idx}" data-key="ctaUrl" aria-label="Quick select URL">${routeOptionsHtml}</select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="seo-subbox">
+                <div class="seo-subbox-title">
+                  <span>Article SEO Meta Title &amp; Meta Description</span>
+                  <button type="button" class="btn btn-sm" data-autoseo-collection="news" data-index="${idx}">Auto-Fill SEO</button>
+                </div>
+                <div class="form-grid cols-2">
+                  <div class="field">
+                    <label class="field-label">Article Meta Title (&lt;title&gt;)</label>
+                    <input type="text" class="input" value="${escapeHtml(
+                      art.metaTitle
+                    )}" data-collection="news" data-index="${idx}" data-key="metaTitle" />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Article Meta Description</label>
+                    <input type="text" class="input" value="${escapeHtml(
+                      art.metaDescription
+                    )}" data-collection="news" data-index="${idx}" data-key="metaDescription" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
           <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="newsSection">Save [newsSection] to Firebase</button>
+            <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="newsSection">Save News Post to Firebase</button>
           </div>
         </div>
       </div>
@@ -2320,7 +2416,7 @@ function renderFaqsList() {
       )}</textarea>
             </div>
             <div style="display:flex; justify-content:flex-end;">
-              <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="faqsSection">Save [faqsSection] to Firebase</button>
+              <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="faqsSection">Save FAQ to Firebase</button>
             </div>
           </div>
         </div>
@@ -2506,6 +2602,9 @@ function renderPagesList() {
     pg.htmlContent
   )}</textarea>
         <div id="page-preview-${idx}" class="live-preview-box"></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+        <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="pages">Save Page to Firebase</button>
       </div>
     </div>
   `;
@@ -3078,6 +3177,79 @@ function collectScalarFields() {
   c.securityGate.unavailableMessage = readTrim('sec-unavailable-msg', c.securityGate.unavailableMessage || '');
   c.securityGate.helplineWhatsapp = readTrim('sec-whatsapp', c.securityGate.helplineWhatsapp || '');
   c.securityGate.helplineTelegram = readTrim('sec-telegram', c.securityGate.helplineTelegram || '');
+
+  // Auto clean paragraphs and image fallback across all content modules
+  if (Array.isArray(c.sections)) {
+    for (const sec of c.sections) {
+      if (sec.imageUrl && (!sec.imagePosition || sec.imagePosition === 'none')) {
+        sec.imagePosition = 'top';
+      }
+      if (sec.htmlContent) {
+        sec.htmlContent = ensureCleanHtmlParagraphs(sec.htmlContent);
+      }
+    }
+  }
+  if (Array.isArray(c.pages)) {
+    for (const pg of c.pages) {
+      if (pg.htmlContent) {
+        pg.htmlContent = ensureCleanHtmlParagraphs(pg.htmlContent);
+      }
+    }
+  }
+  if (Array.isArray(c.newsSection?.articles)) {
+    for (const art of c.newsSection.articles) {
+      if (art.htmlContent) {
+        art.htmlContent = ensureCleanHtmlParagraphs(art.htmlContent);
+      }
+    }
+  }
+}
+
+function commitPendingNewsComposerIfAny() {
+  const headline = ($('composer-news-title')?.value || '').trim();
+  if (!headline) return;
+  const slug = ($('composer-news-slug')?.value || '').trim() || generateSlug(headline);
+  const summary = ($('composer-news-summary')?.value || '').trim();
+  const rawHtml = ($('composer-news-html')?.value || '').trim();
+  const htmlContent = ensureCleanHtmlParagraphs(rawHtml || `<p>${summary || headline}</p>`);
+  const coverUrl = ($('composer-news-cover-url')?.value || '').trim();
+  const category = ($('composer-news-category')?.value || '').trim() || 'Daily Update';
+  const author = ($('composer-news-author')?.value || '').trim() || `${currentConfig.brand?.name || 'Workspace'} Editorial`;
+  const date = ($('composer-news-date')?.value || '').trim() || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const readTime = ($('composer-news-readtime')?.value || '').trim() || '2 min read';
+  const featured = Boolean($('composer-news-featured')?.checked);
+
+  if (!Array.isArray(currentConfig.newsSection.articles)) {
+    currentConfig.newsSection.articles = [];
+  }
+  const existingIdx = currentConfig.newsSection.articles.findIndex((a) => a.slug === slug);
+  const articleObj = {
+    id: existingIdx >= 0 ? currentConfig.newsSection.articles[existingIdx].id : `news-${Date.now()}`,
+    title: headline,
+    slug,
+    date,
+    category,
+    author,
+    readTime,
+    featured,
+    summary: summary || stripHtmlToExcerpt(htmlContent, 160),
+    coverImageUrl: coverUrl,
+    coverImageAlt: headline,
+    coverImageCaption: '',
+    ctaLabel: '',
+    ctaUrl: '',
+    metaTitle: `${headline} | ${currentConfig.brand?.name || ''}`,
+    metaDescription: summary || `${headline} published by ${currentConfig.brand?.name || ''}.`,
+    htmlContent
+  };
+  if (existingIdx >= 0) {
+    currentConfig.newsSection.articles[existingIdx] = articleObj;
+  } else {
+    currentConfig.newsSection.articles.unshift(articleObj);
+  }
+  dirtyModules.add('newsSection');
+  resetNewsComposer();
+  renderNewsList();
 }
 
 function updateSerpSimulator() {
@@ -3276,6 +3448,7 @@ function appendPipelineStep(stepText) {
 }
 
 async function handleCompileAndPushToGitHub() {
+  commitPendingNewsComposerIfAny();
   collectScalarFields();
   currentConfig.updatedAt = Date.now();
 
@@ -3335,7 +3508,7 @@ async function handleCompileAndPushToGitHub() {
     }
 
     if (res?.config) {
-      currentConfig = mergeSiteConfig(res.config, EMPTY_ADMIN_CONFIG);
+      currentConfig = mergeRemoteConfigPreservingUserContent(res.config, currentConfig);
       populateAllFields();
     }
 
@@ -3348,13 +3521,17 @@ async function handleCompileAndPushToGitHub() {
     const filesCount = res?.filesCount ?? pub.filesPushed ?? res?.compiledBundle?.totalFiles ?? 0;
     const commitSha = res?.commitSha || pub.commitSha || '';
     const commitUrl = res?.commitUrl || pub.commitUrl || '#';
-    const compiledLocalCount = res?.compiledLocalFiles ?? res?.compiledBundle?.totalFiles ?? 0;
+    const compiledLocalCount =
+      res?.compiledLocalFiles ??
+      res?.compiledBundle?.totalFiles ??
+      (Array.isArray(res?.compiledBundle?.filesList) ? res.compiledBundle.filesList.length : 0);
     const errText =
       res?.error ||
-      pub.message ||
       res?.message ||
+      pub?.message ||
+      pub?.error ||
       res?.syncLog?.errorDetail ||
-      'Check your GitHub Fine-Grained Token, Owner, and Repo Name.';
+      'GitHub credentials missing or incomplete. Check your GitHub Fine-Grained Token, Owner, and Repo Name in the GitHub & Firebase tab.';
 
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
@@ -3407,12 +3584,14 @@ async function handleCompileAndPushToGitHub() {
 }
 
 async function handleSaveActiveModule(explicitModuleKey = null) {
+  commitPendingNewsComposerIfAny();
   collectScalarFields();
   const singleExplicit = isCmsModuleKey(explicitModuleKey) ? explicitModuleKey : null;
   const tabModules = TAB_MODULES_MAP[activeTab] || [getPrimaryModuleForActiveTab(activeTab)];
+  const dirtyList = Array.from(dirtyModules).filter((mk) => isCmsModuleKey(mk));
   const targetModules = singleExplicit
     ? [singleExplicit]
-    : Array.from(new Set([...tabModules, ...Array.from(dirtyModules).filter((mk) => isCmsModuleKey(mk) && tabModules.includes(mk))]));
+    : Array.from(new Set([...tabModules, ...dirtyList]));
 
   const btnModule = $('btn-save-active-module');
   if (btnModule) {
@@ -3446,7 +3625,7 @@ async function handleSaveActiveModule(explicitModuleKey = null) {
 
     if (res && res.success) {
       if (res.config) {
-        const merged = mergeSiteConfig(res.config, EMPTY_ADMIN_CONFIG);
+        const merged = mergeRemoteConfigPreservingUserContent(res.config, currentConfig);
         for (const [mk, slice] of Object.entries(siblingDirtySlices)) {
           merged[mk] = slice;
         }
@@ -3483,12 +3662,14 @@ async function handleSaveActiveModule(explicitModuleKey = null) {
   } finally {
     if (btnModule) {
       btnModule.disabled = false;
-      btnModule.textContent = 'Save Section';
+      const targetModule = getPrimaryModuleForActiveTab(activeTab);
+      btnModule.textContent = `Save ${getHumanModuleLabel(targetModule)} to Firebase`;
     }
   }
 }
 
 async function handleSaveAndPublish() {
+  commitPendingNewsComposerIfAny();
   collectScalarFields();
   currentConfig.updatedAt = Date.now();
 
@@ -3540,7 +3721,7 @@ async function handleSaveAndPublish() {
         throw new Error(batchRes?.error || 'Error saving modules to Firebase');
       }
       if (batchRes.config) {
-        currentConfig = mergeSiteConfig(batchRes.config, EMPTY_ADMIN_CONFIG);
+        currentConfig = mergeRemoteConfigPreservingUserContent(batchRes.config, currentConfig);
       }
       targetModules.forEach((modKey) => dirtyModules.delete(modKey));
       pendingClearGithubToken = false;
@@ -3925,7 +4106,7 @@ function bindWorkspaceDomEvents() {
       }
       if (res.ok && data?.success) {
         if (data.config) {
-          currentConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+          currentConfig = mergeRemoteConfigPreservingUserContent(data.config, currentConfig);
         } else {
           currentConfig.syncLogs = [];
           if (currentConfig.githubConfig) currentConfig.githubConfig.deployHistory = [];
@@ -3949,7 +4130,7 @@ function bindWorkspaceDomEvents() {
     pendingClearGithubToken = true;
     setVal('gh-token', '');
     if (currentConfig.githubConfig) currentConfig.githubConfig.hasFineGrainedToken = false;
-    markDirty('Marked stored GitHub token for removal — Save [githubConfig] to apply', 'githubConfig');
+    markDirty('Marked stored GitHub token for removal — Save GitHub config to apply', 'githubConfig');
     populateAllFields();
     showToast('Token marked for removal — save to apply');
   });
@@ -3958,7 +4139,7 @@ function bindWorkspaceDomEvents() {
     pendingClearTurnstileSecret = true;
     setVal('sec-turnstile-secret-key', '');
     if (currentConfig.securityGate) currentConfig.securityGate.hasTurnstileSecretKey = false;
-    markDirty('Marked stored Turnstile secret for removal — Save [securityGate] to apply', 'securityGate');
+    markDirty('Marked stored Turnstile secret for removal — Save Gateway config to apply', 'securityGate');
     populateAllFields();
     showToast('Turnstile secret marked for removal — save to apply');
   });
@@ -4689,7 +4870,7 @@ function bindWorkspaceDomEvents() {
 
       if (testRes.success) {
         if (testRes.cloudConfig && (testRes.cloudConfig.updatedAt || 0) > (currentConfig.updatedAt || 0)) {
-          currentConfig = mergeSiteConfig(testRes.cloudConfig, EMPTY_ADMIN_CONFIG);
+          currentConfig = mergeRemoteConfigPreservingUserContent(testRes.cloudConfig, currentConfig);
           populateAllFields();
         }
         showFirebaseFeedback(
@@ -5308,7 +5489,7 @@ function initAuthEvents() {
       ) {
         const modKey = inferModuleKeyFromElement(target);
         if (modKey) {
-          markDirty(`Unsaved toggle in [${modKey}] — tap Save or Publish`, modKey);
+          markDirty(`Unsaved changes in ${getHumanModuleLabel(modKey)} — tap Save or Publish`, modKey);
         }
       }
     }
@@ -5373,7 +5554,7 @@ function initAuthEvents() {
     ) {
       const modKey = inferModuleKeyFromElement(target);
       if (modKey) {
-        markDirty(`Unsaved edit in [${modKey}] — tap Save or Publish`, modKey);
+        markDirty(`Unsaved changes in ${getHumanModuleLabel(modKey)} — tap Save or Publish`, modKey);
       }
     }
   });

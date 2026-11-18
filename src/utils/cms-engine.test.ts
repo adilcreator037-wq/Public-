@@ -2104,6 +2104,162 @@ test('Cloudflare Edge /api/route & _middleware dynamic fallbacks resolve per-URL
   }
 });
 
+test('Direct Firestore REST batch commit, ensureCleanHtmlParagraphs, and section image fallback', async () => {
+  const { ensureCleanHtmlParagraphs } = await import('./cms-types.js');
+  const { saveDirectToFirestoreRest, readDirectFromFirestoreRest } = await import('../../firebase-config.js');
+
+  // 1. ensureCleanHtmlParagraphs tests
+  assert.equal(ensureCleanHtmlParagraphs(''), '');
+  assert.equal(
+    ensureCleanHtmlParagraphs('Hello world\n\nSecond paragraph'),
+    '<p>Hello world</p>\n<p>Second paragraph</p>'
+  );
+  // Preserves existing HTML block elements
+  assert.equal(
+    ensureCleanHtmlParagraphs('<p>Already wrapped</p>'),
+    '<p>Already wrapped</p>'
+  );
+  assert.equal(
+    ensureCleanHtmlParagraphs('<div><h3>Heading</h3><p>Text</p></div>'),
+    '<div><h3>Heading</h3><p>Text</p></div>'
+  );
+
+  // 2. Direct-to-Firestore REST batch commit
+  const origFetch = globalThis.fetch;
+  let commitCapturedBody: any = null;
+  globalThis.fetch = async (url: any, init?: any) => {
+    const urlStr = String(url);
+    if (urlStr.includes('documents:commit')) {
+      commitCapturedBody = JSON.parse(String(init?.body || '{}'));
+      return new Response(JSON.stringify({ writeResults: [{ updateTime: new Date().toISOString() }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    if (urlStr.includes('cmsModules?pageSize=50')) {
+      return new Response(
+        JSON.stringify({
+          documents: [
+            {
+              name: 'projects/test-proj/databases/(default)/documents/cmsModules/brand',
+              fields: {
+                data: {
+                  mapValue: {
+                    fields: {
+                      name: { stringValue: 'Direct Brand' }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (urlStr.includes('siteConfig/main')) {
+      return new Response(
+        JSON.stringify({
+          fields: {
+            modularSync: { booleanValue: true },
+            updatedAt: { integerValue: '1700000000000' }
+          }
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return origFetch(url, init);
+  };
+
+  try {
+    const fakeFb = {
+      apiKey: 'AIzaSyFakeClientKeyForDirectTest',
+      projectId: 'test-direct-proj'
+    };
+
+    const directSaveRes = await saveDirectToFirestoreRest(
+      fakeFb,
+      {
+        brand: { name: 'Direct Brand Test' },
+        sections: [{ heading: 'Direct Section', imageUrl: 'https://example.com/img.png' }]
+      },
+      { updatedAt: 1700000000000 }
+    );
+    assert.equal(directSaveRes.ok, true);
+    assert.ok(commitCapturedBody);
+    assert.ok(Array.isArray(commitCapturedBody.writes));
+    assert.equal(commitCapturedBody.writes.length, 3); // brand, sections, siteConfig/main
+
+    const directReadRes = await readDirectFromFirestoreRest(fakeFb);
+    assert.equal(directReadRes.status, 'ok');
+    assert.equal(directReadRes.config?.brand?.name, 'Direct Brand');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('mergeRemoteConfigPreservingUserContent protects user sections, news, faqs, and pages from being wiped by empty remote responses', async () => {
+  const { mergeRemoteConfigPreservingUserContent } = await import('./cms-types.js');
+
+  const userLocalConfig = {
+    brand: { name: 'My Real App' },
+    hero: { h1: 'Welcome to My Real App' },
+    sections: [
+      { id: 'sec-1', heading: 'Section 1', htmlContent: '<p>Content</p>' },
+      { id: 'sec-2', heading: 'Section 2', htmlContent: '<p>Content 2</p>' }
+    ],
+    newsSection: {
+      articles: [{ id: 'news-1', title: 'Daily News 1', slug: 'daily-news-1' }]
+    },
+    faqsSection: {
+      items: [{ id: 'faq-1', question: 'Q1', answer: 'A1' }]
+    },
+    pages: [{ id: 'pg-1', slug: 'privacy', label: 'Privacy' }]
+  };
+
+  // Simulating an empty remote publish response returning empty arrays
+  const emptyRemoteResponse = {
+    brand: { name: '' },
+    sections: [],
+    newsSection: { articles: [] },
+    faqsSection: { items: [] },
+    pages: []
+  };
+
+  const safeConfig = mergeRemoteConfigPreservingUserContent(emptyRemoteResponse as any, userLocalConfig as any);
+  assert.equal(safeConfig.sections.length, 2, 'Sections must NOT be wiped by empty remote response');
+  assert.equal(safeConfig.newsSection.articles.length, 1, 'News articles must NOT be wiped');
+  assert.equal(safeConfig.faqsSection.items.length, 1, 'FAQs must NOT be wiped');
+  assert.equal(safeConfig.pages.length, 1, 'Pages must NOT be wiped');
+  assert.equal(safeConfig.brand.name, 'My Real App', 'Brand name must be preserved');
+  assert.equal(safeConfig.hero.h1, 'Welcome to My Real App', 'Hero H1 must be preserved');
+});
+
+test('Clean Admin Studio UI enforces beginner-friendly buttons and collapsible advanced settings', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+
+  const adminJs = await fs.readFile(path.join(process.cwd(), 'admin.js'), 'utf8');
+  const adminCss = await fs.readFile(path.join(process.cwd(), 'admin.css'), 'utf8');
+
+  // Verify no ugly bracketed module labels on buttons
+  assert.ok(!adminJs.includes('Save [sections]'), 'Must not contain Save [sections]');
+  assert.ok(!adminJs.includes('Save [newsSection]'), 'Must not contain Save [newsSection]');
+  assert.ok(!adminJs.includes('Save [faqsSection]'), 'Must not contain Save [faqsSection]');
+
+  // Verify friendly button labels
+  assert.ok(adminJs.includes('Save Section to Firebase'), 'Must contain Save Section to Firebase');
+  assert.ok(adminJs.includes('Save News Post to Firebase'), 'Must contain Save News Post to Firebase');
+  assert.ok(adminJs.includes('Save FAQ to Firebase'), 'Must contain Save FAQ to Firebase');
+  assert.ok(adminJs.includes('Save Page to Firebase'), 'Must contain Save Page to Firebase');
+
+  // Verify collapsible advanced settings styling in CSS
+  assert.ok(adminCss.includes('.advanced-settings-box'), 'admin.css must contain .advanced-settings-box');
+  assert.ok(adminCss.includes('.advanced-settings-summary'), 'admin.css must contain .advanced-settings-summary');
+  assert.ok(adminCss.includes('.advanced-settings-content'), 'admin.css must contain .advanced-settings-content');
+});
+
+
 
 
 

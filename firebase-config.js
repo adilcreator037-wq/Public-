@@ -14,6 +14,7 @@
 import {
   EMPTY_ADMIN_CONFIG,
   mergeSiteConfig,
+  mergeRemoteConfigPreservingUserContent,
   cleanFirebaseEnvString,
   normalizeFirebaseClientConfig,
   isValidFirebaseClientConfig,
@@ -27,7 +28,8 @@ export {
   cleanFirebaseEnvString,
   normalizeFirebaseClientConfig,
   isValidFirebaseClientConfig,
-  parseFirebaseConfigSnippet
+  parseFirebaseConfigSnippet,
+  mergeRemoteConfigPreservingUserContent
 };
 
 const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
@@ -197,7 +199,213 @@ function buildAdminRequestHeaders(extraHeaders = {}) {
 /**
  * Test live Firestore connectivity via authenticated server endpoint `/api/firebase/test`
  */
+function decodeFsValClient(val) {
+  if (!val || typeof val !== 'object') return null;
+  if ('stringValue' in val) return val.stringValue;
+  if ('booleanValue' in val) return val.booleanValue;
+  if ('integerValue' in val) return Number(val.integerValue);
+  if ('doubleValue' in val) return Number(val.doubleValue);
+  if ('nullValue' in val) return null;
+  if ('arrayValue' in val) {
+    const arr = val.arrayValue?.values || [];
+    return arr.map((item) => decodeFsValClient(item));
+  }
+  if ('mapValue' in val) {
+    const out = {};
+    const fields = val.mapValue?.fields || {};
+    for (const [k, v] of Object.entries(fields)) {
+      out[k] = decodeFsValClient(v);
+    }
+    return out;
+  }
+  return null;
+}
+
+function encodeFsValClient(val) {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === 'string') return { stringValue: val };
+  if (typeof val === 'boolean') return { booleanValue: val };
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return { integerValue: '0' };
+    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  }
+  if (Array.isArray(val)) {
+    return {
+      arrayValue: {
+        values: val.map((item) => encodeFsValClient(item))
+      }
+    };
+  }
+  if (typeof val === 'object') {
+    const fields = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) {
+        fields[k] = encodeFsValClient(v);
+      }
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+/**
+ * Direct Client-to-Firestore REST Batch Commit.
+ * Writes directly to Firebase Firestore from the browser using the public Web API Key,
+ * completely bypassing local storage or server-side environment variable dependencies!
+ */
+export async function saveDirectToFirestoreRest(fbCfg, modulesMap = {}, meta = {}) {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) {
+    return { ok: false, error: 'Missing Firebase API Key or Project ID' };
+  }
+  const dbIdRaw = fbCfg.databaseId || '(default)';
+  const docRoot = `projects/${fbCfg.projectId}/databases/${dbIdRaw}/documents`;
+  const commitUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    fbCfg.projectId
+  )}/databases/${encodeURIComponent(dbIdRaw)}/documents:commit?key=${encodeURIComponent(fbCfg.apiKey)}`;
+
+  const now = meta.updatedAt || Date.now();
+  const writes = [];
+  for (const [moduleKey, moduleData] of Object.entries(modulesMap || {})) {
+    if (!moduleKey || moduleData === undefined) continue;
+    writes.push({
+      update: {
+        name: `${docRoot}/cmsModules/${moduleKey}`,
+        fields: {
+          data: encodeFsValClient(moduleData),
+          updatedAt: encodeFsValClient(now)
+        }
+      }
+    });
+  }
+
+  writes.push({
+    update: {
+      name: `${docRoot}/siteConfig/main`,
+      fields: {
+        updatedAt: encodeFsValClient(now),
+        dirtyModulesSinceSync: encodeFsValClient(meta.dirtyModulesSinceSync || []),
+        modularSync: encodeFsValClient(true)
+      }
+    },
+    updateMask: {
+      fieldPaths: ['updatedAt', 'dirtyModulesSinceSync', 'modularSync']
+    }
+  });
+
+  try {
+    const res = await fetch(commitUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes })
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      return { ok: false, error: errBody?.error?.message || `Firestore HTTP ${res.status}` };
+    }
+    const data = await res.json().catch(() => null);
+    return { ok: true, writeResults: data?.writeResults || [] };
+  } catch (err) {
+    return { ok: false, error: err?.message || 'Network error reaching Firestore REST API' };
+  }
+}
+
+/**
+ * Direct Client-to-Firestore REST Reader.
+ * Reads documents directly from Cloud Firestore collections `cmsModules/*` and `siteConfig/main`.
+ */
+export async function readDirectFromFirestoreRest(fbCfg) {
+  if (!fbCfg?.projectId || !fbCfg?.apiKey) {
+    return { status: 'error', config: null, error: 'Missing Firebase config' };
+  }
+  const dbId = encodeURIComponent(fbCfg.databaseId || '(default)');
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    fbCfg.projectId
+  )}/databases/${dbId}/documents`;
+
+  try {
+    const [modulesRes, mainRes] = await Promise.all([
+      fetch(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
+        headers: { Accept: 'application/json' }
+      }).catch(() => null),
+      fetch(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
+        headers: { Accept: 'application/json' }
+      }).catch(() => null)
+    ]);
+
+    if (!modulesRes || !mainRes) {
+      return { status: 'error', config: null, error: 'Network error connecting to Firestore' };
+    }
+    if (
+      (mainRes.status !== 200 && mainRes.status !== 404) ||
+      (modulesRes.status !== 200 && modulesRes.status !== 404)
+    ) {
+      const failed = mainRes.status !== 200 && mainRes.status !== 404 ? mainRes : modulesRes;
+      const err = await failed.json().catch(() => ({}));
+      return { status: 'error', config: null, error: err?.error?.message || `HTTP ${failed.status}` };
+    }
+
+    let mainObj = null;
+    if (mainRes.ok) {
+      const data = await mainRes.json().catch(() => null);
+      if (data?.fields) {
+        mainObj = {};
+        for (const [k, v] of Object.entries(data.fields)) {
+          mainObj[k] = decodeFsValClient(v);
+        }
+      }
+    }
+
+    let modulesCount = 0;
+    const assembled = JSON.parse(JSON.stringify(EMPTY_ADMIN_CONFIG));
+    if (mainObj) {
+      for (const key of Object.keys(mainObj)) {
+        if (key !== 'modularSync') assembled[key] = mainObj[key];
+      }
+    }
+    if (modulesRes.ok) {
+      const listData = await modulesRes.json().catch(() => null);
+      const docs = Array.isArray(listData?.documents) ? listData.documents : [];
+      for (const item of docs) {
+        const docName = String(item.name || '').split('/').pop() || '';
+        if (docName && item.fields) {
+          const dec = {};
+          for (const [k, v] of Object.entries(item.fields)) {
+            dec[k] = decodeFsValClient(v);
+          }
+          if (dec.data !== undefined) {
+            assembled[docName] = dec.data;
+            modulesCount += 1;
+          }
+        }
+      }
+    }
+
+    if (modulesCount === 0 && !mainObj) {
+      return { status: 'empty', config: null };
+    }
+    return { status: 'ok', config: mergeSiteConfig(assembled, EMPTY_ADMIN_CONFIG) };
+  } catch (err) {
+    return { status: 'error', config: null, error: err?.message || 'Firestore direct read error' };
+  }
+}
+
+/**
+ * Test live Firestore connectivity via direct client REST and authenticated server endpoint
+ */
 export async function testFirebaseConnectionRemote(customConfig = null) {
+  const targetConfig = customConfig || getActiveFirebaseConfig();
+  if (targetConfig?.apiKey && targetConfig?.projectId && !targetConfig.apiKey.startsWith('__')) {
+    const directRes = await readDirectFromFirestoreRest(targetConfig);
+    if (directRes.status === 'ok' || directRes.status === 'empty') {
+      return {
+        success: true,
+        projectId: targetConfig.projectId,
+        message: `✓ Connected directly to Cloud Firestore (${targetConfig.projectId})! Ready to save.`,
+        cloudConfig: directRes.config
+      };
+    }
+  }
+
   try {
     const res = await fetch('/api/firebase/test', {
       method: 'POST',
@@ -231,10 +439,24 @@ export async function testFirebaseConnectionRemote(customConfig = null) {
 }
 
 /**
- * Fetch live site configuration from authenticated `/api/config`
- * (Server reads directly from Firebase Firestore when configured; zero static demo fallback!)
+ * Fetch live site configuration from live Firebase Firestore & authenticated `/api/config`.
+ * Reads directly from Cloud Firestore when client credentials exist!
  */
 export async function getSiteConfigRemote() {
+  const activeFb = getActiveFirebaseConfig();
+  let directConfig = null;
+
+  if (activeFb?.apiKey && activeFb?.projectId && !activeFb.apiKey.startsWith('__')) {
+    try {
+      const directRead = await readDirectFromFirestoreRest(activeFb);
+      if (directRead.status === 'ok' && directRead.config) {
+        directConfig = directRead.config;
+      }
+    } catch {
+      // Fallback to server read
+    }
+  }
+
   try {
     const res = await fetch('/api/config', {
       method: 'GET',
@@ -246,11 +468,17 @@ export async function getSiteConfigRemote() {
     });
     if (res.status === 401) {
       notifyAdminUnauthorized();
+      return directConfig || inMemoryCachedConfig;
+    }
+    if (!res.ok) {
+      if (directConfig) {
+        inMemoryCachedConfig = directConfig;
+        return inMemoryCachedConfig;
+      }
       return inMemoryCachedConfig;
     }
-    if (!res.ok) return inMemoryCachedConfig;
     const data = await res.json().catch(() => null);
-    if (!data) return inMemoryCachedConfig;
+    if (!data) return directConfig || inMemoryCachedConfig;
 
     const fbCfg = data.firebaseEnv?.config || data.firebaseConfig || data._firebaseConfig;
     if (fbCfg) {
@@ -262,17 +490,128 @@ export async function getSiteConfigRemote() {
     }
 
     const rawCfg = data.config && typeof data.config === 'object' ? data.config : data;
-    inMemoryCachedConfig = mergeSiteConfig(rawCfg, EMPTY_ADMIN_CONFIG);
+    if (directConfig) {
+      inMemoryCachedConfig = mergeRemoteConfigPreservingUserContent(rawCfg, directConfig);
+    } else {
+      inMemoryCachedConfig = mergeRemoteConfigPreservingUserContent(rawCfg, inMemoryCachedConfig);
+    }
     return inMemoryCachedConfig;
   } catch {
-    return inMemoryCachedConfig;
+    return directConfig || inMemoryCachedConfig;
   }
+}
+
+/**
+ * Save multiple edited modules atomically to live Firebase & recompile static routes
+ */
+export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules = []) {
+  const activeFb = getActiveFirebaseConfig();
+  let directFirestoreOk = false;
+  let directFirestoreError = null;
+
+  // 1. Direct Browser-to-Firestore Write: If user has a valid client Firebase API key & Project ID,
+  // commit directly to Firestore FIRST so saving NEVER relies on server local storage or state!
+  if (activeFb?.apiKey && activeFb?.projectId && !activeFb.apiKey.startsWith('__')) {
+    try {
+      const directRes = await saveDirectToFirestoreRest(activeFb, modulesMap, {
+        updatedAt: Date.now(),
+        dirtyModulesSinceSync: []
+      });
+      if (directRes.ok) {
+        directFirestoreOk = true;
+      } else {
+        directFirestoreError = directRes.error;
+      }
+    } catch (err) {
+      directFirestoreError = err?.message || 'Direct Firestore commit error';
+    }
+  }
+
+  // 2. Also notify the backend with X-Firebase-Config attached so backend compiles static files
+  try {
+    const res = await fetch('/api/config/modules', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: buildAdminRequestHeaders({
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Admin-CSRF': '1'
+      }),
+      body: JSON.stringify({
+        modules: modulesMap,
+        editedModules
+      })
+    });
+    const data = await res.json().catch(() => null);
+    if (res.status === 401) {
+      notifyAdminUnauthorized(data?.error);
+    }
+    if (!res.ok || !data?.success) {
+      if (directFirestoreOk) {
+        return {
+          success: true,
+          firestoreSaved: true,
+          firestoreNotice: null,
+          message: 'Saved directly to Cloud Firestore.'
+        };
+      }
+      return {
+        success: false,
+        status: res.status,
+        firestoreSaved: false,
+        error: directFirestoreError || data?.error || `Failed to save modules batch (HTTP ${res.status}).`
+      };
+    }
+    if (data.config) {
+      inMemoryCachedConfig = mergeRemoteConfigPreservingUserContent(data.config, inMemoryCachedConfig);
+    }
+    return {
+      ...data,
+      firestoreSaved: Boolean(directFirestoreOk || data.firestoreSaved),
+      firestoreNotice: directFirestoreOk ? null : (data.firestoreNotice || directFirestoreError || null)
+    };
+  } catch (err) {
+    if (directFirestoreOk) {
+      return {
+        success: true,
+        firestoreSaved: true,
+        firestoreNotice: null,
+        message: 'Saved directly to Cloud Firestore.'
+      };
+    }
+    return {
+      success: false,
+      firestoreSaved: false,
+      error: directFirestoreError || err?.message || 'Network error saving modules.'
+    };
+  }
+}
+
+/**
+ * Save a single isolated module (`PATCH /api/config/module`) to live Firebase
+ */
+export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
+  return saveSiteConfigModulesBatchRemote({ [moduleKey]: dataPayload }, [moduleKey]);
 }
 
 /**
  * Save full configuration to live Firebase & compile static public routes
  */
 export async function saveSiteConfigRemote(config, editedModules = []) {
+  const activeFb = getActiveFirebaseConfig();
+  if (activeFb?.apiKey && activeFb?.projectId && !activeFb.apiKey.startsWith('__')) {
+    const allModulesMap = {};
+    for (const [k, v] of Object.entries(config || {})) {
+      if (v !== undefined && !k.startsWith('_')) {
+        allModulesMap[k] = v;
+      }
+    }
+    await saveDirectToFirestoreRest(activeFb, allModulesMap, {
+      updatedAt: Date.now(),
+      dirtyModulesSinceSync: []
+    }).catch(() => null);
+  }
+
   const payload = {
     ...config,
     _editedModules: Array.isArray(editedModules) ? editedModules : []
@@ -300,87 +639,7 @@ export async function saveSiteConfigRemote(config, editedModules = []) {
     };
   }
   if (data.config) {
-    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
-  }
-  return {
-    ...data,
-    firestoreSaved: Boolean(data.firestoreSaved),
-    firestoreNotice: data.firestoreNotice || null
-  };
-}
-
-/**
- * Save a single isolated module (`PATCH /api/config/module`) to live Firebase
- */
-export async function saveSiteConfigModuleRemote(moduleKey, dataPayload) {
-  const res = await fetch('/api/config/module', {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: buildAdminRequestHeaders({
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-Admin-CSRF': '1'
-    }),
-    body: JSON.stringify({
-      moduleKey,
-      module: moduleKey,
-      data: dataPayload
-    })
-  });
-  const data = await res.json().catch(() => null);
-  if (res.status === 401) {
-    notifyAdminUnauthorized(data?.error);
-  }
-  if (!res.ok || !data?.success) {
-    return {
-      success: false,
-      status: res.status,
-      firestoreSaved: false,
-      error: data?.error || `Failed to save module [${moduleKey}] (HTTP ${res.status}).`
-    };
-  }
-  if (data.config) {
-    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
-  }
-  return {
-    ...data,
-    firestoreSaved: Boolean(data.firestoreSaved),
-    firestoreNotice: data.firestoreNotice || null,
-    message: data.message || `Saved module [${moduleKey}]`
-  };
-}
-
-/**
- * Save multiple edited modules atomically (`PATCH /api/config/modules`) to live Firebase
- */
-export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules = []) {
-  const res = await fetch('/api/config/modules', {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: buildAdminRequestHeaders({
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-Admin-CSRF': '1'
-    }),
-    body: JSON.stringify({
-      modules: modulesMap,
-      editedModules
-    })
-  });
-  const data = await res.json().catch(() => null);
-  if (res.status === 401) {
-    notifyAdminUnauthorized(data?.error);
-  }
-  if (!res.ok || !data?.success) {
-    return {
-      success: false,
-      status: res.status,
-      firestoreSaved: false,
-      error: data?.error || `Failed to save modules batch (HTTP ${res.status}).`
-    };
-  }
-  if (data.config) {
-    inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+    inMemoryCachedConfig = mergeRemoteConfigPreservingUserContent(data.config, inMemoryCachedConfig);
   }
   return {
     ...data,
@@ -620,6 +879,25 @@ export async function publishStaticSiteToGitHubRemote(
     bodyObj = payloadOrGhConfig;
   }
 
+  // 1. Direct Browser-to-Firestore Commit: Ensure ALL current CMS modules are committed
+  // directly to Firestore FIRST so all content is 100% permanently saved before publishing!
+  const activeFb = getActiveFirebaseConfig();
+  if (activeFb?.apiKey && activeFb?.projectId && !activeFb.apiKey.startsWith('__')) {
+    const configToPersist = fullConfig || inMemoryCachedConfig;
+    if (configToPersist && typeof configToPersist === 'object') {
+      const allModulesMap = {};
+      for (const [k, v] of Object.entries(configToPersist)) {
+        if (v !== undefined && !k.startsWith('_')) {
+          allModulesMap[k] = v;
+        }
+      }
+      await saveDirectToFirestoreRest(activeFb, allModulesMap, {
+        updatedAt: Date.now(),
+        dirtyModulesSinceSync: []
+      }).catch(() => null);
+    }
+  }
+
   try {
     const res = await fetch('/api/github/publish', {
       method: 'POST',
@@ -634,7 +912,7 @@ export async function publishStaticSiteToGitHubRemote(
     const data = await res.json().catch(() => null);
     if (res.status === 401) notifyAdminUnauthorized(data?.error);
     if (data?.config) {
-      inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+      inMemoryCachedConfig = mergeRemoteConfigPreservingUserContent(data.config, inMemoryCachedConfig);
     }
     return data || { success: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {

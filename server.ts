@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import {
   EMPTY_ADMIN_CONFIG,
+  CMS_MODULE_KEYS,
   isCmsModuleKey,
   applyModulePatch,
   applyMultiModulePatch,
@@ -16,6 +17,7 @@ import {
   resolveAdminSecurityPolicy,
   validateAdminSessionClaims,
   mergeSiteConfig,
+  mergeRemoteConfigPreservingUserContent,
   generateSlug,
   buildPartialRoutePayload,
   renderCompleteStaticPageHtml,
@@ -1179,7 +1181,15 @@ async function startServer() {
         config = savePersistedSiteConfig(preserveSecretsOnSave(cloudRead.config, config));
       } else if (cloudRead.status === 'empty') {
         serverReadFirestore = true;
-        config = savePersistedSiteConfig(getEnvSeededEmptyConfig());
+        // Never wipe existing user content! Seed Firestore with the existing config so cloud Firestore has the content!
+        const existingMap: Record<string, any> = {};
+        for (const k of CMS_MODULE_KEYS) {
+          existingMap[k] = config[k as CmsModuleKey];
+        }
+        await writeBatchToFirestoreRestNode(fbEnv.config, existingMap, {
+          updatedAt: config.updatedAt,
+          dirtyModulesSinceSync: config.dirtyModulesSinceSync
+        });
       }
     }
 
@@ -1977,7 +1987,7 @@ async function startServer() {
     const startTime = Date.now();
     const persisted = loadPersistedSiteConfig();
     let incomingConfig = req.body?.config
-      ? mergeSiteConfig(preserveSecretsOnSave(req.body.config, persisted), EMPTY_ADMIN_CONFIG)
+      ? mergeRemoteConfigPreservingUserContent(preserveSecretsOnSave(req.body.config, persisted), persisted)
       : persisted;
     const ghOverride =
       req.body?.githubConfig && typeof req.body.githubConfig === 'object'
@@ -2086,12 +2096,13 @@ async function startServer() {
     let firestoreSaved = false;
     let firestoreNotice: string | null = null;
     if (fbEnv.isConfigured && fbEnv.config) {
+      const fullSyncMap: Record<string, any> = {};
+      for (const k of CMS_MODULE_KEYS) {
+        fullSyncMap[k] = saved[k as CmsModuleKey];
+      }
       const fbRes = await writeBatchToFirestoreRestNode(
         fbEnv.config,
-        {
-          syncLogs: saved.syncLogs,
-          githubConfig: saved.githubConfig
-        },
+        fullSyncMap,
         {
           updatedAt: saved.updatedAt,
           dirtyModulesSinceSync: saved.dirtyModulesSinceSync

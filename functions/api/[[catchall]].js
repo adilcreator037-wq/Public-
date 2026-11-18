@@ -18,6 +18,7 @@ import {
   writeSiteConfigToFirestoreRest,
   sanitizeConfigForClientEdge,
   preserveSecretsEdge,
+  mergeRemoteConfigPreservingUserContentEdge,
   applyModulePatchEdge,
   applyMultiModulePatchEdge,
   appendSyncLogEntryEdge,
@@ -984,7 +985,7 @@ export async function onRequest(context) {
     }
 
     let merged = body?.config
-      ? preserveSecretsEdge(body.config, persisted)
+      ? mergeRemoteConfigPreservingUserContentEdge(body.config, persisted)
       : JSON.parse(JSON.stringify(persisted));
 
     const ghOverride =
@@ -1070,12 +1071,15 @@ export async function onRequest(context) {
     let firestoreSaved = false;
     let firestoreNotice = null;
     if (fbEnv.isConfigured) {
+      const fullSyncMap = {};
+      for (const [k, v] of Object.entries(merged || {})) {
+        if (isCmsModuleKey(k) && v !== undefined) {
+          fullSyncMap[k] = v;
+        }
+      }
       const batchRes = await writeBatchToFirestoreRest(
         fbEnv.config,
-        {
-          syncLogs: merged.syncLogs,
-          githubConfig: merged.githubConfig
-        },
+        fullSyncMap,
         {
           updatedAt: merged.updatedAt,
           dirtyModulesSinceSync: merged.dirtyModulesSinceSync

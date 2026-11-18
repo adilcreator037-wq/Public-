@@ -1181,8 +1181,13 @@ export function stripHtmlToExcerpt(html = '', maxLen = 155): string {
  */
 export function mergeSiteConfig(
   partial: Partial<SiteConfig> | Record<string, any> | null | undefined,
-  base: SiteConfig = MASTER_DEFAULT_CONFIG
+  baseInput: SiteConfig = MASTER_DEFAULT_CONFIG
 ): SiteConfig {
+  const base: SiteConfig = {
+    ...MASTER_DEFAULT_CONFIG,
+    ...(baseInput || {})
+  };
+
   if (!partial || typeof partial !== 'object') {
     return JSON.parse(JSON.stringify(base));
   }
@@ -1515,6 +1520,47 @@ export function mergeSiteConfig(
       : JSON.parse(JSON.stringify(base.dirtyModulesSinceSync || [])),
     updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : Date.now()
   };
+}
+
+/**
+ * Safe merge that prevents empty remote/server arrays or placeholder brand names
+ * from ever wiping out existing user-entered content (sections, news, faqs, pages, brand name).
+ */
+export function mergeRemoteConfigPreservingUserContent(
+  remoteConfig: Partial<SiteConfig> | Record<string, any> | null | undefined,
+  fallbackConfig: SiteConfig
+): SiteConfig {
+  if (!remoteConfig || typeof remoteConfig !== 'object') return fallbackConfig;
+  const merged = mergeSiteConfig(remoteConfig, fallbackConfig);
+
+  // Safety Shield: Never let empty remote arrays wipe out non-empty user content
+  if (Array.isArray(fallbackConfig.sections) && fallbackConfig.sections.length > 0) {
+    if (!Array.isArray(remoteConfig.sections) || remoteConfig.sections.length === 0) {
+      merged.sections = fallbackConfig.sections;
+    }
+  }
+  if (Array.isArray(fallbackConfig.newsSection?.articles) && fallbackConfig.newsSection.articles.length > 0) {
+    if (!Array.isArray(remoteConfig.newsSection?.articles) || remoteConfig.newsSection.articles.length === 0) {
+      merged.newsSection.articles = fallbackConfig.newsSection.articles;
+    }
+  }
+  if (Array.isArray(fallbackConfig.faqsSection?.items) && fallbackConfig.faqsSection.items.length > 0) {
+    if (!Array.isArray(remoteConfig.faqsSection?.items) || remoteConfig.faqsSection.items.length === 0) {
+      merged.faqsSection.items = fallbackConfig.faqsSection.items;
+    }
+  }
+  if (Array.isArray(fallbackConfig.pages) && fallbackConfig.pages.length > 0) {
+    if (!Array.isArray(remoteConfig.pages) || remoteConfig.pages.length === 0) {
+      merged.pages = fallbackConfig.pages;
+    }
+  }
+  if (fallbackConfig.brand?.name && (!remoteConfig.brand?.name || remoteConfig.brand?.name === 'Official Release')) {
+    merged.brand.name = fallbackConfig.brand.name;
+  }
+  if (fallbackConfig.hero?.h1 && !remoteConfig.hero?.h1) {
+    merged.hero.h1 = fallbackConfig.hero.h1;
+  }
+  return merged;
 }
 
 export interface FirebaseClientConfig {
