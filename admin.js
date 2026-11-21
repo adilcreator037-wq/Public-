@@ -7,7 +7,9 @@ import {
   generateSmartLegalHtml,
   auditSiteSeoHealth,
   ensureCleanHtmlParagraphs,
-  stripHtmlToExcerpt
+  stripHtmlToExcerpt,
+  sanitizeEditorialHtmlForSeo,
+  sanitizeSafeUrl
 } from './src/utils/cms-engine.ts';
 
 import {
@@ -68,6 +70,11 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function setSafePreviewHtml(el, rawHtml, fallbackAlt = 'Preview') {
+  if (!el) return;
+  el.innerHTML = sanitizeEditorialHtmlForSeo(String(rawHtml || ''), fallbackAlt);
+}
+
 function showToast(message, type = 'default') {
   const toast = $('toast');
   if (!toast) return;
@@ -81,16 +88,13 @@ function showToast(message, type = 'default') {
 
 const TAB_MODULES_MAP = {
   overview: ['brand', 'packageSpecs', 'domainConfig', 'seo', 'hero', 'navigation', 'pages', 'securityGate'],
-  brand: ['brand', 'uiConfig'],
-  hero: ['hero', 'uiConfig'],
+  brand: ['brand', 'uiConfig', 'domainConfig', 'seo'],
+  hero: ['hero', 'securityGate', 'uiConfig'],
   specs: ['packageSpecs'],
   sections: ['sections', 'content', 'uiConfig'],
   news: ['newsSection', 'uiConfig'],
   faqs: ['faqsSection', 'uiConfig'],
   pages: ['pages', 'navigation', 'uiConfig'],
-  security: ['securityGate'],
-  links: ['domainConfig'],
-  domain: ['domainConfig', 'seo'],
   deploy: ['githubConfig']
 };
 
@@ -104,9 +108,6 @@ function getPrimaryModuleForActiveTab(tabId = activeTab) {
     news: 'newsSection',
     faqs: 'faqsSection',
     pages: 'pages',
-    security: 'securityGate',
-    links: 'domainConfig',
-    domain: 'domainConfig',
     deploy: 'githubConfig'
   };
   return map[tabId] || 'brand';
@@ -257,7 +258,7 @@ function undoTextareaEdit(textareaId) {
     if (list && list[idx]) list[idx][key] = previous;
   }
   const previewId = ta.getAttribute('data-preview-target') || (textareaId === 'composer-news-html' ? 'composer-live-preview' : '');
-  if (previewId && $(previewId)) $(previewId).innerHTML = previous;
+  if (previewId && $(previewId)) setSafePreviewHtml($(previewId), previous);
   markDirty('Restored previous editor snapshot', inferModuleKeyFromElement(ta));
   showToast('Restored previous editor snapshot', 'success');
 }
@@ -305,7 +306,11 @@ function syncUrlQuickPickers() {
 
 function setImagePreview(imgEl, rawUrl, displayStyle = 'block') {
   if (!imgEl) return;
-  const val = String(rawUrl || '').trim();
+  const val = sanitizeSafeUrl(String(rawUrl || '').trim(), {
+    allowHash: false,
+    allowMailto: false,
+    allowDataImage: true
+  });
   if (val) {
     imgEl.src = val;
     imgEl.removeAttribute('hidden');
@@ -427,7 +432,7 @@ function insertHtmlIntoTarget(targetDescriptor, snippetHtml) {
           ? 'composer-live-preview'
           : textarea.getAttribute('data-preview-target');
       if (previewId && $(previewId)) {
-        $(previewId).innerHTML = textarea.value;
+        setSafePreviewHtml($(previewId), textarea.value);
       }
       if (targetDescriptor.id !== 'composer-news-html') {
         const modKey = inferModuleKeyFromElement(textarea);
@@ -443,7 +448,7 @@ function insertHtmlIntoTarget(targetDescriptor, snippetHtml) {
       list[index][key] = `${list[index][key] || ''}${snippetHtml}`;
       if (ta) ta.value = list[index][key];
       const pv = previewId ? $(previewId) : null;
-      if (pv) pv.innerHTML = list[index][key];
+      if (pv) setSafePreviewHtml(pv, list[index][key]);
       const modKey = inferModuleKeyFromElement({ dataset: { collection } });
       markDirty('Inserted content block — click Save or Publish to persist', modKey);
     }
@@ -1017,52 +1022,40 @@ async function unlockAdminStudio() {
    ═══════════════════════════════════════════════════════════════════════════ */
 const WORKSPACE_CONTEXT_MAP = {
   overview: {
-    label: 'Overview & Quick Setup',
-    target: 'Public Site Summary & SEO Readiness Audit'
+    label: 'Dashboard',
+    target: 'Add and update your website content'
   },
   brand: {
-    label: 'Brand, Logos & Colors',
-    target: 'Header Brand, Icons, Fonts & Website Color Theme'
+    label: 'Site Identity',
+    target: 'Site Name, Domain, Logo & Color Theme'
   },
   hero: {
-    label: 'Hero & Download Buttons',
-    target: 'Homepage Top Screen, 16:9 Showcase Banner & CTAs'
+    label: 'Hero & Download',
+    target: 'Homepage Top Headline, Intro HTML, Banner & Download Link'
   },
   specs: {
-    label: 'Package Info Table',
-    target: 'Homepage #technical-specifications & SHA-256 Checksum'
+    label: 'Package Info',
+    target: 'Homepage Package Specifications Table'
   },
   sections: {
     label: 'Page Sections',
-    target: 'Homepage Editorial Sections & Vertical Layout Order'
+    target: 'Homepage Content Sections & Custom HTML Body'
   },
   news: {
     label: 'Daily News',
-    target: 'Homepage Feed, /news Archive & /news/:slug Articles'
+    target: 'Write & Publish Daily News Posts'
   },
   faqs: {
-    label: 'FAQs Manager',
-    target: 'Homepage Q&A Accordions & Google FAQPage Schema'
+    label: 'FAQs',
+    target: 'Homepage Frequently Asked Questions'
   },
   pages: {
-    label: 'Menu & Legal Pages',
-    target: '3-Bar Navigation Drawer, Footer & Standalone Pages'
-  },
-  security: {
-    label: 'MoreInfo Security Gate',
-    target: '/moreinfo AES-256-GCM Download Protection & Turnstile'
-  },
-  links: {
-    label: 'Internal Linking System',
-    target: 'Automatic Keyword Cross-Linking Across Pages & Articles'
-  },
-  domain: {
-    label: 'Domain & SEO Settings',
-    target: 'Canonical Domain, Search Preview, Sitemap & Schema'
+    label: 'Pages & Footer',
+    target: 'Standalone Legal/Info Pages & Footer Text'
   },
   deploy: {
-    label: 'Firebase, GitHub & Logs',
-    target: 'Live Cloud Firestore, GitHub Static Push & Sync History'
+    label: 'Publish Website',
+    target: 'Push Live Static Pages to GitHub & Manage Sync'
   }
 };
 
@@ -1096,36 +1089,21 @@ function filterPagesSubcards(subKey) {
     const key = card.getAttribute('data-pages-card');
     card.style.display = subKey === 'all' || key === subKey ? 'block' : 'none';
   });
-  const subLabels = {
-    all: '3-Bar Navigation Drawer, Footer & Standalone Pages',
-    legal: 'Standalone Legal & Info Pages (/privacy-policy, /terms, etc.)',
-    menu: 'Sticky Header Bar & 3-Bar Slide-Down Menu',
-    footer: 'Global Website Footer, Disclaimer & Quick Links'
-  };
-  if ($('editing-now-target') && subLabels[subKey]) {
-    $('editing-now-target').textContent = subLabels[subKey];
-  }
 }
 
 function switchTab(rawTabId, anchorKey = '') {
   let tabId = rawTabId;
   let resolvedAnchor = anchorKey;
 
-  if (tabId === 'domain' && anchorKey === 'security') {
-    tabId = 'security';
-    resolvedAnchor = '';
-  } else if (tabId === 'domain' && anchorKey === 'internallinks') {
-    tabId = 'links';
-    resolvedAnchor = '';
-  } else if (tabId === 'domain' && (anchorKey === 'github' || anchorKey === 'firebase')) {
-    tabId = 'deploy';
-    resolvedAnchor = '';
-  } else if (tabId === 'brand' && (anchorKey === 'hero' || anchorKey === 'ctas')) {
+  if (tabId === 'security') {
     tabId = 'hero';
     resolvedAnchor = '';
-  } else if (tabId === 'brand' && anchorKey === 'drawer') {
-    tabId = 'pages';
-    resolvedAnchor = 'menu';
+  } else if (tabId === 'links') {
+    tabId = 'sections';
+    resolvedAnchor = '';
+  } else if (tabId === 'domain') {
+    tabId = anchorKey === 'github' || anchorKey === 'firebase' ? 'deploy' : 'brand';
+    resolvedAnchor = '';
   }
 
   activeTab = WORKSPACE_CONTEXT_MAP[tabId] ? tabId : 'overview';
@@ -1862,7 +1840,7 @@ function loadArticleIntoComposer(idx) {
   }
   const preview = $('composer-live-preview');
   if (preview) {
-    preview.innerHTML = art.htmlContent || '';
+    setSafePreviewHtml(preview, art.htmlContent || '', art.title || 'Preview');
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
   showToast('Loaded news article into composer above');
@@ -2038,100 +2016,7 @@ function renderSectionsList() {
             <div id="sec-preview-${idx}" class="live-preview-box"></div>
           </div>
 
-          <details class="advanced-settings-box" style="margin-top:14px;">
-            <summary class="advanced-settings-summary">
-              <span>⚙️ Optional Settings (Position, Button CTA, Slug & SEO)</span>
-              <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">Click to configure</span>
-            </summary>
-            <div class="advanced-settings-content">
-              <div class="form-grid cols-2">
-                <div class="field span-full">
-                  <div class="toggle-box">
-                    <div>
-                      <strong>Show This Section on Homepage</strong>
-                      <div class="field-help">Uncheck to temporarily hide this section without deleting its content.</div>
-                    </div>
-                    <input type="checkbox" ${
-                      sec.visible !== false ? 'checked' : ''
-                    } data-collection="sections" data-index="${idx}" data-key="visible" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="field-label">
-                    <span>Anchor ID Slug (<code>#slug</code>)</span>
-                    <button type="button" class="btn btn-sm" data-autoslug-collection="sections" data-index="${idx}">Auto-Slug</button>
-                  </div>
-                  <input type="text" class="input" value="${escapeHtml(
-                    sec.slug
-                  )}" data-collection="sections" data-index="${idx}" data-key="slug" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Eyebrow Category Badge (Optional)</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    sec.badgeText || ''
-                  )}" data-collection="sections" data-index="${idx}" data-key="badgeText" placeholder="e.g., ARCHITECTURE" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Section Featured Image Position</label>
-                  <select class="select" data-collection="sections" data-index="${idx}" data-key="imagePosition">
-                    <option value="none" ${sec.imagePosition === 'none' || !sec.imagePosition ? 'selected' : ''}>No Section Banner Image</option>
-                    <option value="top" ${sec.imagePosition === 'top' ? 'selected' : ''}>Show Image Above Content</option>
-                    <option value="bottom" ${sec.imagePosition === 'bottom' ? 'selected' : ''}>Show Image Below Content</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label">Section Image Alt Text</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    sec.imageAlt || ''
-                  )}" data-collection="sections" data-index="${idx}" data-key="imageAlt" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Section Image Caption (Optional)</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    sec.imageCaption || ''
-                  )}" data-collection="sections" data-index="${idx}" data-key="imageCaption" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Section Button Text (Optional CTA)</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    sec.ctaLabel || ''
-                  )}" data-collection="sections" data-index="${idx}" data-key="ctaLabel" placeholder="e.g., View Benchmarks" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Section Button Target URL (Optional)</label>
-                  <div class="url-picker-row">
-                    <input type="text" class="input" id="sec-cta-url-${idx}" value="${escapeHtml(
-                      sec.ctaUrl || ''
-                    )}" data-collection="sections" data-index="${idx}" data-key="ctaUrl" placeholder="e.g., /#technical-specifications" />
-                    <select class="select url-quick-select" data-url-index-for="sec-cta-url-${idx}" data-collection="sections" data-index="${idx}" data-key="ctaUrl" aria-label="Quick select URL">${routeOptionsHtml}</select>
-                  </div>
-                </div>
-              </div>
-
-              <div class="seo-subbox">
-                <div class="seo-subbox-title">
-                  <span>Section SEO Meta Title &amp; Meta Description</span>
-                  <button type="button" class="btn btn-sm" data-autoseo-collection="sections" data-index="${idx}">Auto-Fill SEO</button>
-                </div>
-                <div class="form-grid cols-2">
-                  <div class="field">
-                    <label class="field-label">Section Meta Title</label>
-                    <input type="text" class="input" value="${escapeHtml(
-                      sec.metaTitle
-                    )}" data-collection="sections" data-index="${idx}" data-key="metaTitle" />
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Section Meta Description</label>
-                    <input type="text" class="input" value="${escapeHtml(
-                      sec.metaDescription
-                    )}" data-collection="sections" data-index="${idx}" data-key="metaDescription" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <div style="display:flex; justify-content:flex-end; margin-top:12px;">
             <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="sections">Save Section to Firebase</button>
           </div>
         </div>
@@ -2247,105 +2132,7 @@ function renderNewsList() {
             <div id="news-preview-${idx}" class="live-preview-box"></div>
           </div>
 
-          <details class="advanced-settings-box" style="margin-top:14px;">
-            <summary class="advanced-settings-summary">
-              <span>⚙️ Optional Post Details (Slug, Category, Author, Date, Button CTA, SEO)</span>
-              <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">Click to configure</span>
-            </summary>
-            <div class="advanced-settings-content">
-              <div class="form-grid cols-2">
-                <div class="field span-full">
-                  <div class="toggle-box" style="min-height: 40px; padding: 6px 12px">
-                    <span>Pin ★ Featured Badge on This Article</span>
-                    <input type="checkbox" ${art.featured ? 'checked' : ''} data-collection="news" data-index="${idx}" data-key="featured" />
-                  </div>
-                </div>
-                <div class="field">
-                  <div class="field-label">
-                    <span>Standalone URL Slug (<code>/news/:slug</code>)</span>
-                    <button type="button" class="btn btn-sm" data-autoslug-collection="news" data-index="${idx}">Auto-Slug</button>
-                  </div>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.slug
-                  )}" data-collection="news" data-index="${idx}" data-key="slug" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Publish Date</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.date
-                  )}" data-collection="news" data-index="${idx}" data-key="date" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Category Label</label>
-                  <input type="text" class="input" list="news-category-presets" value="${escapeHtml(
-                    art.category
-                  )}" data-collection="news" data-index="${idx}" data-key="category" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Author / Team</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.author || ''
-                  )}" data-collection="news" data-index="${idx}" data-key="author" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Reading Time Badge</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.readTime || '2 min read'
-                  )}" data-collection="news" data-index="${idx}" data-key="readTime" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Cover Image Alt Text</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.coverImageAlt || ''
-                  )}" data-collection="news" data-index="${idx}" data-key="coverImageAlt" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Cover Image Caption</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.coverImageCaption || ''
-                  )}" data-collection="news" data-index="${idx}" data-key="coverImageCaption" />
-                </div>
-                <div class="field">
-                  <label class="field-label">In-Article CTA Button Text (Optional)</label>
-                  <input type="text" class="input" value="${escapeHtml(
-                    art.ctaLabel || ''
-                  )}" data-collection="news" data-index="${idx}" data-key="ctaLabel" />
-                </div>
-                <div class="field">
-                  <label class="field-label">In-Article CTA Button URL (Optional)</label>
-                  <div class="url-picker-row">
-                    <input type="text" class="input" id="news-cta-url-${idx}" value="${escapeHtml(
-                      art.ctaUrl || ''
-                    )}" data-collection="news" data-index="${idx}" data-key="ctaUrl" />
-                    <select class="select url-quick-select" data-url-index-for="news-cta-url-${idx}" data-collection="news" data-index="${idx}" data-key="ctaUrl" aria-label="Quick select URL">${routeOptionsHtml}</select>
-                  </div>
-                </div>
-              </div>
-
-              <div class="seo-subbox">
-                <div class="seo-subbox-title">
-                  <span>Article SEO Meta Title &amp; Meta Description</span>
-                  <button type="button" class="btn btn-sm" data-autoseo-collection="news" data-index="${idx}">Auto-Fill SEO</button>
-                </div>
-                <div class="form-grid cols-2">
-                  <div class="field">
-                    <label class="field-label">Article Meta Title (&lt;title&gt;)</label>
-                    <input type="text" class="input" value="${escapeHtml(
-                      art.metaTitle
-                    )}" data-collection="news" data-index="${idx}" data-key="metaTitle" />
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Article Meta Description</label>
-                    <input type="text" class="input" value="${escapeHtml(
-                      art.metaDescription
-                    )}" data-collection="news" data-index="${idx}" data-key="metaDescription" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <div style="display:flex; justify-content:flex-end; margin-top:12px;">
             <button type="button" class="btn btn-primary btn-sm" data-inline-save-module="newsSection">Save News Post to Firebase</button>
           </div>
         </div>
@@ -2477,112 +2264,33 @@ function renderPagesList() {
 
       <div class="form-grid cols-2">
         <div class="field">
-          <div class="toggle-box">
-            <div>
-              <strong>Show Link in Public Footer</strong>
-              <div class="field-help">Displays this page link in the bottom footer.</div>
-            </div>
-            <input type="checkbox" ${
-              pg.showInFooter !== false ? 'checked' : ''
-            } data-collection="pages" data-index="${idx}" data-key="showInFooter" />
-          </div>
-        </div>
-        <div class="field">
-          <div class="toggle-box">
-            <div>
-              <strong>Also Show Link in Header Menu</strong>
-              <div class="field-help">Adds this page to the top-right slide-down drawer.</div>
-            </div>
-            <input type="checkbox" ${
-              pg.showInHeader ? 'checked' : ''
-            } data-collection="pages" data-index="${idx}" data-key="showInHeader" />
-          </div>
-        </div>
-        <div class="field span-full">
-          <div class="toggle-box">
-            <div>
-              <strong>Open Page Link in New Browser Tab</strong>
-              <div class="field-help">Optional — leave unchecked for seamless instant SPA navigation.</div>
-            </div>
-            <input type="checkbox" ${pg.openInNewTab ? 'checked' : ''} data-collection="pages" data-index="${idx}" data-key="openInNewTab" />
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label">Footer Link Label</label>
+          <label class="field-label">Page Name (Shown in Footer)</label>
           <input type="text" class="input" value="${escapeHtml(
             pg.label
-          )}" data-collection="pages" data-index="${idx}" data-key="label" />
-        </div>
-        <div class="field">
-          <div class="field-label">
-            <span>Standalone URL Slug (<code>/:slug</code>)</span>
-            <button type="button" class="btn btn-sm" data-autoslug-collection="pages" data-index="${idx}">Auto-Slug</button>
-          </div>
-          <input type="text" class="input" value="${escapeHtml(
-            pg.slug
-          )}" data-collection="pages" data-index="${idx}" data-key="slug" />
+          )}" data-collection="pages" data-index="${idx}" data-key="label" placeholder="e.g., Privacy Policy" />
         </div>
         <div class="field">
           <label class="field-label">Page Main Heading (&lt;h1&gt;)</label>
           <input type="text" class="input" value="${escapeHtml(
             pg.h1
-          )}" data-collection="pages" data-index="${idx}" data-key="h1" />
-        </div>
-        <div class="field">
-          <label class="field-label">Last Updated / Effective Date</label>
-          <input type="text" class="input" value="${escapeHtml(
-            pg.lastUpdated || 'November 2026'
-          )}" data-collection="pages" data-index="${idx}" data-key="lastUpdated" />
+          )}" data-collection="pages" data-index="${idx}" data-key="h1" placeholder="e.g., Privacy Policy" />
         </div>
         <div class="field span-full">
-          <label class="field-label">Page Subtitle Line (Shown Under H1)</label>
-          <input type="text" class="input" value="${escapeHtml(
-            pg.subtitle || ''
-          )}" data-collection="pages" data-index="${idx}" data-key="subtitle" placeholder="Official Legal & Compliance Document" />
-        </div>
-        <div class="field">
           <div class="field-label">
-            <span>Page Banner Image URL (Optional)</span>
+            <span>Page Banner Image (Optional)</span>
             <button type="button" class="btn btn-sm" data-upload-collection="pages" data-index="${idx}" data-key="bannerImageUrl">Upload Image</button>
           </div>
           <input type="text" class="input" id="page-img-url-${idx}" value="${escapeHtml(
     pg.bannerImageUrl || ''
-  )}" data-collection="pages" data-index="${idx}" data-key="bannerImageUrl" data-thumb-target="page-img-thumb-${idx}" placeholder="Optional banner image for this page..." />
+  )}" data-collection="pages" data-index="${idx}" data-key="bannerImageUrl" data-thumb-target="page-img-thumb-${idx}" placeholder="Paste image URL or click Upload Image..." />
           <img id="page-img-thumb-${idx}" class="img-mini-preview" ${pg.bannerImageUrl ? `src="${escapeHtml(pg.bannerImageUrl)}"` : 'hidden'} alt="Page Banner Preview" />
-        </div>
-        <div class="field">
-          <label class="field-label">Banner Image Alt Text (SEO)</label>
-          <input type="text" class="input" value="${escapeHtml(
-            pg.bannerImageAlt || ''
-          )}" data-collection="pages" data-index="${idx}" data-key="bannerImageAlt" placeholder="Describe the page banner image..." />
-        </div>
-      </div>
-
-      <div class="seo-subbox">
-        <div class="seo-subbox-title">
-          <span>Standalone Page SEO Meta Title &amp; Meta Description</span>
-          <button type="button" class="btn btn-sm" data-autoseo-collection="pages" data-index="${idx}">Auto-Fill SEO</button>
-        </div>
-        <div class="form-grid cols-2">
-          <div class="field">
-            <label class="field-label">Page Meta Title (&lt;title&gt;)</label>
-            <input type="text" class="input" value="${escapeHtml(
-              pg.metaTitle
-            )}" data-collection="pages" data-index="${idx}" data-key="metaTitle" />
-          </div>
-          <div class="field">
-            <label class="field-label">Page Meta Description</label>
-            <input type="text" class="input" value="${escapeHtml(
-              pg.metaDescription
-            )}" data-collection="pages" data-index="${idx}" data-key="metaDescription" />
-          </div>
         </div>
       </div>
 
       <div class="field" style="margin-top: 12px">
         <div class="field-label">
-          <span>Full Page Document Content (HTML + Rich Components)</span>
-          <button type="button" class="btn btn-sm" data-toggle-preview="page-preview-${idx}">Toggle Visual Preview</button>
+          <span>Page Content / HTML Body</span>
+          <button type="button" class="btn btn-sm" data-toggle-preview="page-preview-${idx}">Preview</button>
         </div>
         <div class="html-toolbar">
           <button type="button" class="btn btn-sm btn-primary" data-open-collection-visual-modal="pages" data-index="${idx}" data-key="htmlContent" data-textarea="page-html-${idx}" data-preview="page-preview-${idx}">+ Visual Block</button>
@@ -3178,9 +2886,26 @@ function collectScalarFields() {
   c.securityGate.helplineWhatsapp = readTrim('sec-whatsapp', c.securityGate.helplineWhatsapp || '');
   c.securityGate.helplineTelegram = readTrim('sec-telegram', c.securityGate.helplineTelegram || '');
 
-  // Auto clean paragraphs and image fallback across all content modules
+  // Auto-sync derived icons, SEO defaults, slugs, and clean HTML across all modules
+  if (c.brand.logoUrl || c.brand.faviconUrl) {
+    c.brand.searchLogoUrl = c.brand.logoUrl || c.brand.faviconUrl;
+    c.brand.appleTouchIconUrl = c.brand.faviconUrl || c.brand.logoUrl;
+  }
+  if (!c.hero.bannerAlt && (c.hero.h1 || c.brand.name)) {
+    c.hero.bannerAlt = c.hero.h1 || c.brand.name;
+  }
+  c.domainConfig.enableSitemapXml = true;
+  c.domainConfig.enableImageSitemap = true;
+  c.domainConfig.enableRssFeed = true;
+  c.domainConfig.enableWebManifest = true;
+  c.domainConfig.forceHttps = true;
+  c.domainConfig.enableAutoInternalLinks = true;
+
   if (Array.isArray(c.sections)) {
     for (const sec of c.sections) {
+      if (!sec.slug && sec.heading) {
+        sec.slug = generateSlug(sec.heading);
+      }
       if (sec.imageUrl && (!sec.imagePosition || sec.imagePosition === 'none')) {
         sec.imagePosition = 'top';
       }
@@ -3191,6 +2916,12 @@ function collectScalarFields() {
   }
   if (Array.isArray(c.pages)) {
     for (const pg of c.pages) {
+      if (!pg.slug && (pg.label || pg.h1)) {
+        pg.slug = generateSlug(pg.label || pg.h1);
+      }
+      if (pg.showInFooter === undefined) {
+        pg.showInFooter = true;
+      }
       if (pg.htmlContent) {
         pg.htmlContent = ensureCleanHtmlParagraphs(pg.htmlContent);
       }
@@ -3198,6 +2929,9 @@ function collectScalarFields() {
   }
   if (Array.isArray(c.newsSection?.articles)) {
     for (const art of c.newsSection.articles) {
+      if (!art.slug && art.title) {
+        art.slug = generateSlug(art.title);
+      }
       if (art.htmlContent) {
         art.htmlContent = ensureCleanHtmlParagraphs(art.htmlContent);
       }
@@ -3864,9 +3598,6 @@ function bindWorkspaceDomEvents() {
     }
 
     const cleanOrigin = domain.replace(/\/+$/, '');
-    if (cleanOrigin) {
-      c.domainConfig.customRobotsTxt = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /moreinfo\nDisallow: /download\nDisallow: /api/\n\nSitemap: ${cleanOrigin}/sitemap.xml`;
-    }
     c.navigation.copyright = `© ${new Date().getFullYear()} ${brandName}. All Rights Reserved.`;
     c.pages = (c.pages || []).map((pg) => {
       if (pg.slug.includes('privacy')) return { ...pg, metaTitle: `Privacy Policy | ${brandName}`, htmlContent: generateSmartLegalHtml('privacy', brandName, cleanOrigin, email) };
@@ -4308,14 +4039,14 @@ function bindWorkspaceDomEvents() {
   $('btn-toggle-composer-preview')?.addEventListener('click', () => {
     const preview = $('composer-live-preview');
     if (!preview) return;
-    preview.innerHTML = $('composer-news-html')?.value || '';
+    setSafePreviewHtml(preview, $('composer-news-html')?.value || '');
     preview.classList.toggle('visible');
   });
 
   $('composer-news-html')?.addEventListener('input', (e) => {
     const preview = $('composer-live-preview');
     if (preview && preview.classList.contains('visible')) {
-      preview.innerHTML = e.target.value;
+      setSafePreviewHtml(preview, e.target.value);
     }
   });
 
@@ -4328,7 +4059,7 @@ function bindWorkspaceDomEvents() {
       const snippet = getHtmlComponentSnippet(type);
       textarea.value = `${textarea.value}${snippet}`;
       const preview = $('composer-live-preview');
-      if (preview) preview.innerHTML = textarea.value;
+      if (preview) setSafePreviewHtml(preview, textarea.value);
     });
   });
 
@@ -4537,7 +4268,7 @@ function bindWorkspaceDomEvents() {
 
       const preview = $('composer-live-preview');
       if (preview && preview.classList.contains('visible')) {
-        preview.innerHTML = $('composer-news-html')?.value || '';
+        setSafePreviewHtml(preview, $('composer-news-html')?.value || '');
       }
       showToast('Loaded 1-click news template into composer!', 'success');
     });
@@ -5326,7 +5057,7 @@ function initAuthEvents() {
         const willShow = !box.classList.contains('visible');
         if (willShow) {
           const sourceTa = document.querySelector(`[data-preview-target="${targetId}"]`);
-          if (sourceTa) box.innerHTML = sourceTa.value || '';
+          if (sourceTa) setSafePreviewHtml(box, sourceTa.value || '');
         }
         box.classList.toggle('visible', willShow);
       }
@@ -5353,7 +5084,7 @@ function initAuthEvents() {
       }
       const previewId = textarea.getAttribute('data-preview-target');
       if (previewId && $(previewId)) {
-        $(previewId).innerHTML = textarea.value;
+        setSafePreviewHtml($(previewId), textarea.value);
       }
       markDirty(`Inserted snippet in [${collection || 'content'}]`, inferModuleKeyFromElement(collection ? { dataset: { collection } } : textarea));
       return;
@@ -5539,7 +5270,7 @@ function initAuthEvents() {
 
     const previewId = target.getAttribute('data-preview-target');
     if (previewId && $(previewId) && $(previewId).classList.contains('visible')) {
-      $(previewId).innerHTML = target.value;
+      setSafePreviewHtml($(previewId), target.value);
     }
 
     if (

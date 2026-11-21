@@ -248,10 +248,26 @@ function encodeFsValClient(val) {
   return { stringValue: String(val) };
 }
 
+const DIRECT_FIRESTORE_TIMEOUT_MS = 15000;
+// Secret-bearing modules must ONLY be written by the authenticated server/Edge API,
+// which preserves existing vault secrets and encrypts them with AES-256-GCM at rest.
+const SERVER_ONLY_SECRET_MODULES = new Set(['githubConfig', 'securityGate']);
+
+async function fetchWithTimeoutClient(url, init = {}, timeoutMs = DIRECT_FIRESTORE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Direct Client-to-Firestore REST Batch Commit.
- * Writes directly to Firebase Firestore from the browser using the public Web API Key,
- * completely bypassing local storage or server-side environment variable dependencies!
+ * Writes non-secret CMS content modules directly to Firebase Firestore from the browser,
+ * while leaving secret-bearing modules (`githubConfig`, `securityGate`) strictly to the
+ * authenticated server/Edge API so encrypted tokens are never overwritten with masked/empty values.
  */
 export async function saveDirectToFirestoreRest(fbCfg, modulesMap = {}, meta = {}) {
   if (!fbCfg?.projectId || !fbCfg?.apiKey) {
@@ -267,6 +283,7 @@ export async function saveDirectToFirestoreRest(fbCfg, modulesMap = {}, meta = {
   const writes = [];
   for (const [moduleKey, moduleData] of Object.entries(modulesMap || {})) {
     if (!moduleKey || moduleData === undefined) continue;
+    if (SERVER_ONLY_SECRET_MODULES.has(moduleKey)) continue;
     writes.push({
       update: {
         name: `${docRoot}/cmsModules/${moduleKey}`,
@@ -276,6 +293,10 @@ export async function saveDirectToFirestoreRest(fbCfg, modulesMap = {}, meta = {
         }
       }
     });
+  }
+
+  if (writes.length === 0) {
+    return { ok: false, skippedSecretOnly: true, error: null };
   }
 
   writes.push({
@@ -293,7 +314,7 @@ export async function saveDirectToFirestoreRest(fbCfg, modulesMap = {}, meta = {
   });
 
   try {
-    const res = await fetch(commitUrl, {
+    const res = await fetchWithTimeoutClient(commitUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ writes })
@@ -324,10 +345,10 @@ export async function readDirectFromFirestoreRest(fbCfg) {
 
   try {
     const [modulesRes, mainRes] = await Promise.all([
-      fetch(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
+      fetchWithTimeoutClient(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
         headers: { Accept: 'application/json' }
       }).catch(() => null),
-      fetch(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
+      fetchWithTimeoutClient(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
         headers: { Accept: 'application/json' }
       }).catch(() => null)
     ]);
@@ -509,8 +530,7 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
   let directFirestoreOk = false;
   let directFirestoreError = null;
 
-  // 1. Direct Browser-to-Firestore Write: If user has a valid client Firebase API key & Project ID,
-  // commit directly to Firestore FIRST so saving NEVER relies on server local storage or state!
+  // 1. Direct Browser-to-Firestore Write: Commit non-secret content modules directly to Firestore first
   if (activeFb?.apiKey && activeFb?.projectId && !activeFb.apiKey.startsWith('__')) {
     try {
       const directRes = await saveDirectToFirestoreRest(activeFb, modulesMap, {
@@ -519,7 +539,7 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
       });
       if (directRes.ok) {
         directFirestoreOk = true;
-      } else {
+      } else if (!directRes.skippedSecretOnly) {
         directFirestoreError = directRes.error;
       }
     } catch (err) {

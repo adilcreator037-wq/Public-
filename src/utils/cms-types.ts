@@ -747,7 +747,7 @@ export const MASTER_DEFAULT_CONFIG: SiteConfig = {
         title: "Official Daily News & Release Changelogs"
       }
     ],
-    customRobotsTxt: "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin.html\nDisallow: /moreinfo\nDisallow: /moreinfo/\nDisallow: /download\nDisallow: /download/\nDisallow: /api/v1/app/"
+    customRobotsTxt: "User-agent: *\nAllow: /\nDisallow: /moreinfo\nDisallow: /moreinfo/\nDisallow: /download\nDisallow: /download/\nDisallow: /api/v1/app/"
   },
   githubConfig: {
     repoOwner: "",

@@ -27,7 +27,13 @@ import {
   normalizeDomainUrl,
   resolveFontStackCss
 } from './cms-types';
-import { resolveRouteView, buildJsonLdSchema, applySmartInternalLinks } from './cms-seo';
+import {
+  resolveRouteView,
+  buildJsonLdSchema,
+  applySmartInternalLinks,
+  sanitizeEditorialHtmlForSeo,
+  sanitizeSafeUrl
+} from './cms-seo';
 
 function buildResponsiveImgTag(
   rawUrl: string,
@@ -39,10 +45,12 @@ function buildResponsiveImgTag(
     sizes?: string;
   } = {}
 ): string {
+  const safeRawUrl = sanitizeSafeUrl(rawUrl, { allowHash: false, allowMailto: false, allowDataImage: true });
+  if (!safeRawUrl) return '';
   const isHigh = opts.priority === 'high';
   const maxWidth = opts.maxWidth || (isHigh ? 1200 : 768);
-  const src = optimizeImageUrl(rawUrl, maxWidth);
-  const srcSet = buildResponsiveImageSrcSet(rawUrl, isHigh ? [480, 768, 1200] : [400, 768]);
+  const src = optimizeImageUrl(safeRawUrl, maxWidth);
+  const srcSet = buildResponsiveImageSrcSet(safeRawUrl, isHigh ? [480, 768, 1200] : [400, 768]);
   const sizes = opts.sizes || '(max-width: 768px) 100vw, 720px';
   const classAttr = opts.className ? ` class="${escapeHtml(opts.className)}"` : '';
   const srcSetAttrs = srcSet ? ` srcset="${escapeHtml(srcSet)}" sizes="${escapeHtml(sizes)}"` : '';
@@ -113,7 +121,13 @@ export function renderHomeContentHtml(config: SiteConfig): string {
 
   // 1. Hero Intro HTML
   if (hero.introHtml) {
-    introParts.push(`<div class="hero-intro-block">${ensureCleanHtmlParagraphs(hero.introHtml)}</div>`);
+    const safeIntro = sanitizeEditorialHtmlForSeo(
+      ensureCleanHtmlParagraphs(hero.introHtml),
+      config.brand?.name || 'Official Guide'
+    );
+    if (safeIntro) {
+      introParts.push(`<div class="hero-intro-block">${safeIntro}</div>`);
+    }
   }
 
   // 2. Hero 16:9 Showcase Banner (LCP Priority Image: eager + fetchpriority="high")
@@ -536,7 +550,7 @@ export function renderStandalonePageContentHtml(page: StandalonePageItem, config
   const enhancedHtml = wrapEditorialTables(
     config
       ? applySmartInternalLinks(rawPageHtml, config, `/${generateSlug(page.slug || page.label)}`)
-      : rawPageHtml
+      : sanitizeEditorialHtmlForSeo(rawPageHtml, page.h1 || page.label || 'Official Document')
   );
 
   return `
@@ -624,7 +638,8 @@ export function renderHamburgerDrawerHtml(
 
   for (const link of shell.headerLinks || []) {
     if (!link.label || !link.url) continue;
-    const rawUrl = link.url.trim();
+    const rawUrl = sanitizeSafeUrl(link.url.trim(), { allowHash: true, allowMailto: true });
+    if (!rawUrl) continue;
     const href = rawUrl.startsWith('#') ? `/${rawUrl}` : rawUrl;
     seenUrls.add(rawUrl.toLowerCase());
     seenUrls.add(href.toLowerCase());
@@ -714,7 +729,11 @@ export function renderHamburgerDrawerHtml(
 
   // 4. Bottom Action CTA inside Drawer
   if (ui.showCtaInDrawer !== false && shell.heroCtas?.primaryCta?.label) {
-    const rawPrimaryUrl = shell.heroCtas.primaryCta.url || '#technical-specifications';
+    const rawPrimaryUrl =
+      sanitizeSafeUrl(shell.heroCtas.primaryCta.url || '#technical-specifications', {
+        allowHash: true,
+        allowMailto: true
+      }) || '#technical-specifications';
     const primaryHref = rawPrimaryUrl.startsWith('#') ? `/${rawPrimaryUrl}` : rawPrimaryUrl;
     items.push(`
       <li class="drawer-cta-footer">
@@ -810,15 +829,19 @@ export function buildPartialRoutePayload(
     }))
   ];
 
+  const secondaryCtaUrl = sanitizeSafeUrl(config.hero?.secondaryCta?.url || '', {
+    allowHash: true,
+    allowMailto: true
+  });
   const primaryCtaUrl = config.hero?.primaryCta?.url
     ? config.securityGate?.enabled !== false
       ? '/moreinfo'
-      : config.hero.primaryCta.url
+      : sanitizeSafeUrl(config.hero.primaryCta.url, { allowHash: true, allowMailto: true })
     : '';
   const floatingCtaUrl = config.hero?.floatingCta?.url
     ? config.securityGate?.enabled !== false
       ? '/moreinfo'
-      : config.hero.floatingCta.url
+      : sanitizeSafeUrl(config.hero.floatingCta.url, { allowHash: true, allowMailto: true })
     : '';
 
   return {
@@ -840,7 +863,10 @@ export function buildPartialRoutePayload(
       brand: config.brand,
       uiConfig: ui,
       heroCtas: {
-        secondaryCta: config.hero.secondaryCta,
+        secondaryCta: {
+          ...config.hero.secondaryCta,
+          url: secondaryCtaUrl
+        },
         primaryCta: {
           ...config.hero.primaryCta,
           url: primaryCtaUrl
@@ -896,7 +922,7 @@ export function renderCompleteStaticPageHtml(
       : `${baseCanonical}${payload.canonicalPath}`;
   const title = escapeHtml(payload.metaTitle);
   const desc = escapeHtml(payload.metaDescription);
-  const jsonLd = JSON.stringify(payload.jsonLd);
+  const jsonLd = JSON.stringify(payload.jsonLd).replace(/</g, '\\u003c');
   const ui = payload.shell.uiConfig || MASTER_DEFAULT_CONFIG.uiConfig;
 
   let html = indexHtmlTemplate;
@@ -1097,9 +1123,12 @@ export function renderCompleteStaticPageHtml(
   // Pre-render Footer links (Quick Links + Legal Pages) & text
   const quickLinksHtml = (config.navigation?.footerQuickLinks || [])
     .map((ql) => {
+      const safeQlUrl = sanitizeSafeUrl(ql.url || '', { allowHash: true, allowMailto: true });
+      if (!safeQlUrl) return '';
       const targetAttr = ql.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : ' data-spa-link';
-      return `<a href="${escapeHtml(ql.url)}"${targetAttr} class="footer-link">${escapeHtml(ql.label)}</a>`;
+      return `<a href="${escapeHtml(safeQlUrl)}"${targetAttr} class="footer-link">${escapeHtml(ql.label)}</a>`;
     })
+    .filter(Boolean)
     .join('');
 
   const legalLinksHtml = payload.shell.footerPages
@@ -1309,6 +1338,19 @@ export function renderGatewayPageHtml(
   const logoUrlClean = optimizeCloudinaryUrl(brand.logoUrl || '');
   const faviconUrlClean = optimizeCloudinaryUrl(brand.faviconUrl || brand.logoUrl || '');
 
+  const safeCustomNoteHtml = sanitizeEditorialHtmlForSeo(
+    (sec.customNoteHtml || '').trim(),
+    displayTitle || 'Official Notice'
+  );
+  const safeWhatsapp = sanitizeSafeUrl(sec.helplineWhatsapp || '', {
+    allowHash: false,
+    allowMailto: false
+  });
+  const safeTelegram = sanitizeSafeUrl(sec.helplineTelegram || '', {
+    allowHash: false,
+    allowMailto: false
+  });
+
   const publicGatewayMeta = {
     brandName: rawBrandName,
     logoUrl: logoUrlClean,
@@ -1317,10 +1359,10 @@ export function renderGatewayPageHtml(
     appSerialId: sec.appSerialId || 'PKG-001',
     proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
     unavailableMessage: sec.unavailableMessage || '',
-    helplineWhatsapp: sec.helplineWhatsapp || '',
-    helplineTelegram: sec.helplineTelegram || '',
+    helplineWhatsapp: safeWhatsapp,
+    helplineTelegram: safeTelegram,
     customHeading: sec.customHeading || '',
-    customNoteHtml: sec.customNoteHtml || '',
+    customNoteHtml: safeCustomNoteHtml,
     showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
     appName: displayTitle,
     version: specs.version || '',
@@ -1376,12 +1418,11 @@ export function renderGatewayPageHtml(
     `<span id="gw-footer-copyright">${rawBrandName ? `© ${new Date().getFullYear()} ${escapeHtml(rawBrandName)}. All rights reserved.` : ''}</span>`
   );
 
-  // Pre-render custom note if provided by admin
-  const customNote = (sec.customNoteHtml || '').trim();
-  if (customNote) {
+  // Pre-render custom note if provided by admin (sanitized)
+  if (safeCustomNoteHtml) {
     html = html.replace(
       /<div\s+id="gw-custom-note"\s+class="custom-note-box\s+hidden">[\s\S]*?<\/div>/i,
-      `<div id="gw-custom-note" class="custom-note-box">${customNote}</div>`
+      `<div id="gw-custom-note" class="custom-note-box">${safeCustomNoteHtml}</div>`
     );
   }
 

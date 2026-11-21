@@ -39,6 +39,8 @@ import {
   isValidFirebaseClientConfig,
   sanitizeTurnstileKey,
   sanitizeFirebaseConfigForClient,
+  sanitizeEditorialHtmlForSeo,
+  sanitizeSafeUrl,
   GateRequestContext,
   SiteConfig,
   SyncLogEntry,
@@ -357,6 +359,22 @@ function encodeFsVal(val: any): Record<string, any> {
   return { stringValue: String(val) };
 }
 
+const FIRESTORE_FETCH_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeoutNode(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = FIRESTORE_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function readSiteConfigWithStatusNode(
   fbCfg: any
 ): Promise<{ status: 'ok' | 'empty' | 'error'; config: SiteConfig | null; error?: string }> {
@@ -369,10 +387,10 @@ async function readSiteConfigWithStatusNode(
   )}/databases/${dbId}/documents`;
 
   const [modulesRes, mainRes] = await Promise.all([
-    fetch(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
+    fetchWithTimeoutNode(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
       headers: { Accept: 'application/json' }
     }).catch(() => null),
-    fetch(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
+    fetchWithTimeoutNode(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
       headers: { Accept: 'application/json' }
     }).catch(() => null)
   ]);
@@ -537,7 +555,7 @@ async function writeBatchToFirestoreRestNode(
   });
 
   try {
-    const res = await fetch(commitUrl, {
+    const res = await fetchWithTimeoutNode(commitUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ writes })
@@ -975,6 +993,7 @@ async function startServer() {
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     const urlPath = req.path || '';
     if (
       urlPath.startsWith('/admin') ||
@@ -984,19 +1003,48 @@ async function startServer() {
       urlPath.startsWith('/api/firebase') ||
       urlPath === '/api/static-bundle' ||
       urlPath === '/api/upload-image' ||
+      urlPath === '/api/seo-health' ||
       urlPath === '/api/news'
     ) {
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
       res.setHeader('Content-Security-Policy', ADMIN_CSP_POLICY);
       res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
-      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
+      res.setHeader('Referrer-Policy', 'no-referrer');
     }
     next();
   });
   app.use(express.json({ limit: '15mb' }));
-  app.use('/uploads', express.static(UPLOADS_DIR));
-  app.use('/static-routes', express.static(PUBLIC_STATIC_ROUTES_DIR));
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) {
+      res.status(400).json({ success: false, error: 'Invalid JSON request body.' });
+      return;
+    }
+    if (err && err.type === 'entity.too.large') {
+      res.status(413).json({ success: false, error: 'Request payload exceeds maximum allowed size.' });
+      return;
+    }
+    next(err);
+  });
+  app.use(
+    '/uploads',
+    (_req, res, next) => {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      next();
+    },
+    express.static(UPLOADS_DIR)
+  );
+  app.use(
+    '/static-routes',
+    (_req, res, next) => {
+      res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+      next();
+    },
+    express.static(PUBLIC_STATIC_ROUTES_DIR)
+  );
 
   setImmediate(() => {
     try {
@@ -1213,7 +1261,7 @@ async function startServer() {
     });
   });
 
-  // 4. Device Image Upload Endpoint
+  // 4. Device Image Upload Endpoint (Strict MIME, Magic-Byte, SVG Script Guard, Size Cap & Path Confinement)
   app.post('/api/upload-image', requireAdminAuth, (req, res) => {
     try {
       const { fileName = 'image.png', dataUrl = '' } = req.body || {};
@@ -1222,27 +1270,106 @@ async function startServer() {
         return;
       }
 
-      const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+      const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([A-Za-z0-9+/=\s]+)$/);
       if (!matches || matches.length !== 3) {
         res.status(400).json({ success: false, error: 'Invalid base64 image format.' });
         return;
       }
 
-      let ext = matches[1].toLowerCase();
-      if (ext === 'svg+xml') ext = 'svg';
-      if (ext === 'jpeg') ext = 'jpg';
-      const allowedExts = ['png', 'jpg', 'webp', 'svg', 'gif', 'avif'];
-      if (!allowedExts.includes(ext)) {
-        ext = 'png';
+      const rawMimeSub = matches[1].toLowerCase();
+      const mimeToExt: Record<string, string> = {
+        png: 'png',
+        jpeg: 'jpg',
+        jpg: 'jpg',
+        webp: 'webp',
+        gif: 'gif',
+        avif: 'avif',
+        'svg+xml': 'svg'
+      };
+      const ext = mimeToExt[rawMimeSub];
+      if (!ext) {
+        res.status(400).json({
+          success: false,
+          error: 'Unsupported image format. Allowed formats: PNG, JPEG, WebP, GIF, AVIF, and static SVG.'
+        });
+        return;
       }
 
-      const base64Data = matches[2];
+      const base64Data = matches[2].replace(/\s+/g, '');
       const buffer = Buffer.from(base64Data, 'base64');
-      const cleanBaseName = generateSlug(fileName.replace(/\.[^/.]+$/, '')) || 'asset';
-      const finalFileName = `${cleanBaseName}-${Date.now().toString(36)}.${ext}`;
-      const filePath = path.join(UPLOADS_DIR, finalFileName);
+      const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+      if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+        res.status(400).json({
+          success: false,
+          error: 'Image must be non-empty and under 5 MB.'
+        });
+        return;
+      }
 
-      fs.writeFileSync(filePath, buffer);
+      // Verify binary magic bytes for raster formats & block active scripts in SVG uploads
+      if (ext === 'png') {
+        const isPng =
+          buffer.length >= 8 &&
+          buffer[0] === 0x89 &&
+          buffer[1] === 0x50 &&
+          buffer[2] === 0x4e &&
+          buffer[3] === 0x47;
+        if (!isPng) {
+          res.status(400).json({ success: false, error: 'Invalid PNG image file signature.' });
+          return;
+        }
+      } else if (ext === 'jpg') {
+        const isJpg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+        if (!isJpg) {
+          res.status(400).json({ success: false, error: 'Invalid JPEG image file signature.' });
+          return;
+        }
+      } else if (ext === 'gif') {
+        const sig = buffer.subarray(0, 6).toString('ascii');
+        if (sig !== 'GIF87a' && sig !== 'GIF89a') {
+          res.status(400).json({ success: false, error: 'Invalid GIF image file signature.' });
+          return;
+        }
+      } else if (ext === 'webp') {
+        const isWebp =
+          buffer.length >= 12 &&
+          buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+          buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+        if (!isWebp) {
+          res.status(400).json({ success: false, error: 'Invalid WebP image file signature.' });
+          return;
+        }
+      } else if (ext === 'avif') {
+        const isAvif = buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp';
+        if (!isAvif) {
+          res.status(400).json({ success: false, error: 'Invalid AVIF image file signature.' });
+          return;
+        }
+      } else if (ext === 'svg') {
+        const svgText = buffer.toString('utf-8');
+        if (
+          !/<svg\b/i.test(svgText) ||
+          /<(script|foreignObject|iframe|object|embed|applet|meta|link)\b/i.test(svgText) ||
+          /\bon[a-z0-9_-]*\s*=/i.test(svgText) ||
+          /(?:javascript|vbscript|data\s*:\s*text\/html)\s*:/i.test(svgText)
+        ) {
+          res.status(400).json({
+            success: false,
+            error: 'SVG upload rejected: only static SVGs without scripts or event handlers are allowed.'
+          });
+          return;
+        }
+      }
+
+      const cleanBaseName = generateSlug(String(fileName).replace(/\.[^/.]+$/, '')) || 'asset';
+      const finalFileName = `${cleanBaseName}-${Date.now().toString(36)}.${ext}`;
+      const resolvedPath = path.resolve(UPLOADS_DIR, finalFileName);
+      if (!resolvedPath.startsWith(UPLOADS_DIR + path.sep)) {
+        res.status(400).json({ success: false, error: 'Invalid upload file path.' });
+        return;
+      }
+
+      fs.writeFileSync(resolvedPath, buffer);
 
       res.json({
         success: true,
@@ -1258,48 +1385,37 @@ async function startServer() {
     }
   });
 
-  // 5. Live Technical SEO Health Audit Endpoint
-  app.get('/api/seo-health', (_req, res) => {
+  // 5. Live Technical SEO Health Audit Endpoint (Authenticated Admin Studio ONLY)
+  app.get('/api/seo-health', requireAdminAuth, (_req, res) => {
     const config = loadPersistedSiteConfig();
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({
       success: true,
       audit: auditSiteSeoHealth(config)
     });
   });
 
-  // 6. Dynamic XML Sitemap (/sitemap.xml)
+  // 6. Inbuilt Automatic XML Sitemap (/sitemap.xml)
   app.get('/sitemap.xml', (_req, res) => {
     const config = loadPersistedSiteConfig();
-    if (config.domainConfig?.enableSitemapXml === false) {
-      res.status(404).set('Content-Type', 'text/plain; charset=utf-8').send('XML Sitemap is disabled in CMS settings.');
-      return;
-    }
     res.status(200).set('Content-Type', 'application/xml; charset=utf-8').send(generateSitemapXml(config));
   });
 
-  // 7. Dynamic Robots.txt (/robots.txt)
+  // 7. Inbuilt Automatic Robots.txt (/robots.txt — zero /admin disclosure)
   app.get('/robots.txt', (_req, res) => {
     const config = loadPersistedSiteConfig();
     res.status(200).set('Content-Type', 'text/plain; charset=utf-8').send(generateRobotsTxt(config));
   });
 
-  // 8. Dynamic RSS 2.0 Feed for Daily News (/feed.xml)
+  // 8. Inbuilt Automatic RSS 2.0 Feed for Daily News (/feed.xml)
   app.get('/feed.xml', (_req, res) => {
     const config = loadPersistedSiteConfig();
-    if (config.domainConfig?.enableRssFeed === false) {
-      res.status(404).set('Content-Type', 'text/plain; charset=utf-8').send('RSS Feed is disabled in CMS settings.');
-      return;
-    }
     res.status(200).set('Content-Type', 'application/rss+xml; charset=utf-8').send(generateRssFeedXml(config));
   });
 
-  // 8b. Dynamic W3C Web App Manifest (/manifest.webmanifest & /manifest.json)
+  // 8b. Inbuilt Automatic W3C Web App Manifest (/manifest.webmanifest & /manifest.json)
   app.get(['/manifest.webmanifest', '/manifest.json', '/site.webmanifest'], (_req, res) => {
     const config = loadPersistedSiteConfig();
-    if (config.domainConfig?.enableWebManifest === false) {
-      res.status(404).set('Content-Type', 'text/plain; charset=utf-8').send('Web App Manifest is disabled in CMS settings.');
-      return;
-    }
     res
       .status(200)
       .set('Content-Type', 'application/manifest+json; charset=utf-8')
@@ -2234,13 +2350,12 @@ async function startServer() {
         },
         false
       );
-      const sanitizedForCloud = sanitizeConfigForClient(candidateWithLog, getEnvSecretFlags());
       const fbRes = await writeBatchToFirestoreRestNode(
         fbEnv.config,
         {
-          newsSection: sanitizedForCloud.newsSection,
-          syncLogs: sanitizedForCloud.syncLogs,
-          githubConfig: sanitizedForCloud.githubConfig
+          newsSection: candidateWithLog.newsSection,
+          syncLogs: candidateWithLog.syncLogs,
+          githubConfig: candidateWithLog.githubConfig
         },
         { updatedAt: candidateWithLog.updatedAt, dirtyModulesSinceSync: candidateWithLog.dirtyModulesSinceSync }
       );
@@ -2435,10 +2550,19 @@ async function startServer() {
         devicePolicyMode: sec.devicePolicyMode || 'universal_human',
         proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
         unavailableMessage: sec.unavailableMessage || '',
-        helplineWhatsapp: sec.helplineWhatsapp || '',
-        helplineTelegram: sec.helplineTelegram || '',
+        helplineWhatsapp: sanitizeSafeUrl(sec.helplineWhatsapp || '', {
+          allowHash: false,
+          allowMailto: false
+        }),
+        helplineTelegram: sanitizeSafeUrl(sec.helplineTelegram || '', {
+          allowHash: false,
+          allowMailto: false
+        }),
         customHeading: sec.customHeading || '',
-        customNoteHtml: sec.customNoteHtml || '',
+        customNoteHtml: sanitizeEditorialHtmlForSeo(
+          sec.customNoteHtml || '',
+          sec.customHeading || config.brand?.name || 'Official Notice'
+        ),
         showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
         appName: sec.customHeading || config.packageSpecs?.appName || config.brand?.name || '',
         version: config.packageSpecs?.version || '',
@@ -2508,8 +2632,9 @@ async function startServer() {
     app.get(['/admin', '/admin/', '/admin.html'], async (_req, res, next) => {
       try {
         res.setHeader('X-Frame-Options', 'DENY');
-        res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
         res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+        res.setHeader('Referrer-Policy', 'no-referrer');
         const adminHtmlPath = path.resolve(process.cwd(), 'admin.html');
         let template = fs.readFileSync(adminHtmlPath, 'utf-8');
         template = stripViteHmrClient(await vite.transformIndexHtml('/admin.html', template));
@@ -2578,8 +2703,9 @@ async function startServer() {
 
     app.get(['/admin', '/admin/', '/admin.html'], (_req, res) => {
       res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
       res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+      res.setHeader('Referrer-Policy', 'no-referrer');
       const adminHtmlPath = path.join(distPath, 'admin.html');
       const rawHtml = fs.readFileSync(adminHtmlPath, 'utf-8');
       res.status(200).set({ 'Content-Type': 'text/html' }).end(rawHtml);

@@ -152,7 +152,7 @@ export const EMPTY_ADMIN_CONFIG: SiteConfig = {
     enableAutoInternalLinks: true,
     internalLinks: [],
     customRobotsTxt:
-      'User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin.html\nDisallow: /moreinfo\nDisallow: /moreinfo/\nDisallow: /download\nDisallow: /download/\nDisallow: /api/v1/app/'
+      'User-agent: *\nAllow: /\nDisallow: /moreinfo\nDisallow: /moreinfo/\nDisallow: /download\nDisallow: /download/\nDisallow: /api/v1/app/'
   },
   githubConfig: {
     repoOwner: '',

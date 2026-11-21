@@ -143,10 +143,81 @@ export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '')
   return { added, updated, unchanged, deletedPaths, changedPaths };
 }
 
-export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
+const EDGE_GITHUB_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeoutEdge(url, init = {}, timeoutMs = EDGE_GITHUB_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function validateGitHubTargetConfigEdge(ghConfig = {}) {
   const owner = cleanEnvVal(ghConfig.repoOwner);
   const repo = cleanEnvVal(ghConfig.repoName);
   const branch = cleanEnvVal(ghConfig.branch) || 'main';
+  const targetDir = cleanEnvVal(ghConfig.targetDirectory).replace(/^\/+|\/+$/g, '');
+
+  if (owner && !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(owner)) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid GitHub Repository Owner format. Use alphanumeric characters or hyphens only.'
+    };
+  }
+  if (repo && (!/^[a-zA-Z0-9._-]{1,100}$/.test(repo) || repo === '.' || repo === '..')) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid GitHub Repository Name format.'
+    };
+  }
+  if (
+    branch.length > 250 ||
+    /\.\.|[\u0000-\u001F\u007F\s~^:?*[\]\\]|^\/|\/$|\.$/.test(branch)
+  ) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid Git branch name.'
+    };
+  }
+  if (
+    targetDir &&
+    (targetDir.length > 200 ||
+      targetDir.includes('..') ||
+      targetDir.includes('\\') ||
+      /[\u0000-\u001F\u007F]/.test(targetDir) ||
+      targetDir.split('/').some((seg) => !seg || seg === '.' || seg === '..'))
+  ) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid target directory path. Path traversal segments ("..") are not allowed.'
+    };
+  }
+
+  return { valid: true, owner, repo, branch, targetDir };
+}
+
+export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
+  const validated = validateGitHubTargetConfigEdge(ghConfig);
+  const { owner, repo, branch } = validated;
   const token = cleanEnvVal(ghConfig.fineGrainedToken);
 
   if (!owner || !repo || !token) {
@@ -159,8 +230,18 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
     };
   }
 
+  if (!validated.valid) {
+    const msg = validated.error || 'Invalid GitHub repository settings.';
+    return {
+      success: false,
+      ok: false,
+      error: msg,
+      message: msg
+    };
+  }
+
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeoutEdge(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
       {
         headers: {
@@ -221,7 +302,7 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
 
 async function bootstrapEmptyRepoEdge(baseUrl, headers, branch, repo) {
   try {
-    const putRes = await fetch(`${baseUrl}/contents/README.md`, {
+    const putRes = await fetchWithTimeoutEdge(`${baseUrl}/contents/README.md`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
@@ -241,11 +322,9 @@ async function bootstrapEmptyRepoEdge(baseUrl, headers, branch, repo) {
 }
 
 export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], customMessage = '') {
-  const owner = cleanEnvVal(ghConfig.repoOwner);
-  const repo = cleanEnvVal(ghConfig.repoName);
-  const branch = cleanEnvVal(ghConfig.branch) || 'main';
+  const validated = validateGitHubTargetConfigEdge(ghConfig);
+  const { owner, repo, branch, targetDir } = validated;
   const token = cleanEnvVal(ghConfig.fineGrainedToken);
-  const targetDir = cleanEnvVal(ghConfig.targetDirectory).replace(/^\/+|\/+$/g, '');
 
   if (!owner || !repo || !token) {
     return {
@@ -254,6 +333,16 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
       branch,
       filesPushed: 0,
       message: 'GitHub credentials missing. Configure Owner, Repo & Fine-Grained Token (or env).'
+    };
+  }
+
+  if (!validated.valid) {
+    return {
+      ok: false,
+      status: 'error',
+      branch,
+      filesPushed: 0,
+      message: validated.error || 'Invalid GitHub repository settings.'
     };
   }
 
@@ -267,12 +356,12 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
   const baseUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
   try {
-    let refRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
+    let refRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
     let latestCommitSha = '';
     let baseTreeSha = '';
 
     if (refRes.status === 409 || refRes.status === 404) {
-      const repoInfoRes = await fetch(baseUrl, { headers });
+      const repoInfoRes = await fetchWithTimeoutEdge(baseUrl, { headers });
       if (!repoInfoRes.ok) {
         const repoErr = await repoInfoRes.json().catch(() => ({}));
         return {
@@ -286,12 +375,12 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
       const repoInfo = await repoInfoRes.json();
       const defaultBranch = repoInfo.default_branch || 'main';
       if (refRes.status === 404 && branch !== defaultBranch) {
-        const defaultRefRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, { headers });
+        const defaultRefRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, { headers });
         if (defaultRefRes.ok) {
           const defData = await defaultRefRes.json();
           const defSha = defData?.object?.sha || '';
           if (defSha) {
-            const createRef = await fetch(`${baseUrl}/git/refs`, {
+            const createRef = await fetchWithTimeoutEdge(`${baseUrl}/git/refs`, {
               method: 'POST',
               headers,
               body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: defSha })
@@ -311,7 +400,7 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
             message: `Repository initialization failed: ${boot.error}`
           };
         }
-        refRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
+        refRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
       }
     }
 
@@ -321,7 +410,7 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
     }
 
     if (latestCommitSha) {
-      const commitRes = await fetch(`${baseUrl}/git/commits/${latestCommitSha}`, { headers });
+      const commitRes = await fetchWithTimeoutEdge(`${baseUrl}/git/commits/${latestCommitSha}`, { headers });
       if (commitRes.ok) {
         const commitData = await commitRes.json();
         baseTreeSha = commitData?.tree?.sha || '';
@@ -330,7 +419,7 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
 
     let remoteEntries = [];
     if (baseTreeSha) {
-      const remoteTreeRes = await fetch(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, { headers });
+      const remoteTreeRes = await fetchWithTimeoutEdge(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, { headers });
       if (remoteTreeRes.ok) {
         const remoteTreeData = await remoteTreeRes.json();
         if (Array.isArray(remoteTreeData?.tree) && !remoteTreeData.truncated) {
@@ -391,7 +480,7 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
       const cleanRel = String(file.path || '').replace(/^\/+/, '');
       const finalPath = file.rootRelative ? cleanRel : targetDir ? `${targetDir}/${cleanRel}` : cleanRel;
       if (file.encoding === 'base64') {
-        const blobRes = await fetch(`${baseUrl}/git/blobs`, {
+        const blobRes = await fetchWithTimeoutEdge(`${baseUrl}/git/blobs`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ content: file.content, encoding: 'base64' })
@@ -419,11 +508,15 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
 
     const treeBody = { tree: treeItems };
     if (baseTreeSha) treeBody.base_tree = baseTreeSha;
-    const treeRes = await fetch(`${baseUrl}/git/trees`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(treeBody)
-    });
+    const treeRes = await fetchWithTimeoutEdge(
+      `${baseUrl}/git/trees`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(treeBody)
+      },
+      30000
+    );
     if (!treeRes.ok) {
       const errTree = await treeRes.json().catch(() => ({}));
       return { ok: false, status: 'error', branch, filesPushed: 0, message: `Tree failed: ${errTree?.message || treeRes.statusText}` };
@@ -436,7 +529,7 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
 
     const newCommitBody = { message: commitMsg, tree: treeJson.sha };
     if (latestCommitSha) newCommitBody.parents = [latestCommitSha];
-    const newCommitRes = await fetch(`${baseUrl}/git/commits`, {
+    const newCommitRes = await fetchWithTimeoutEdge(`${baseUrl}/git/commits`, {
       method: 'POST',
       headers,
       body: JSON.stringify(newCommitBody)
@@ -459,7 +552,7 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
       ? { sha: newCommitJson.sha, force: false }
       : { ref: `refs/heads/${branch}`, sha: newCommitJson.sha };
 
-    const updateRefRes = await fetch(refEndpoint, {
+    const updateRefRes = await fetchWithTimeoutEdge(refEndpoint, {
       method: refMethod,
       headers,
       body: JSON.stringify(refPayload)

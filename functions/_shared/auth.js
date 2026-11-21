@@ -93,7 +93,7 @@ export const EMPTY_ADMIN_CONFIG = {
     enableAutoInternalLinks: true,
     internalLinks: [],
     customRobotsTxt:
-      'User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin.html\nDisallow: /moreinfo\nDisallow: /moreinfo/\nDisallow: /download\nDisallow: /download/\nDisallow: /api/v1/app/'
+      'User-agent: *\nAllow: /\nDisallow: /moreinfo\nDisallow: /moreinfo/\nDisallow: /download\nDisallow: /download/\nDisallow: /api/v1/app/'
   },
   githubConfig: {
     repoOwner: '',
@@ -808,7 +808,7 @@ export function jsonResponse(data, status = 200, extraHeaders = {}, request = nu
     'Cache-Control': 'private, no-store, no-cache, must-revalidate',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
-    'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet'
+    'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet, noimageindex'
   });
 
   if (!isSensitive) {
@@ -1239,6 +1239,18 @@ function encodeFirestoreValue(val) {
   return { stringValue: String(val) };
 }
 
+const EDGE_FIRESTORE_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeoutEdge(url, init = {}, timeoutMs = EDGE_FIRESTORE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function readSiteConfigWithStatusEdge(fbCfg, env = {}) {
   if (!fbCfg?.projectId || !fbCfg?.apiKey) {
     return { status: 'error', config: null, error: 'Missing Firebase config' };
@@ -1249,10 +1261,10 @@ export async function readSiteConfigWithStatusEdge(fbCfg, env = {}) {
   )}/databases/${dbId}/documents`;
 
   const [modulesRes, mainRes] = await Promise.all([
-    fetch(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
+    fetchWithTimeoutEdge(`${base}/cmsModules?pageSize=50&key=${encodeURIComponent(fbCfg.apiKey)}`, {
       headers: { Accept: 'application/json' }
     }).catch(() => null),
-    fetch(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
+    fetchWithTimeoutEdge(`${base}/siteConfig/main?key=${encodeURIComponent(fbCfg.apiKey)}`, {
       headers: { Accept: 'application/json' }
     }).catch(() => null)
   ]);
@@ -1406,7 +1418,7 @@ export async function writeBatchToFirestoreRest(fbCfg, modulesMap = {}, meta = {
   });
 
   try {
-    const res = await fetch(commitUrl, {
+    const res = await fetchWithTimeoutEdge(commitUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ writes })
@@ -1452,7 +1464,7 @@ export async function writeSiteConfigToFirestoreRest(fbCfg, siteConfig, env = {}
     for (const [k, v] of Object.entries(storeCopy)) {
       if (v !== undefined) fields[k] = encodeFirestoreValue(v);
     }
-    const res = await fetch(url, {
+    const res = await fetchWithTimeoutEdge(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields })

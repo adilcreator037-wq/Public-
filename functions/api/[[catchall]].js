@@ -304,9 +304,23 @@ export async function onRequest(context) {
     if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
       return jsonResponse({ success: false, error: 'Valid image dataUrl is required.' }, 400, {}, request, true);
     }
-    const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+    const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([A-Za-z0-9+/=\s]+)$/);
     if (!matches || matches.length !== 3) {
       return jsonResponse({ success: false, error: 'Invalid base64 image format.' }, 400, {}, request, true);
+    }
+    const rawMimeSub = matches[1].toLowerCase();
+    const allowedMimeSubs = new Set(['png', 'jpeg', 'jpg', 'webp', 'gif', 'avif', 'svg+xml']);
+    if (!allowedMimeSubs.has(rawMimeSub)) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Unsupported image format. Allowed formats: PNG, JPEG, WebP, GIF, AVIF, and static SVG.'
+        },
+        400,
+        {},
+        request,
+        true
+      );
     }
     if (dataUrl.length > 1_600_000) {
       return jsonResponse(
@@ -320,12 +334,38 @@ export async function onRequest(context) {
         true
       );
     }
+    if (rawMimeSub === 'svg+xml') {
+      let svgText = '';
+      try {
+        svgText = atob(matches[2].replace(/\s+/g, ''));
+      } catch {
+        return jsonResponse({ success: false, error: 'Invalid base64 SVG payload.' }, 400, {}, request, true);
+      }
+      if (
+        !/<svg\b/i.test(svgText) ||
+        /<(script|foreignObject|iframe|object|embed|applet|meta|link)\b/i.test(svgText) ||
+        /\bon[a-z0-9_-]*\s*=/i.test(svgText) ||
+        /(?:javascript|vbscript|data\s*:\s*text\/html)\s*:/i.test(svgText)
+      ) {
+        return jsonResponse(
+          {
+            success: false,
+            error: 'SVG upload rejected: only static SVGs without scripts or event handlers are allowed.'
+          },
+          400,
+          {},
+          request,
+          true
+        );
+      }
+    }
+    const safeFileName = String(fileName || 'image.png').replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120) || 'image.png';
     return jsonResponse(
       {
         success: true,
         url: dataUrl,
-        fileName: String(fileName || 'image.png'),
-        sizeBytes: Math.floor((matches[2].length * 3) / 4),
+        fileName: safeFileName,
+        sizeBytes: Math.floor((matches[2].replace(/\s+/g, '').length * 3) / 4),
         storageMode: 'inline-data-url'
       },
       200,
@@ -1176,7 +1216,17 @@ export async function onRequest(context) {
     )}/databases/${dbId}/documents/siteConfig/main?key=${encodeURIComponent(apiKey)}`;
 
     try {
-      const fbRes = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let fbRes;
+      try {
+        fbRes = await fetch(endpoint, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timer);
+      }
       if (fbRes.ok) {
         return jsonResponse(
           {

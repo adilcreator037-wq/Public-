@@ -170,6 +170,89 @@ export function diffGitTrees(
   return { added, updated, unchanged, deletedPaths, changedPaths };
 }
 
+const GITHUB_FETCH_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = GITHUB_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function validateGitHubTargetConfig(ghConfig: Partial<GitHubDeployConfig>): {
+  valid: boolean;
+  owner: string;
+  repo: string;
+  branch: string;
+  targetDir: string;
+  error?: string;
+} {
+  const owner = (ghConfig.repoOwner || '').trim();
+  const repo = (ghConfig.repoName || '').trim();
+  const branch = (ghConfig.branch || 'main').trim() || 'main';
+  const targetDir = (ghConfig.targetDirectory || '').trim().replace(/^\/+|\/+$/g, '');
+
+  if (owner && !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(owner)) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid GitHub Repository Owner format. Use alphanumeric characters or hyphens only.'
+    };
+  }
+  if (repo && (!/^[a-zA-Z0-9._-]{1,100}$/.test(repo) || repo === '.' || repo === '..')) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid GitHub Repository Name format.'
+    };
+  }
+  if (
+    branch.length > 250 ||
+    /\.\.|[\u0000-\u001F\u007F\s~^:?*[\]\\]|^\/|\/$|\.$/.test(branch)
+  ) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid Git branch name.'
+    };
+  }
+  if (
+    targetDir &&
+    (targetDir.length > 200 ||
+      targetDir.includes('..') ||
+      targetDir.includes('\\') ||
+      /[\u0000-\u001F\u007F]/.test(targetDir) ||
+      targetDir.split('/').some((seg) => !seg || seg === '.' || seg === '..'))
+  ) {
+    return {
+      valid: false,
+      owner,
+      repo,
+      branch,
+      targetDir,
+      error: 'Invalid target directory path. Path traversal segments ("..") are not allowed.'
+    };
+  }
+
+  return { valid: true, owner, repo, branch, targetDir };
+}
+
 function buildGitHubHeaders(token: string): Record<string, string> {
   return {
     Accept: 'application/vnd.github+json',
@@ -186,9 +269,8 @@ function buildGitHubHeaders(token: string): Record<string, string> {
 export async function verifyGitHubRepoAccess(
   ghConfig: Partial<GitHubDeployConfig>
 ): Promise<GitHubVerifyResponse> {
-  const owner = (ghConfig.repoOwner || '').trim();
-  const repo = (ghConfig.repoName || '').trim();
-  const branch = (ghConfig.branch || 'main').trim() || 'main';
+  const validated = validateGitHubTargetConfig(ghConfig);
+  const { owner, repo, branch } = validated;
   const token = (ghConfig.fineGrainedToken || '').trim();
 
   if (!owner || !repo || !token) {
@@ -201,11 +283,24 @@ export async function verifyGitHubRepoAccess(
     };
   }
 
+  if (!validated.valid) {
+    const msg = validated.error || 'Invalid GitHub repository settings.';
+    return {
+      success: false,
+      ok: false,
+      error: msg,
+      message: msg
+    };
+  }
+
   try {
-    const res = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
-      method: 'GET',
-      headers: buildGitHubHeaders(token)
-    });
+    const res = await fetchWithTimeout(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+      {
+        method: 'GET',
+        headers: buildGitHubHeaders(token)
+      }
+    );
 
     if (!res.ok) {
       let errText = `HTTP ${res.status}`;
@@ -274,7 +369,7 @@ async function bootstrapEmptyGitHubRepoIfNeeded(
     const readmeContent = `# ${repoName}\n\nStatic public website bundle published via Admin Studio.\n`;
     const base64Content = encodeUtf8ToBase64(readmeContent);
 
-    const putRes = await fetch(`${baseUrl}/contents/README.md`, {
+    const putRes = await fetchWithTimeout(`${baseUrl}/contents/README.md`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
@@ -310,7 +405,7 @@ async function createGitHubBinaryBlob(
   headers: Record<string, string>,
   base64Content: string
 ): Promise<string> {
-  const blobRes = await fetch(`${baseUrl}/git/blobs`, {
+  const blobRes = await fetchWithTimeout(`${baseUrl}/git/blobs`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -335,11 +430,9 @@ export async function pushStaticFilesToGitHub(
   files: CompiledStaticFile[],
   customCommitMessage?: string
 ): Promise<GitHubPushResponse> {
-  const owner = (ghConfig.repoOwner || '').trim();
-  const repo = (ghConfig.repoName || '').trim();
-  const branch = (ghConfig.branch || 'main').trim() || 'main';
+  const validated = validateGitHubTargetConfig(ghConfig);
+  const { owner, repo, branch, targetDir } = validated;
   const token = (ghConfig.fineGrainedToken || '').trim();
-  const targetDir = (ghConfig.targetDirectory || '').trim().replace(/^\/+|\/+$/g, '');
 
   if (!owner || !repo || !token) {
     return {
@@ -351,12 +444,22 @@ export async function pushStaticFilesToGitHub(
     };
   }
 
+  if (!validated.valid) {
+    return {
+      ok: false,
+      status: 'error',
+      branch,
+      filesPushed: 0,
+      message: validated.error || 'Invalid GitHub repository settings.'
+    };
+  }
+
   const headers = buildGitHubHeaders(token);
   const baseUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
   try {
     // 1. Get current branch reference (`heads/{branch}`)
-    let refRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, {
+    let refRes = await fetchWithTimeout(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, {
       method: 'GET',
       headers
     });
@@ -365,7 +468,7 @@ export async function pushStaticFilesToGitHub(
     let baseTreeSha = '';
 
     if (refRes.status === 409 || refRes.status === 404) {
-      const repoInfoRes = await fetch(baseUrl, { method: 'GET', headers });
+      const repoInfoRes = await fetchWithTimeout(baseUrl, { method: 'GET', headers });
       if (!repoInfoRes.ok) {
         const repoErr: any = await repoInfoRes.json().catch(() => ({}));
         return {
@@ -380,7 +483,7 @@ export async function pushStaticFilesToGitHub(
       const defaultBranch = repoInfo.default_branch || 'main';
 
       if (refRes.status === 404 && branch !== defaultBranch) {
-        const defaultRefRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, {
+        const defaultRefRes = await fetchWithTimeout(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, {
           method: 'GET',
           headers
         });
@@ -388,7 +491,7 @@ export async function pushStaticFilesToGitHub(
           const defaultRefData: any = await defaultRefRes.json();
           const defaultHeadSha = defaultRefData?.object?.sha || '';
           if (defaultHeadSha) {
-            const createRefRes = await fetch(`${baseUrl}/git/refs`, {
+            const createRefRes = await fetchWithTimeout(`${baseUrl}/git/refs`, {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -414,7 +517,7 @@ export async function pushStaticFilesToGitHub(
             message: `Repository ${owner}/${repo} is empty and auto-initialization failed: ${boot.error}`
           };
         }
-        refRes = await fetch(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, {
+        refRes = await fetchWithTimeout(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, {
           method: 'GET',
           headers
         });
@@ -427,7 +530,7 @@ export async function pushStaticFilesToGitHub(
     }
 
     if (latestCommitSha) {
-      const commitRes = await fetch(`${baseUrl}/git/commits/${latestCommitSha}`, {
+      const commitRes = await fetchWithTimeout(`${baseUrl}/git/commits/${latestCommitSha}`, {
         method: 'GET',
         headers
       });
@@ -440,7 +543,7 @@ export async function pushStaticFilesToGitHub(
     // 2. Fetch Remote Tree Recursively & Compute Smart SHA-1 Diff
     let remoteEntries: RemoteGitTreeEntry[] = [];
     if (baseTreeSha) {
-      const remoteTreeRes = await fetch(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, {
+      const remoteTreeRes = await fetchWithTimeout(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, {
         method: 'GET',
         headers
       });
@@ -558,11 +661,11 @@ export async function pushStaticFilesToGitHub(
       createTreeBody.base_tree = baseTreeSha;
     }
 
-    const treeRes = await fetch(`${baseUrl}/git/trees`, {
+    const treeRes = await fetchWithTimeout(`${baseUrl}/git/trees`, {
       method: 'POST',
       headers,
       body: JSON.stringify(createTreeBody)
-    });
+    }, 30000);
 
     if (!treeRes.ok) {
       const errJson: any = await treeRes.json().catch(() => ({}));
@@ -591,7 +694,7 @@ export async function pushStaticFilesToGitHub(
       createCommitBody.parents = [latestCommitSha];
     }
 
-    const newCommitRes = await fetch(`${baseUrl}/git/commits`, {
+    const newCommitRes = await fetchWithTimeout(`${baseUrl}/git/commits`, {
       method: 'POST',
       headers,
       body: JSON.stringify(createCommitBody)
@@ -613,7 +716,7 @@ export async function pushStaticFilesToGitHub(
 
     // 5. Update or Create Branch Reference to point to newCommitSha
     if (latestCommitSha) {
-      const updateRefRes = await fetch(`${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}`, {
+      const updateRefRes = await fetchWithTimeout(`${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({
@@ -632,7 +735,7 @@ export async function pushStaticFilesToGitHub(
         };
       }
     } else {
-      const createRefRes = await fetch(`${baseUrl}/git/refs`, {
+      const createRefRes = await fetchWithTimeout(`${baseUrl}/git/refs`, {
         method: 'POST',
         headers,
         body: JSON.stringify({

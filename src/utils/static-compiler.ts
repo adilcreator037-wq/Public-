@@ -254,8 +254,20 @@ export function compileStaticSiteBundle(
     });
   }
 
-  // 6. Cloudflare Pages `_headers` enforcing strict X-Robots-Tag & Cache-Control on /moreinfo and /download
+  // 6. Cloudflare Pages `_headers` enforcing security headers, asset caching, and strict isolation on /moreinfo and /download
   const cloudflareHeaders = [
+    '/*',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: strict-origin-when-cross-origin',
+    '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
+    '/assets/*',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/uploads/*',
+    '  Content-Security-Policy: default-src \'none\'; sandbox',
+    '  X-Content-Type-Options: nosniff',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/static-routes/*',
+    '  Cache-Control: public, max-age=60, stale-while-revalidate=300',
     '/moreinfo*',
     '  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet',
     '  Cache-Control: private, no-store, no-cache, must-revalidate',
@@ -273,18 +285,16 @@ export function compileStaticSiteBundle(
     path: '_headers',
     content: `${cloudflareHeaders}\n`,
     encoding: 'utf-8',
-    description: 'Cloudflare Pages edge headers isolating /moreinfo & /download from crawlers'
+    description: 'Cloudflare Pages edge security, caching, and gateway isolation headers'
   });
 
-  // 7. Technical SEO Artifacts (`sitemap.xml`, `robots.txt`, `feed.xml`, `manifest.webmanifest`)
-  if (config.domainConfig?.enableSitemapXml !== false) {
-    files.push({
-      path: 'sitemap.xml',
-      content: generateSitemapXml(config),
-      encoding: 'utf-8',
-      description: 'Search Engine XML Sitemap'
-    });
-  }
+  // 7. Inbuilt Automatic Technical SEO Artifacts (`sitemap.xml`, `robots.txt`, `feed.xml`, `manifest.webmanifest`)
+  files.push({
+    path: 'sitemap.xml',
+    content: generateSitemapXml(config),
+    encoding: 'utf-8',
+    description: 'Search Engine XML Sitemap'
+  });
 
   files.push({
     path: 'robots.txt',
@@ -293,23 +303,19 @@ export function compileStaticSiteBundle(
     description: 'Crawler directives & Sitemap pointer'
   });
 
-  if (config.domainConfig?.enableRssFeed !== false) {
-    files.push({
-      path: 'feed.xml',
-      content: generateRssFeedXml(config),
-      encoding: 'utf-8',
-      description: 'RSS 2.0 Syndication Feed'
-    });
-  }
+  files.push({
+    path: 'feed.xml',
+    content: generateRssFeedXml(config),
+    encoding: 'utf-8',
+    description: 'RSS 2.0 Syndication Feed'
+  });
 
-  if (config.domainConfig?.enableWebManifest !== false) {
-    files.push({
-      path: 'manifest.webmanifest',
-      content: generateWebManifestJson(config),
-      encoding: 'utf-8',
-      description: 'W3C Web App Manifest for Google Search Result Logo & PWA'
-    });
-  }
+  files.push({
+    path: 'manifest.webmanifest',
+    content: generateWebManifestJson(config),
+    encoding: 'utf-8',
+    description: 'W3C Web App Manifest for Google Search Result Logo & PWA'
+  });
 
   // 8. Include pure-static `app.js` in the bundle if provided
   if (options?.appJsContent) {

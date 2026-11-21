@@ -33,6 +33,7 @@ function isSensitiveAdminPath(pathname) {
     p.startsWith('/api/firebase') ||
     p === '/api/static-bundle' ||
     p === '/api/upload-image' ||
+    p === '/api/seo-health' ||
     p === '/api/news'
   );
 }
@@ -114,9 +115,10 @@ async function resolveDynamicFallback(request, env, url, initialResponse) {
     const readRes = await readSiteConfigWithStatusEdge(fbEnv.config, env);
     const cfg = readRes.status === 'ok' && readRes.config ? readRes.config : EMPTY_ADMIN_CONFIG;
     if (lower === '/sitemap.xml') {
-      const xml = generateSitemapXmlEdge(cfg);
-      if (!xml) return new Response('XML Sitemap disabled', { status: 404 });
-      return new Response(xml, { status: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
+      return new Response(generateSitemapXmlEdge(cfg), {
+        status: 200,
+        headers: { 'Content-Type': 'application/xml; charset=utf-8' }
+      });
     }
     if (lower === '/robots.txt') {
       return new Response(generateRobotsTxtEdge(cfg), {
@@ -125,9 +127,10 @@ async function resolveDynamicFallback(request, env, url, initialResponse) {
       });
     }
     if (lower === '/feed.xml') {
-      const rss = generateRssFeedXmlEdge(cfg);
-      if (!rss) return new Response('RSS Feed disabled', { status: 404 });
-      return new Response(rss, { status: 200, headers: { 'Content-Type': 'application/rss+xml; charset=utf-8' } });
+      return new Response(generateRssFeedXmlEdge(cfg), {
+        status: 200,
+        headers: { 'Content-Type': 'application/rss+xml; charset=utf-8' }
+      });
     }
     if (lower === '/manifest.webmanifest') {
       return new Response(generateWebManifestJsonEdge(cfg), {
@@ -254,6 +257,12 @@ export async function onRequest(context) {
 
   const newHeaders = new Headers(response.headers);
   newHeaders.set('X-Content-Type-Options', 'nosniff');
+  newHeaders.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+  if (path.startsWith('/uploads/')) {
+    newHeaders.set('Content-Security-Policy', "default-src 'none'; sandbox");
+    newHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
+  }
 
   if (!sensitive) {
     newHeaders.set('Access-Control-Allow-Origin', '*');
@@ -275,9 +284,9 @@ export async function onRequest(context) {
   }
 
   if (isGateway || isAdmin || sensitive) {
-    newHeaders.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+    newHeaders.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
     newHeaders.set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
-    newHeaders.set('Referrer-Policy', isGateway ? 'no-referrer' : 'strict-origin-when-cross-origin');
+    newHeaders.set('Referrer-Policy', 'no-referrer');
     if (isAdmin || sensitive) {
       newHeaders.set('X-Frame-Options', 'DENY');
       newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');

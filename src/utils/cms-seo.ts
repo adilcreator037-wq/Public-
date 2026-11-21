@@ -77,10 +77,24 @@ export interface ResolvedRouteView {
   page?: StandalonePageItem;
 }
 
+function deriveAutoMetaDescription(rawHtmlOrText: string | undefined | null, maxLen = 160): string {
+  const plain = String(rawHtmlOrText || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plain) return '';
+  return plain.length <= maxLen ? plain : `${plain.slice(0, maxLen - 1).trim()}…`;
+}
+
 export function resolveRouteView(pathname: string, config: SiteConfig): ResolvedRouteView {
   const cleanPath = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
   const brandName = (config.brand?.name || '').trim();
   const brandSuffix = brandName ? ` | ${brandName}` : '';
+  const autoHomeDesc =
+    config.seo?.metaDescription ||
+    config.hero?.metaDescription ||
+    deriveAutoMetaDescription(config.hero?.introHtml) ||
+    (config.brand?.tagline ? `${brandName ? `${brandName} — ` : ''}${config.brand.tagline}` : '');
 
   // 1. Check /news Hub Page
   if (cleanPath === '/news') {
@@ -107,7 +121,11 @@ export function resolveRouteView(pathname: string, config: SiteConfig): Resolved
       return {
         viewType: 'news-article',
         metaTitle: article.metaTitle || `${article.title}${brandSuffix}`,
-        metaDescription: article.metaDescription || article.summary || config.seo.metaDescription,
+        metaDescription:
+          article.metaDescription ||
+          article.summary ||
+          deriveAutoMetaDescription(article.htmlContent) ||
+          autoHomeDesc,
         canonicalPath: `/news/${generateSlug(article.slug || article.title)}`,
         ogImage: article.coverImageUrl || config.seo?.ogImageUrl || config.hero?.bannerImageUrl || '',
         article
@@ -128,8 +146,12 @@ export function resolveRouteView(pathname: string, config: SiteConfig): Resolved
       const cleanSlug = generateSlug(matchedPage.slug || matchedPage.label);
       return {
         viewType: 'standalone-page',
-        metaTitle: matchedPage.metaTitle || `${matchedPage.h1}${brandSuffix}`,
-        metaDescription: matchedPage.metaDescription || config.seo.metaDescription,
+        metaTitle: matchedPage.metaTitle || `${matchedPage.h1 || matchedPage.label}${brandSuffix}`,
+        metaDescription:
+          matchedPage.metaDescription ||
+          matchedPage.subtitle ||
+          deriveAutoMetaDescription(matchedPage.htmlContent) ||
+          autoHomeDesc,
         canonicalPath: `/${cleanSlug}`,
         ogImage: matchedPage.bannerImageUrl || config.seo?.ogImageUrl || config.hero?.bannerImageUrl || '',
         page: matchedPage
@@ -141,7 +163,7 @@ export function resolveRouteView(pathname: string, config: SiteConfig): Resolved
   return {
     viewType: 'home',
     metaTitle: config.seo?.metaTitle || config.hero?.metaTitle || config.hero?.h1 || brandName || 'Coming Soon',
-    metaDescription: config.seo?.metaDescription || config.hero?.metaDescription || '',
+    metaDescription: autoHomeDesc,
     canonicalPath: '/',
     ogImage: config.seo?.ogImageUrl || config.hero?.bannerImageUrl || ''
   };
@@ -433,7 +455,6 @@ export function buildJsonLdSchema(config: SiteConfig, pathname = '/'): Record<st
  * Powers Google Search Result Site Icon discovery, mobile home-screen installability, and theme color.
  */
 export function generateWebManifestJson(config: SiteConfig): string {
-  if (config.domainConfig?.enableWebManifest === false) return '{}';
   const brandName = (config.brand?.name || '').trim();
   const shortName = (config.brand?.shortName || brandName || '').trim();
   const iconUrl = optimizeCloudinaryUrl(
@@ -491,13 +512,11 @@ export function generateWebManifestJson(config: SiteConfig): string {
  * AND Google Image Sitemap (`<image:image>`) entries for fast Google Images indexing.
  */
 export function generateSitemapXml(config: SiteConfig): string {
-  if (config.domainConfig?.enableSitemapXml === false) return '';
   const base = normalizeDomainUrl(
     config.domainConfig?.primaryDomain || config.seo?.canonicalUrl,
-    config.domainConfig?.forceHttps !== false
+    true
   );
   const isoDate = new Date(config.updatedAt || Date.now()).toISOString().split('T')[0];
-  const includeImages = config.domainConfig?.enableImageSitemap !== false;
   const escapeXml = (s: string) =>
     (s || '')
       .replace(/&/g, '&amp;')
@@ -514,20 +533,18 @@ export function generateSitemapXml(config: SiteConfig): string {
   }
 
   const homeImages: Array<{ loc: string; title: string }> = [];
-  if (includeImages) {
-    if (config.hero?.showBanner !== false && config.hero?.bannerImageUrl) {
+  if (config.hero?.showBanner !== false && config.hero?.bannerImageUrl) {
+    homeImages.push({
+      loc: toAbsoluteAssetUrl(config.hero.bannerImageUrl, base),
+      title: config.hero.bannerAlt || config.hero.h1 || config.brand.name
+    });
+  }
+  for (const sec of config.sections || []) {
+    if (sec.visible !== false && sec.imageUrl) {
       homeImages.push({
-        loc: toAbsoluteAssetUrl(config.hero.bannerImageUrl, base),
-        title: config.hero.bannerAlt || config.hero.h1 || config.brand.name
+        loc: toAbsoluteAssetUrl(sec.imageUrl, base),
+        title: sec.imageAlt || sec.heading
       });
-    }
-    for (const sec of config.sections || []) {
-      if (sec.visible !== false && sec.imageUrl && sec.imagePosition !== 'none') {
-        homeImages.push({
-          loc: toAbsoluteAssetUrl(sec.imageUrl, base),
-          title: sec.imageAlt || sec.heading
-        });
-      }
     }
   }
 
@@ -540,7 +557,7 @@ export function generateSitemapXml(config: SiteConfig): string {
     const slug = generateSlug(art.slug || art.title);
     if (slug) {
       const artImages: Array<{ loc: string; title: string }> = [];
-      if (includeImages && art.coverImageUrl) {
+      if (art.coverImageUrl) {
         artImages.push({
           loc: toAbsoluteAssetUrl(art.coverImageUrl, base),
           title: art.coverImageAlt || art.title
@@ -560,7 +577,7 @@ export function generateSitemapXml(config: SiteConfig): string {
     const slug = generateSlug(pg.slug || pg.label);
     if (slug) {
       const pgImages: Array<{ loc: string; title: string }> = [];
-      if (includeImages && pg.bannerImageUrl) {
+      if (pg.bannerImageUrl) {
         pgImages.push({
           loc: toAbsoluteAssetUrl(pg.bannerImageUrl, base),
           title: pg.bannerImageAlt || pg.h1
@@ -602,42 +619,35 @@ ${xmlEntries}
 }
 
 /**
- * Generate Dynamic robots.txt (/robots.txt) with Sitemap link
+ * Generate Inbuilt Public robots.txt (/robots.txt) with Automatic Sitemap Pointer
+ * - 100% inbuilt and automatic (never editable or breakable from CMS)
+ * - Strictly stealth: NEVER mentions any private workspace or administrative path
  */
 export function generateRobotsTxt(config: SiteConfig): string {
   const base = normalizeDomainUrl(
     config.domainConfig?.primaryDomain || config.seo?.canonicalUrl,
-    config.domainConfig?.forceHttps !== false
+    true
   );
-  let customRules = (
-    config.domainConfig?.customRobotsTxt ||
-    'User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin.html'
-  ).trim();
-
-  const mandatoryDisallows = [
+  const inbuiltRules = [
+    'User-agent: *',
+    'Allow: /',
     'Disallow: /moreinfo',
     'Disallow: /moreinfo/',
     'Disallow: /download',
     'Disallow: /download/',
     'Disallow: /api/v1/app/'
-  ];
-  for (const rule of mandatoryDisallows) {
-    if (!customRules.includes(rule)) {
-      customRules += `\n${rule}`;
-    }
-  }
+  ].join('\n');
 
-  return `${customRules}\n\nSitemap: ${base}/sitemap.xml\n`;
+  return `${inbuiltRules}\n\nSitemap: ${base}/sitemap.xml\n`;
 }
 
 /**
- * Generate Dynamic RSS 2.0 XML Feed (/feed.xml) for Daily News Articles
+ * Generate Inbuilt RSS 2.0 XML Feed (/feed.xml) for Daily News Articles
  */
 export function generateRssFeedXml(config: SiteConfig): string {
-  if (config.domainConfig?.enableRssFeed === false) return '';
   const base = normalizeDomainUrl(
     config.domainConfig?.primaryDomain || config.seo?.canonicalUrl,
-    config.domainConfig?.forceHttps !== false
+    true
   );
   const escapeXml = (s: string) =>
     (s || '')
@@ -871,13 +881,118 @@ export function auditSiteSeoHealth(config: SiteConfig): SeoAuditResult {
 }
 
 /**
- * Sanitize & SEO-Enhance Admin-Authored HTML:
+ * Validates and sanitizes a URL for safe use in href/src attributes.
+ * Blocks dangerous schemes (javascript:, vbscript:, data:text/html, etc.) while
+ * allowing http(s), relative paths, hash anchors, optional mailto/tel, and optional raster data URIs.
+ */
+export function sanitizeSafeUrl(
+  rawUrl = '',
+  options: { allowHash?: boolean; allowMailto?: boolean; allowDataImage?: boolean } = {}
+): string {
+  const { allowHash = true, allowMailto = true, allowDataImage = false } = options;
+  const trimmed = String(rawUrl || '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) return '';
+  if (trimmed.startsWith('/')) return trimmed;
+  if (trimmed.startsWith('#')) return allowHash ? trimmed : '';
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    return trimmed;
+  }
+  if (allowMailto && (lower.startsWith('mailto:') || lower.startsWith('tel:'))) {
+    return trimmed;
+  }
+  if (
+    allowDataImage &&
+    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
+  ) {
+    return trimmed;
+  }
+
+  // Relative path without scheme (e.g., "uploads/banner.webp" or "news/post")
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return '';
+}
+
+/**
+ * Sanitize & SEO-Enhance Editorial HTML:
+ * - Strips executable/dangerous tags (<script>, <iframe>, <object>, <embed>, <applet>, <base>, <meta>, <link>, <style>, <form>, <svg>, <math>)
+ * - Strips inline on* event handlers, srcdoc attributes, and unsafe URL protocols (javascript:, vbscript:, data:text/html)
  * - Auto-assigns URL-safe `id="..."` anchors to `<h2>` and `<h3>` headings without an id
  * - Ensures all `<img>` tags include `loading="lazy" decoding="async"` and non-empty `alt` text
  */
 export function sanitizeEditorialHtmlForSeo(rawHtml = '', fallbackAlt = 'Editorial Illustration'): string {
   if (!rawHtml || !rawHtml.trim()) return '';
-  let html = rawHtml;
+  let html = String(rawHtml);
+
+  // 0. Strip dangerous executable or framing tags and their contents
+  const dangerousBlockTags =
+    'script|iframe|object|embed|applet|style|svg|math|noscript|template|textarea|title|xmp|form';
+  html = html.replace(
+    new RegExp(`<(${dangerousBlockTags})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, 'gi'),
+    ''
+  );
+  html = html.replace(
+    new RegExp(`<\\/?(${dangerousBlockTags}|base|meta|link|frame|frameset|input|button|select|option)\\b[^>]*>`, 'gi'),
+    ''
+  );
+  // Strip HTML comments (can conceal conditional script directives)
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  // Strip inline event handlers (on*="...", on*='...', on*=unquoted), srcdoc, and unsafe URLs on remaining tags
+  html = html.replace(/<([a-zA-Z][a-zA-Z0-9:-]*)(\s[^>]*?)?(\/?)>/g, (_full, tagName, rawAttrs = '', selfClose = '') => {
+    let attrs = String(rawAttrs || '');
+    // Remove on* event handlers and srcdoc attributes
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*(?=\s|$|\/)/gi, '');
+    attrs = attrs.replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+
+    // Validate href / src / action / formaction / poster / xlink:href URL schemes
+    attrs = attrs.replace(
+      /\s+(href|src|action|formaction|poster|xlink:href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+      (_m, attrName, dq, sq, uq) => {
+        const rawVal = String(dq ?? sq ?? uq ?? '');
+        const decodedVal = rawVal
+          .replace(/&#x([0-9a-f]+);?/gi, (_: string, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+          .replace(/&#(\d+);?/g, (_: string, dec: string) => String.fromCharCode(parseInt(dec, 10)))
+          .replace(/&colon;/gi, ':')
+          .replace(/&tab;/gi, '')
+          .replace(/&newline;/gi, '');
+        const lowerAttr = String(attrName).toLowerCase();
+        const isImgSrc = lowerAttr === 'src' && String(tagName).toLowerCase() === 'img';
+        const safeUrl = sanitizeSafeUrl(decodedVal, {
+          allowHash: lowerAttr === 'href',
+          allowMailto: lowerAttr === 'href',
+          allowDataImage: isImgSrc
+        });
+        if (!safeUrl) {
+          return lowerAttr === 'href' ? ' href="#"' : '';
+        }
+        return ` ${lowerAttr}="${escapeHtml(safeUrl)}"`;
+      }
+    );
+
+    // Strip CSS expression() / url(javascript:...) inside style attributes
+    attrs = attrs.replace(
+      /\s+style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi,
+      (_m, dq, sq) => {
+        const styleVal = String(dq ?? sq ?? '');
+        if (/expression\s*\(|javascript:|vbscript:|@import|behavior\s*:/i.test(styleVal)) {
+          return '';
+        }
+        return ` style="${escapeHtml(styleVal)}"`;
+      }
+    );
+
+    return `<${tagName}${attrs}${selfClose}>`;
+  });
+
   const usedIds = new Set<string>();
 
   // 1. Ensure <h2> and <h3> have id attributes for deep-linking & schema anchors

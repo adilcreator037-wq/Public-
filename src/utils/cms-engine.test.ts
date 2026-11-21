@@ -22,6 +22,7 @@ import {
   generateRssFeedXml,
   auditSiteSeoHealth,
   sanitizeEditorialHtmlForSeo,
+  sanitizeSafeUrl,
   applySmartInternalLinks,
   encryptVaultValue,
   decryptVaultValue,
@@ -41,7 +42,11 @@ import {
   validateAdminSessionClaims
 } from './cms-engine';
 import { routePathToStaticJsonName, compileStaticSiteBundle } from './static-compiler';
-import { computeGitBlobSha1, diffGitTrees } from './github-publisher';
+import { computeGitBlobSha1, diffGitTrees, validateGitHubTargetConfig } from './github-publisher';
+import {
+  getLocalSecurityCacheStatsForTests,
+  execLocalSecurityCommandForTests
+} from './security/gate-core';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -294,12 +299,12 @@ test('auditSiteSeoHealth reports 0% and 0 sitemap URLs on EMPTY_ADMIN_CONFIG wit
 
   const partialAudit = auditSiteSeoHealth(partialConfig);
   assert.ok(partialAudit.score > 0 && partialAudit.score < 100);
-  assert.equal(partialAudit.totalUrlsInSitemap, 0);
 
-  // Disabled flags produce clean empty/disabled output consistently
-  assert.equal(generateSitemapXml(partialConfig), '');
-  assert.equal(generateRssFeedXml(partialConfig), '');
-  assert.equal(generateWebManifestJson(partialConfig), '{}');
+  // Inbuilt SEO artifacts stay ALWAYS active & valid even if legacy flags are false
+  assert.ok(generateSitemapXml(partialConfig).includes('<urlset'));
+  assert.ok(generateRssFeedXml(partialConfig).includes('<rss version="2.0">'));
+  const partialManifest = JSON.parse(generateWebManifestJson(partialConfig));
+  assert.equal(partialManifest.name, 'NovaPlayer');
 });
 
 test('v12 7-Gate Security Engine & AES-256-GCM Link Vault: encrypts/decrypts URLs, blocks bots with 404, verifies hardware cData & TokenV12, and burns single-use nonces', async () => {
@@ -935,7 +940,8 @@ test('Edge login.js + [[catchall]].js handle 6-char secret passwords, issue sess
   const authWsData = await authWsRes.json();
   assert.equal(authWsData.success, true);
   assert.ok(authWsData.html.includes('id="panel-overview"'));
-  assert.ok(authWsData.html.includes('id="seo-audit-checklist"'));
+  assert.ok(authWsData.html.includes('id="panel-sections"'));
+  assert.ok(!authWsData.html.includes('id="seo-audit-checklist"'));
 });
 
 test('validateAdminSessionClaims enforces strict issuer, type, jti, iat, and non-optional exp claims and preserves credVersion', () => {
@@ -1220,10 +1226,13 @@ test('Raw /admin.html contains zero internal workspace markup and zero environme
   const { getAdminWorkspaceShellHtml } = await import('./admin-workspace-html');
   const workspaceHtml = getAdminWorkspaceShellHtml();
   assert.ok(workspaceHtml.includes('id="panel-overview"'));
-  assert.ok(workspaceHtml.includes('id="panel-domain"'));
-  assert.ok(workspaceHtml.includes('id="btn-clear-sync-logs"'));
+  assert.ok(workspaceHtml.includes('id="panel-sections"'));
+  assert.ok(workspaceHtml.includes('id="panel-news"'));
   assert.ok(workspaceHtml.includes('id="btn-quick-add-news"'));
   assert.ok(workspaceHtml.includes('class="mobile-quick-tabs"'));
+  assert.ok(!workspaceHtml.includes('id="panel-domain"'), 'Technical Domain & SEO tab must be removed from Admin UI');
+  assert.ok(!workspaceHtml.includes('id="panel-links"'), 'Technical Internal Linking tab must be removed from Admin UI');
+  assert.ok(!workspaceHtml.includes('id="panel-security"'), 'Technical Security Gate tab must be removed from Admin UI');
 });
 
 test('sanitizeFirebaseConfigForClient strips apiKey and sets hasEnvApiKey boolean flag, and appendSyncLogEntry preserves diff counts', async () => {
@@ -1372,7 +1381,7 @@ test('Real index.html SSR injects configured content cleanly, unhides email/logo
   assert.ok(manifest.icons.some((ic: any) => ic.src === 'https://cdn.example.org/kestrel-512.png'));
 });
 
-test('Admin workspace shell exposes all 12 dedicated panels, visual color dots without visible hex text inputs, and matches Edge shell byte-for-byte', async () => {
+test('Admin workspace shell exposes streamlined 9 content-only panels, visual accent color dots without hex inputs, zero SEO/layout-bloat controls, and matches Edge shell byte-for-byte', async () => {
   const { getAdminWorkspaceShellHtml } = await import('./admin-workspace-html');
   const edgeWorkspaceHtml = await import('../../functions/_shared/admin-workspace-html.js');
   const html = getAdminWorkspaceShellHtml();
@@ -1388,34 +1397,35 @@ test('Admin workspace shell exposes all 12 dedicated panels, visual color dots w
     'panel-news',
     'panel-faqs',
     'panel-pages',
-    'panel-security',
-    'panel-links',
-    'panel-domain',
     'panel-deploy'
   ];
   for (const panelId of expectedPanels) {
-    assert.ok(html.includes(`id="${panelId}"`), `Missing workspace panel ${panelId}`);
+    assert.ok(html.includes(`id="${panelId}"`), `Missing content workspace panel ${panelId}`);
   }
 
-  assert.ok(html.includes('id="btn-toggle-custom-colors"'));
-  assert.ok(html.includes('id="ui-custom-colors-panel"'));
-  assert.ok(html.includes('data-color-choice-for="brand-color"'));
-
-  const colorFieldIds = [
-    'qc-accent-color',
-    'brand-color',
-    'brand-theme-color',
+  // Technical/SEO/layout-bloat controls MUST NOT appear in the non-technical Admin Studio
+  const forbiddenIds = [
+    'panel-domain',
+    'panel-links',
+    'panel-security',
+    'domain-robots-txt',
+    'domain-enable-sitemap',
+    'domain-enable-rss',
+    'domain-web-manifest',
+    'seo-raw-jsonld',
+    'schema-app-enabled',
     'ui-bg-page',
-    'ui-bg-surface',
     'ui-header-bg',
-    'ui-header-text',
     'ui-footer-bg',
-    'ui-footer-text',
-    'ui-border-color',
-    'ui-text-color',
-    'ui-heading-color',
-    'ui-btn-text-color'
+    'ui-max-width',
+    'ui-card-radius',
+    'ui-font-family'
   ];
+  for (const forbidden of forbiddenIds) {
+    assert.ok(!html.includes(`id="${forbidden}"`), `Technical control "${forbidden}" must NOT be exposed to non-technical admins`);
+  }
+
+  const colorFieldIds = ['qc-accent-color', 'brand-color'];
   for (const fieldId of colorFieldIds) {
     assert.ok(
       html.includes(`type="hidden" id="${fieldId}"`),
@@ -2258,6 +2268,195 @@ test('Clean Admin Studio UI enforces beginner-friendly buttons and collapsible a
   assert.ok(adminCss.includes('.advanced-settings-summary'), 'admin.css must contain .advanced-settings-summary');
   assert.ok(adminCss.includes('.advanced-settings-content'), 'admin.css must contain .advanced-settings-content');
 });
+
+test('100% Stealth Admin Isolation & Inbuilt Public SEO: zero /admin leaks in public files, robots.txt, and static bundles; strict noindex on admin.html', async () => {
+  const edgeCompiler = await import('../../functions/_shared/static-compiler.js');
+
+  // 1. Even if legacy config has Disallow: /admin in customRobotsTxt, both Node & Edge generateRobotsTxt ignore it and emit zero mention of admin
+  const poisonedCfg = mergeSiteConfig(
+    {
+      brand: { name: 'StealthPortal' },
+      domainConfig: {
+        primaryDomain: 'https://stealthportal.example',
+        customRobotsTxt: 'User-agent: *\nDisallow: /admin\nDisallow: /admin.html',
+        enableSitemapXml: false,
+        enableRssFeed: false,
+        enableWebManifest: false
+      }
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  const nodeRobots = generateRobotsTxt(poisonedCfg);
+  const edgeRobots = edgeCompiler.generateRobotsTxtEdge(poisonedCfg);
+  for (const [label, robots] of [
+    ['Node robots.txt', nodeRobots],
+    ['Edge robots.txt', edgeRobots]
+  ] as const) {
+    assert.ok(!/admin/i.test(robots), `${label} must NEVER mention admin`);
+    assert.ok(robots.includes('User-agent: *'), `${label} must include User-agent: *`);
+    assert.ok(robots.includes('Allow: /'), `${label} must include Allow: /`);
+    assert.ok(robots.includes('Sitemap: https://stealthportal.example/sitemap.xml'), `${label} must include automatic Sitemap pointer`);
+  }
+
+  // 2. Public source files must contain ZERO mentions of admin
+  const publicFiles = ['index.html', 'app.js', 'moreinfo.html', 'moreinfo.js'];
+  for (const fileName of publicFiles) {
+    const content = fs.readFileSync(path.join(process.cwd(), fileName), 'utf-8');
+    assert.ok(!/\badmin\b|\/admin/i.test(content), `Public file ${fileName} must NEVER mention admin or /admin`);
+  }
+
+  // 3. Compiled static bundle must contain ZERO mentions of /admin across all emitted files and always emit inbuilt SEO files
+  const realIndexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
+  const realAppJs = fs.readFileSync(path.join(process.cwd(), 'app.js'), 'utf-8');
+  const realMoreinfoHtml = fs.readFileSync(path.join(process.cwd(), 'moreinfo.html'), 'utf-8');
+  const realMoreinfoJs = fs.readFileSync(path.join(process.cwd(), 'moreinfo.js'), 'utf-8');
+  const bundle = compileStaticSiteBundle(poisonedCfg, realIndexHtml, {
+    appJsContent: realAppJs,
+    moreinfoHtmlTemplate: realMoreinfoHtml,
+    moreinfoJsContent: realMoreinfoJs
+  });
+  for (const requiredSeo of ['robots.txt', 'sitemap.xml', 'feed.xml', 'manifest.webmanifest']) {
+    assert.ok(bundle.files.some((f) => f.path === requiredSeo), `Compiled public bundle must always include inbuilt ${requiredSeo}`);
+  }
+  for (const f of bundle.files) {
+    if (f.encoding === 'utf-8') {
+      assert.ok(!/\/admin\b/i.test(f.content), `Compiled public file ${f.path} leaked /admin`);
+    }
+  }
+
+  // 4. admin.html must enforce strict noindex, nofollow, noarchive, nosnippet, noimageindex
+  const adminHtml = fs.readFileSync(path.join(process.cwd(), 'admin.html'), 'utf-8');
+  assert.ok(adminHtml.includes('noindex, nofollow, noarchive, nosnippet, noimageindex'));
+  assert.ok(adminHtml.includes('name="googlebot"'));
+});
+
+test('Node & Edge HTML and URL sanitization strips active scripts, event handlers, and unsafe schemes while preserving editorial formatting', async () => {
+  const edgeCompiler = await import('../../functions/_shared/static-compiler.js');
+
+  const dirtyHtml = `
+    <h2>Safe Heading</h2>
+    <script>alert("xss")</script>
+    <iframe src="https://evil.example/frame"></iframe>
+    <svg onload="alert(1)"><circle r="10"/></svg>
+    <p onclick="alert(2)">Readable paragraph with <a href="javascript:alert(3)">bad link</a> and <a href="https://trusted.example/docs">good link</a>.</p>
+    <img src="https://cdn.example.com/pic.png" onerror="alert(4)">
+    <a href="data:text/html,<script>alert(5)</script>">data link</a>
+    <details><summary>FAQ</summary><p>Answer</p></details>
+  `;
+
+  for (const [label, fn] of [
+    ['Node sanitizeEditorialHtmlForSeo', sanitizeEditorialHtmlForSeo],
+    ['Edge sanitizeEditorialHtmlEdge', edgeCompiler.sanitizeEditorialHtmlEdge]
+  ] as const) {
+    const clean = fn(dirtyHtml, 'FallbackAlt');
+    assert.ok(!/<script\b/i.test(clean), `${label} must remove <script>`);
+    assert.ok(!/<iframe\b/i.test(clean), `${label} must remove <iframe>`);
+    assert.ok(!/<svg\b/i.test(clean), `${label} must remove <svg>`);
+    assert.ok(!/\bonclick\b|\bonerror\b|\bonload\b/i.test(clean), `${label} must strip inline event handlers`);
+    assert.ok(!/javascript:/i.test(clean), `${label} must strip javascript: URLs`);
+    assert.ok(!/data:text\/html/i.test(clean), `${label} must strip data:text/html URLs`);
+    assert.ok(clean.includes('id="safe-heading"'), `${label} must preserve heading IDs`);
+    assert.ok(clean.includes('https://trusted.example/docs'), `${label} must preserve safe https links`);
+    assert.ok(clean.includes('loading="lazy"'), `${label} must keep lazy image attributes`);
+    assert.ok(clean.includes('<details><summary>FAQ</summary>'), `${label} must preserve <details>`);
+  }
+
+  for (const [label, urlFn] of [
+    ['Node sanitizeSafeUrl', sanitizeSafeUrl],
+    ['Edge sanitizeSafeUrlEdge', edgeCompiler.sanitizeSafeUrlEdge]
+  ] as const) {
+    assert.equal(urlFn('javascript:alert(1)'), '', `${label} blocks javascript:`);
+    assert.equal(urlFn('vbscript:msgbox(1)'), '', `${label} blocks vbscript:`);
+    assert.equal(urlFn('data:text/html,<b>x</b>'), '', `${label} blocks data:text/html`);
+    assert.equal(urlFn('//evil.example/path'), '', `${label} blocks protocol-relative URLs`);
+    assert.equal(urlFn('https://official.example/page'), 'https://official.example/page', `${label} allows https`);
+    assert.equal(urlFn('/news/update'), '/news/update', `${label} allows root-relative paths`);
+    assert.equal(urlFn('#specs', { allowHash: true }), '#specs', `${label} allows hash anchors when enabled`);
+    assert.equal(urlFn('mailto:help@example.com', { allowMailto: true }), 'mailto:help@example.com', `${label} allows mailto when enabled`);
+  }
+});
+
+test('Node & Edge static page rendering escapes </script> in JSON-LD and emits hardened _headers', async () => {
+  const edgeCompiler = await import('../../functions/_shared/static-compiler.js');
+
+  const cfg = mergeSiteConfig(
+    {
+      brand: {
+        name: 'Brand</script><script>alert(1)</script>',
+        tagline: 'Safe </script> tagline',
+        logoUrl: 'https://cdn.example.com/logo.png'
+      },
+      hero: {
+        h1: 'Hero </script> Title'
+      },
+      domainConfig: {
+        primaryDomain: 'https://safe.example.com'
+      }
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  const realIndexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
+  const nodeHtml = renderCompleteStaticPageHtml(realIndexHtml, cfg, '/');
+  const edgeHtml = edgeCompiler.renderCompleteStaticPageHtmlEdge(realIndexHtml, cfg, '/');
+
+  for (const [label, html] of [
+    ['Node renderCompleteStaticPageHtml', nodeHtml],
+    ['Edge renderCompleteStaticPageHtmlEdge', edgeHtml]
+  ] as const) {
+    assert.ok(!html.includes('</script><script>alert(1)</script>'), `${label} must prevent script-tag breakout`);
+    assert.ok(html.includes('\\u003c/script>'), `${label} must escape < as \\u003c inside JSON-LD`);
+  }
+
+  const nodeBundle = compileStaticSiteBundle(cfg, realIndexHtml);
+  const edgeFiles = edgeCompiler.compileEdgeStaticSiteBundle(cfg, { indexHtmlTemplate: realIndexHtml });
+  for (const [label, headersFile] of [
+    ['Node _headers', nodeBundle.files.find((f) => f.path === '_headers')],
+    ['Edge _headers', edgeFiles.find((f: any) => f.path === '_headers')]
+  ] as const) {
+    assert.ok(headersFile, `${label} must be emitted`);
+    assert.ok(headersFile.content.includes('X-Content-Type-Options: nosniff'), `${label} includes nosniff`);
+    assert.ok(headersFile.content.includes('Permissions-Policy:'), `${label} includes Permissions-Policy`);
+    assert.ok(headersFile.content.includes('/uploads/*'), `${label} includes /uploads/* policy`);
+    assert.ok(headersFile.content.includes("default-src 'none'; sandbox"), `${label} sandboxes /uploads/*`);
+  }
+});
+
+test('Node & Edge GitHub target config validation rejects path traversal and invalid repo identifiers', async () => {
+  const edgeGithub = await import('../../functions/_shared/github.js');
+
+  for (const [label, validateFn] of [
+    ['Node validateGitHubTargetConfig', validateGitHubTargetConfig],
+    ['Edge validateGitHubTargetConfigEdge', edgeGithub.validateGitHubTargetConfigEdge]
+  ] as const) {
+    const okRes = validateFn({ repoOwner: 'acme-org', repoName: 'portal-static', branch: 'main', targetDirectory: 'public' });
+    assert.equal(okRes.valid, true, `${label} accepts valid config`);
+    assert.equal(okRes.targetDir, 'public');
+    assert.equal(validateFn({ repoOwner: '../evil', repoName: 'portal', branch: 'main' }).valid, false, `${label} rejects invalid repoOwner`);
+    assert.equal(validateFn({ repoOwner: 'acme', repoName: 'bad/repo', branch: 'main' }).valid, false, `${label} rejects invalid repoName`);
+    assert.equal(validateFn({ repoOwner: 'acme', repoName: 'portal', branch: 'main..bad' }).valid, false, `${label} rejects invalid branch`);
+    assert.equal(validateFn({ repoOwner: 'acme', repoName: 'portal', branch: 'main', targetDirectory: '../../etc' }).valid, false, `${label} rejects .. path traversal in targetDirectory`);
+    assert.equal(validateFn({ repoOwner: 'acme', repoName: 'portal', branch: 'main', targetDirectory: 'dir\\sub' }).valid, false, `${label} rejects backslashes in targetDirectory`);
+  }
+});
+
+test('gate-core local security memory store stays strictly bounded under sustained write pressure', () => {
+  for (let i = 0; i < 10250; i++) {
+    execLocalSecurityCommandForTests(['SET', `test:cap:${i}`, '1', 'EX', '300']);
+  }
+  const stats = getLocalSecurityCacheStatsForTests();
+  assert.ok(
+    stats.redisEntries <= stats.maxRedisEntries && stats.redisEntries <= 10000,
+    `Expected bounded redisEntries <= 10000, got ${stats.redisEntries}`
+  );
+  assert.ok(
+    stats.quarantineEntries <= stats.maxQuarantineEntries && stats.quarantineEntries <= 5000,
+    `Expected bounded quarantineEntries <= 5000, got ${stats.quarantineEntries}`
+  );
+});
+
+
 
 
 

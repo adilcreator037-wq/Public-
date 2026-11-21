@@ -204,6 +204,50 @@ function updateClearanceButtonUi() {
   label.textContent = nonceData ? 'VERIFYING…' : 'PLEASE WAIT…';
 }
 
+function sanitizeSafeUrlClient(rawUrl, httpOnly = false) {
+  const trimmed = String(rawUrl || '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .trim();
+  if (!trimmed || trimmed.startsWith('//')) return '';
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('https://') || lower.startsWith('http://')) return trimmed;
+  if (!httpOnly && trimmed.startsWith('/')) return trimmed;
+  if (
+    !httpOnly &&
+    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  return '';
+}
+
+function sanitizeGatewayNoteHtml(rawHtml) {
+  if (!rawHtml || !String(rawHtml).trim()) return '';
+  let html = String(rawHtml);
+  const blocked = 'script|iframe|object|embed|applet|style|svg|math|noscript|template|textarea|title|xmp|form';
+  html = html.replace(new RegExp(`<(${blocked})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, 'gi'), '');
+  html = html.replace(new RegExp(`<\\/?(${blocked}|base|meta|link|frame|frameset|input|button|select|option)\\b[^>]*>`, 'gi'), '');
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+  html = html.replace(/<([a-zA-Z][a-zA-Z0-9:-]*)(\s[^>]*?)?(\/?)>/g, (_full, tag, rawAttrs = '', selfClose = '') => {
+    let attrs = String(rawAttrs || '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*(?=\s|$|\/)/gi, '');
+    attrs = attrs.replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    attrs = attrs.replace(
+      /\s+(href|src|action|formaction|poster|xlink:href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+      (_m, attrName, dq, sq, uq) => {
+        const val = dq ?? sq ?? uq ?? '';
+        const lowerAttr = String(attrName).toLowerCase();
+        const safe = sanitizeSafeUrlClient(val, false);
+        if (!safe) return lowerAttr === 'href' ? ' href="#"' : '';
+        return ` ${lowerAttr}="${safe.replace(/"/g, '&quot;')}"`;
+      }
+    );
+    return `<${tag}${attrs}${selfClose}>`;
+  });
+  return html;
+}
+
 function showGatewayNotice(message, type = 'amber', helpline = null) {
   const box = document.getElementById('gw-notice-box');
   const textEl = document.getElementById('gw-notice-text');
@@ -216,8 +260,8 @@ function showGatewayNotice(message, type = 'amber', helpline = null) {
 
   if (helplineRow) {
     helplineRow.innerHTML = '';
-    const wa = helpline?.whatsapp || gatewayConfig.helplineWhatsapp || '';
-    const tg = helpline?.telegram || gatewayConfig.helplineTelegram || '';
+    const wa = sanitizeSafeUrlClient(helpline?.whatsapp || gatewayConfig.helplineWhatsapp || '', true);
+    const tg = sanitizeSafeUrlClient(helpline?.telegram || gatewayConfig.helplineTelegram || '', true);
     if (wa) {
       const a = document.createElement('a');
       a.href = wa;
@@ -267,10 +311,11 @@ function applyGatewayMetadata(meta) {
   const footerCopy = document.getElementById('gw-footer-copyright');
 
   const displayTitle = meta.customHeading || meta.appName || meta.brandName || '';
+  const safeLogoUrl = sanitizeSafeUrlClient(meta.logoUrl || '', false);
   if (brandNameEl) brandNameEl.textContent = meta.brandName || '';
   if (brandLogoEl) {
-    if (meta.logoUrl) {
-      brandLogoEl.src = meta.logoUrl;
+    if (safeLogoUrl) {
+      brandLogoEl.src = safeLogoUrl;
       brandLogoEl.alt = meta.brandName ? `${meta.brandName} Logo` : 'Logo';
       brandLogoEl.classList.remove('hidden');
     } else {
@@ -279,8 +324,8 @@ function applyGatewayMetadata(meta) {
     }
   }
   if (appIconEl) {
-    if (meta.logoUrl) {
-      appIconEl.src = meta.logoUrl;
+    if (safeLogoUrl) {
+      appIconEl.src = safeLogoUrl;
       appIconEl.alt = displayTitle || 'Icon';
       appIconEl.classList.remove('hidden');
     } else {
@@ -294,9 +339,9 @@ function applyGatewayMetadata(meta) {
   if (appMetaDotEl) appMetaDotEl.classList.toggle('hidden', !(meta.version && meta.fileSize));
 
   if (customNoteEl) {
-    const note = (meta.customNoteHtml || '').trim();
-    if (note) {
-      customNoteEl.innerHTML = note;
+    const safeNote = sanitizeGatewayNoteHtml((meta.customNoteHtml || '').trim());
+    if (safeNote) {
+      customNoteEl.innerHTML = safeNote;
       customNoteEl.classList.remove('hidden');
     } else {
       customNoteEl.innerHTML = '';
@@ -593,7 +638,14 @@ async function handleClearanceSubmit(e) {
     const data = await res.json().catch(() => null);
 
     if (res.ok && data && (data.status === 'available' || data.status === 'ok') && data.url) {
-      window.location.replace(data.url);
+      const safeDestUrl = sanitizeSafeUrlClient(data.url, true);
+      if (safeDestUrl) {
+        window.location.replace(safeDestUrl);
+        return;
+      }
+      isSubmitting = false;
+      showGatewayNotice('Invalid destination link configured. Please contact support.', 'amber');
+      updateClearanceButtonUi();
       return;
     }
 

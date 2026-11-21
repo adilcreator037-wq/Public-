@@ -84,6 +84,9 @@ export interface GateResponse {
 // Isolate / In-Memory Fast Caches & Local Dev Redis Fallback
 // ============================================================================
 
+const MAX_QUARANTINE_CACHE_ENTRIES = 5000;
+const MAX_LOCAL_REDIS_ENTRIES = 10000;
+
 const isolateQuarantineCache = new Map<string, number>();
 let cachedSignalModes: { modes: Record<string, SignalMode>; expiresAt: number } | null = null;
 
@@ -92,6 +95,32 @@ interface LocalMemEntry {
   expiresAt: number;
 }
 const localMemRedis = new Map<string, LocalMemEntry>();
+
+function pruneIsolateQuarantineCache(now: number): void {
+  if (isolateQuarantineCache.size <= MAX_QUARANTINE_CACHE_ENTRIES) return;
+  for (const [k, exp] of isolateQuarantineCache.entries()) {
+    if (now > exp) isolateQuarantineCache.delete(k);
+  }
+  while (isolateQuarantineCache.size > MAX_QUARANTINE_CACHE_ENTRIES) {
+    const oldestKey = isolateQuarantineCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    isolateQuarantineCache.delete(oldestKey);
+  }
+}
+
+function pruneLocalMemRedis(now: number): void {
+  if (localMemRedis.size <= MAX_LOCAL_REDIS_ENTRIES) return;
+  for (const [k, entry] of localMemRedis.entries()) {
+    if (entry.expiresAt > 0 && now > entry.expiresAt) {
+      localMemRedis.delete(k);
+    }
+  }
+  while (localMemRedis.size > MAX_LOCAL_REDIS_ENTRIES) {
+    const oldestKey = localMemRedis.keys().next().value;
+    if (oldestKey === undefined) break;
+    localMemRedis.delete(oldestKey);
+  }
+}
 
 function cleanLocalKey(key: string): LocalMemEntry | undefined {
   const entry = localMemRedis.get(key);
@@ -105,6 +134,24 @@ function cleanLocalKey(key: string): LocalMemEntry | undefined {
 export function clearLocalSecurityRedisForTests(): void {
   localMemRedis.clear();
   isolateQuarantineCache.clear();
+}
+
+export function getLocalSecurityCacheStatsForTests(): {
+  redisEntries: number;
+  quarantineEntries: number;
+  maxRedisEntries: number;
+  maxQuarantineEntries: number;
+} {
+  return {
+    redisEntries: localMemRedis.size,
+    quarantineEntries: isolateQuarantineCache.size,
+    maxRedisEntries: MAX_LOCAL_REDIS_ENTRIES,
+    maxQuarantineEntries: MAX_QUARANTINE_CACHE_ENTRIES,
+  };
+}
+
+export function execLocalSecurityCommandForTests(cmd: (string | number)[]): unknown {
+  return execLocalCommand(cmd);
 }
 
 function execLocalCommand(cmd: (string | number)[]): unknown {
@@ -140,6 +187,7 @@ function execLocalCommand(cmd: (string | number)[]): unknown {
       val,
       expiresAt: ttlMs > 0 ? now + ttlMs : 0,
     });
+    pruneLocalMemRedis(now);
     return 'OK';
   }
   if (op === 'INCR' || op === 'INCRBY') {
@@ -150,6 +198,7 @@ function execLocalCommand(cmd: (string | number)[]): unknown {
       val: String(nextVal),
       expiresAt: existing ? existing.expiresAt : 0,
     });
+    pruneLocalMemRedis(now);
     return nextVal;
   }
   if (op === 'EXPIRE') {
@@ -758,7 +807,9 @@ async function recordHardFailure(
 ): Promise<void> {
   const cmds: (string | number)[][] = [];
   if (quarantineDevice && did) {
-    isolateQuarantineCache.set(did, Date.now() + QUARANTINE_HARD_S * 1000);
+    const now = Date.now();
+    isolateQuarantineCache.set(did, now + QUARANTINE_HARD_S * 1000);
+    pruneIsolateQuarantineCache(now);
     cmds.push(['SET', `quarantine:${did}`, '1', 'EX', QUARANTINE_HARD_S, 'NX']);
   }
   if (!did) {

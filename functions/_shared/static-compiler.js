@@ -40,6 +40,132 @@ export function generateSlugEdge(text) {
     .replace(/^-|-$/g, '');
 }
 
+export function sanitizeSafeUrlEdge(rawUrl = '', options = {}) {
+  const { allowHash = true, allowMailto = true, allowDataImage = false } = options || {};
+  const trimmed = String(rawUrl || '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) return '';
+  if (trimmed.startsWith('/')) return trimmed;
+  if (trimmed.startsWith('#')) return allowHash ? trimmed : '';
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    return trimmed;
+  }
+  if (allowMailto && (lower.startsWith('mailto:') || lower.startsWith('tel:'))) {
+    return trimmed;
+  }
+  if (
+    allowDataImage &&
+    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
+}
+
+export function sanitizeEditorialHtmlEdge(rawHtml = '', fallbackAlt = 'Editorial Illustration') {
+  if (!rawHtml || !String(rawHtml).trim()) return '';
+  let html = String(rawHtml);
+
+  const dangerousBlockTags =
+    'script|iframe|object|embed|applet|style|svg|math|noscript|template|textarea|title|xmp|form';
+  html = html.replace(
+    new RegExp(`<(${dangerousBlockTags})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, 'gi'),
+    ''
+  );
+  html = html.replace(
+    new RegExp(`<\\/?(${dangerousBlockTags}|base|meta|link|frame|frameset|input|button|select|option)\\b[^>]*>`, 'gi'),
+    ''
+  );
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  html = html.replace(/<([a-zA-Z][a-zA-Z0-9:-]*)(\s[^>]*?)?(\/?)>/g, (_full, tagName, rawAttrs = '', selfClose = '') => {
+    let attrs = String(rawAttrs || '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*(?=\s|$|\/)/gi, '');
+    attrs = attrs.replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+
+    attrs = attrs.replace(
+      /\s+(href|src|action|formaction|poster|xlink:href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+      (_m, attrName, dq, sq, uq) => {
+        const rawVal = dq ?? sq ?? uq ?? '';
+        const decodedVal = rawVal
+          .replace(/&#x([0-9a-f]+);?/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+          .replace(/&#(\d+);?/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+          .replace(/&colon;/gi, ':')
+          .replace(/&tab;/gi, '')
+          .replace(/&newline;/gi, '');
+        const lowerAttr = String(attrName).toLowerCase();
+        const isImgSrc = lowerAttr === 'src' && String(tagName).toLowerCase() === 'img';
+        const safeUrl = sanitizeSafeUrlEdge(decodedVal, {
+          allowHash: lowerAttr === 'href',
+          allowMailto: lowerAttr === 'href',
+          allowDataImage: isImgSrc
+        });
+        if (!safeUrl) {
+          return lowerAttr === 'href' ? ' href="#"' : '';
+        }
+        return ` ${lowerAttr}="${escapeHtmlEdge(safeUrl)}"`;
+      }
+    );
+
+    attrs = attrs.replace(
+      /\s+style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi,
+      (_m, dq, sq) => {
+        const styleVal = String(dq ?? sq ?? '');
+        if (/expression\s*\(|javascript:|vbscript:|@import|behavior\s*:/i.test(styleVal)) {
+          return '';
+        }
+        return ` style="${escapeHtmlEdge(styleVal)}"`;
+      }
+    );
+
+    return `<${tagName}${attrs}${selfClose}>`;
+  });
+
+  const usedIds = new Set();
+  html = html.replace(/<(h[23])([^>]*)>([\s\S]*?)<\/\1>/gi, (full, tag, attrs, inner) => {
+    if (/\bid\s*=/i.test(attrs)) {
+      const idMatch = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+      if (idMatch?.[1]) usedIds.add(idMatch[1]);
+      return full;
+    }
+    const plainText = String(inner).replace(/<[^>]+>/g, '').trim();
+    const baseSlug = generateSlugEdge(plainText) || 'section';
+    let slug = baseSlug;
+    let counter = 2;
+    while (usedIds.has(slug)) {
+      slug = `${baseSlug}-${counter++}`;
+    }
+    usedIds.add(slug);
+    return `<${tag}${attrs} id="${slug}">${inner}</${tag}>`;
+  });
+
+  html = html.replace(/<img\b([^>]*?)\/?>/gi, (_full, rawAttrs) => {
+    let attrs = String(rawAttrs || '');
+    if (!/\balt\s*=/i.test(attrs)) {
+      attrs += ` alt="${escapeHtmlEdge(fallbackAlt)}"`;
+    } else {
+      attrs = attrs.replace(/\balt\s*=\s*""/i, `alt="${escapeHtmlEdge(fallbackAlt)}"`);
+    }
+    if (!/\bloading\s*=/i.test(attrs)) {
+      attrs += ' loading="lazy"';
+    }
+    if (!/\bdecoding\s*=/i.test(attrs)) {
+      attrs += ' decoding="async"';
+    }
+    return `<img${attrs} />`;
+  });
+
+  return html;
+}
+
 export function normalizeDomainUrlEdge(rawDomain, forceHttps = true) {
   let clean = String(rawDomain || '').trim();
   if (!clean) return 'https://example.com';
@@ -135,10 +261,12 @@ export function buildResponsiveImageSrcSetEdge(url, widths = [480, 768, 1200]) {
 }
 
 function buildResponsiveImgTagEdge(rawUrl, alt, opts = {}) {
+  const safeRawUrl = sanitizeSafeUrlEdge(rawUrl, { allowHash: false, allowMailto: false, allowDataImage: true });
+  if (!safeRawUrl) return '';
   const isHigh = opts.priority === 'high';
   const maxWidth = opts.maxWidth || (isHigh ? 1200 : 768);
-  const src = optimizeImageUrlEdge(rawUrl, maxWidth);
-  const srcSet = buildResponsiveImageSrcSetEdge(rawUrl, isHigh ? [480, 768, 1200] : [400, 768]);
+  const src = optimizeImageUrlEdge(safeRawUrl, maxWidth);
+  const srcSet = buildResponsiveImageSrcSetEdge(safeRawUrl, isHigh ? [480, 768, 1200] : [400, 768]);
   const sizes = opts.sizes || '(max-width: 768px) 100vw, 720px';
   const classAttr = opts.className ? ` class="${escapeHtmlEdge(opts.className)}"` : '';
   const srcSetAttrs = srcSet ? ` srcset="${escapeHtmlEdge(srcSet)}" sizes="${escapeHtmlEdge(sizes)}"` : '';
@@ -200,51 +328,61 @@ function getNewsArticlesEdge(config) {
 }
 
 export function generateSitemapXmlEdge(config) {
-  if (config?.domainConfig?.enableSitemapXml === false || !isSiteConfiguredEdge(config)) {
-    return '';
-  }
   const baseUrl = normalizeBaseUrlEdge(config);
   const nowIso = new Date().toISOString().split('T')[0];
-  const heroImg = config?.hero?.bannerImageUrl
-    ? toAbsoluteAssetUrlEdge(config.hero.bannerImageUrl, baseUrl)
-    : '';
+  const homeImages = [];
+  if (config?.hero?.showBanner !== false && config?.hero?.bannerImageUrl) {
+    homeImages.push({
+      loc: toAbsoluteAssetUrlEdge(config.hero.bannerImageUrl, baseUrl),
+      title: config?.hero?.bannerAlt || config?.hero?.h1 || config?.brand?.name || 'Banner'
+    });
+  }
+  for (const sec of config?.sections || []) {
+    if (sec && sec.visible !== false && sec.imageUrl) {
+      homeImages.push({
+        loc: toAbsoluteAssetUrlEdge(sec.imageUrl, baseUrl),
+        title: sec.imageAlt || sec.heading || 'Illustration'
+      });
+    }
+  }
   const urls = [
     {
       loc: `${baseUrl}/`,
       priority: '1.0',
       changefreq: 'daily',
-      images: heroImg
-        ? [{ loc: heroImg, title: config?.hero?.bannerAlt || config?.brand?.name || 'Banner' }]
-        : []
+      images: homeImages
+    },
+    {
+      loc: `${baseUrl}/news`,
+      priority: '0.9',
+      changefreq: 'daily',
+      images: []
     }
   ];
 
   const articles = getNewsArticlesEdge(config);
-  if (config?.newsSection?.enabled !== false && articles.length > 0) {
-    urls.push({ loc: `${baseUrl}/news`, priority: '0.8', changefreq: 'daily', images: [] });
-    for (const art of articles) {
-      const slug = generateSlugEdge(art.slug || art.title);
-      if (slug) {
-        const cov = art.coverImageUrl ? toAbsoluteAssetUrlEdge(art.coverImageUrl, baseUrl) : '';
-        urls.push({
-          loc: `${baseUrl}/news/${slug}`,
-          priority: '0.7',
-          changefreq: 'weekly',
-          images: cov ? [{ loc: cov, title: art.title || slug }] : []
-        });
-      }
+  for (const art of articles) {
+    const slug = generateSlugEdge(art.slug || art.title);
+    if (slug) {
+      const cov = art.coverImageUrl ? toAbsoluteAssetUrlEdge(art.coverImageUrl, baseUrl) : '';
+      urls.push({
+        loc: `${baseUrl}/news/${slug}`,
+        priority: '0.8',
+        changefreq: 'weekly',
+        images: cov ? [{ loc: cov, title: art.coverImageAlt || art.title || slug }] : []
+      });
     }
   }
 
   for (const pg of config?.pages || []) {
     const slug = generateSlugEdge(pg.slug || pg.label);
-    if (pg.showInFooter !== false && slug) {
+    if (slug) {
       const pgImg = pg.bannerImageUrl ? toAbsoluteAssetUrlEdge(pg.bannerImageUrl, baseUrl) : '';
       urls.push({
         loc: `${baseUrl}/${slug}`,
-        priority: '0.5',
+        priority: '0.6',
         changefreq: 'monthly',
-        images: pgImg ? [{ loc: pgImg, title: pg.h1 || pg.label || slug }] : []
+        images: pgImg ? [{ loc: pgImg, title: pg.bannerImageAlt || pg.h1 || pg.label || slug }] : []
       });
     }
   }
@@ -261,29 +399,26 @@ export function generateSitemapXmlEdge(config) {
     })
     .join('\n');
 
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${nodes}\n</urlset>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${nodes}\n</urlset>`;
 }
 
 export function generateRobotsTxtEdge(config) {
   const baseUrl = normalizeBaseUrlEdge(config);
-  const custom = cleanEnvVal(config?.domainConfig?.customRobotsTxt);
-  const baseRules =
-    custom ||
-    'User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /moreinfo\nDisallow: /download\nDisallow: /api/\nDisallow: /api/v1/app/';
-  const lines = baseRules
-    .split('\n')
-    .map((l) => l.trimEnd())
-    .filter((l) => !/^sitemap:/i.test(l));
-  if (config?.domainConfig?.enableSitemapXml !== false) {
-    lines.push('', `Sitemap: ${baseUrl}/sitemap.xml`);
-  }
-  return lines.join('\n');
+  return [
+    'User-agent: *',
+    'Allow: /',
+    'Disallow: /moreinfo',
+    'Disallow: /moreinfo/',
+    'Disallow: /download',
+    'Disallow: /download/',
+    'Disallow: /api/v1/app/',
+    '',
+    `Sitemap: ${baseUrl}/sitemap.xml`,
+    ''
+  ].join('\n');
 }
 
 export function generateRssFeedXmlEdge(config) {
-  if (config?.domainConfig?.enableRssFeed === false || !isSiteConfiguredEdge(config)) {
-    return '';
-  }
   const baseUrl = normalizeBaseUrlEdge(config);
   const brand = (config?.brand?.name || 'Site').trim();
   const desc = config?.seo?.metaDescription || config?.brand?.tagline || '';
@@ -300,9 +435,6 @@ export function generateRssFeedXmlEdge(config) {
 }
 
 export function generateWebManifestJsonEdge(config) {
-  if (config?.domainConfig?.enableWebManifest === false) {
-    return '{}';
-  }
   const brand = (config?.brand?.name || '').trim();
   const rawIcons = [
     { src: config?.brand?.searchLogoUrl, sizes: '512x512' },
@@ -656,10 +788,11 @@ function renderMainContentEdge(route, config, selectedCategory = 'ALL') {
           ${a.coverImageCaption ? `<figcaption class="media-caption">${escapeHtmlEdge(a.coverImageCaption)}</figcaption>` : ''}
         </figure>`
       : '';
+    const safeArticleCtaUrl = sanitizeSafeUrlEdge(a.ctaUrl || '', { allowHash: true, allowMailto: true });
     const articleCtaHtml =
-      a.ctaLabel && a.ctaUrl
+      a.ctaLabel && safeArticleCtaUrl
         ? `<div style="margin: 24px 0;">
-            <a href="${escapeHtmlEdge(a.ctaUrl)}" data-spa-link class="section-inline-cta">${escapeHtmlEdge(a.ctaLabel)}</a>
+            <a href="${escapeHtmlEdge(safeArticleCtaUrl)}" data-spa-link class="section-inline-cta">${escapeHtmlEdge(a.ctaLabel)}</a>
           </div>`
         : '';
     const relatedHtml =
@@ -694,7 +827,7 @@ function renderMainContentEdge(route, config, selectedCategory = 'ALL') {
         ${a.readTime ? `<span aria-hidden="true">·</span><span>${escapeHtmlEdge(a.readTime)}</span>` : ''}
       </div>
       ${coverHtml}
-      ${wrapEditorialTablesEdge(ensureCleanHtmlParagraphsEdge(a.htmlContent) || `<p>${escapeHtmlEdge(a.summary || '')}</p>`)}
+      ${wrapEditorialTablesEdge(sanitizeEditorialHtmlEdge(ensureCleanHtmlParagraphsEdge(a.htmlContent) || `<p>${escapeHtmlEdge(a.summary || '')}</p>`, a.title || 'News Illustration'))}
       ${articleCtaHtml}
       ${relatedHtml}
     `;
@@ -719,14 +852,20 @@ function renderMainContentEdge(route, config, selectedCategory = 'ALL') {
         ${escapeHtmlEdge(pg.subtitle || 'Official Document')} · Last Updated: <strong>${escapeHtmlEdge(pg.lastUpdated || '')}</strong>
       </p>
       ${banner}
-      ${wrapEditorialTablesEdge(ensureCleanHtmlParagraphsEdge(pg.htmlContent || ''))}
+      ${wrapEditorialTablesEdge(sanitizeEditorialHtmlEdge(ensureCleanHtmlParagraphsEdge(pg.htmlContent || ''), pg.h1 || pg.label || 'Official Document'))}
     `;
   }
 
   // Homepage
   const introParts = [];
   if (config?.hero?.introHtml) {
-    introParts.push(`<div class="hero-intro-block">${ensureCleanHtmlParagraphsEdge(config.hero.introHtml)}</div>`);
+    const safeIntro = sanitizeEditorialHtmlEdge(
+      ensureCleanHtmlParagraphsEdge(config.hero.introHtml),
+      config?.brand?.name || 'Official Guide'
+    );
+    if (safeIntro) {
+      introParts.push(`<div class="hero-intro-block">${safeIntro}</div>`);
+    }
   }
   if (config?.hero?.showBanner !== false && config?.hero?.bannerImageUrl) {
     const bannerAlt = config.hero.bannerAlt || config?.brand?.name || 'Banner';
@@ -782,10 +921,11 @@ function renderMainContentEdge(route, config, selectedCategory = 'ALL') {
               ${s.imageCaption ? `<figcaption class="media-caption">${escapeHtmlEdge(s.imageCaption)}</figcaption>` : ''}
             </figure>`
           : '';
+        const safeSectionCtaUrl = sanitizeSafeUrlEdge(s.ctaUrl || '', { allowHash: true, allowMailto: true });
         const ctaMarkup =
-          s.ctaLabel && s.ctaUrl
+          s.ctaLabel && safeSectionCtaUrl
             ? `<div style="margin: 16px 0 8px 0;">
-                <a href="${escapeHtmlEdge(s.ctaUrl)}" data-spa-link class="section-inline-cta">${escapeHtmlEdge(s.ctaLabel)}</a>
+                <a href="${escapeHtmlEdge(safeSectionCtaUrl)}" data-spa-link class="section-inline-cta">${escapeHtmlEdge(s.ctaLabel)}</a>
               </div>`
             : '';
         return `
@@ -793,14 +933,16 @@ function renderMainContentEdge(route, config, selectedCategory = 'ALL') {
             ${badgeHtml}
             <h2 id="${escapeHtmlEdge(slug)}-heading">${escapeHtmlEdge(s.heading || '')}</h2>
             ${effImgPos === 'top' ? imgMarkup : ''}
-            ${wrapEditorialTablesEdge(ensureCleanHtmlParagraphsEdge(s.htmlContent || ''))}
+            ${wrapEditorialTablesEdge(sanitizeEditorialHtmlEdge(ensureCleanHtmlParagraphsEdge(s.htmlContent || ''), s.heading || 'Editorial Illustration'))}
             ${effImgPos === 'bottom' ? imgMarkup : ''}
             ${ctaMarkup}
           </section>
         `;
       })
       .join('\n'),
-    rawHtml: config?.content?.rawHtml ? wrapEditorialTablesEdge(config.content.rawHtml) : '',
+    rawHtml: config?.content?.rawHtml
+      ? wrapEditorialTablesEdge(sanitizeEditorialHtmlEdge(config.content.rawHtml, config?.brand?.name || 'Editorial Content'))
+      : '',
     news:
       config?.newsSection?.enabled !== false && articles.length > 0
         ? `<section id="latest-news" class="cv-auto-section">
@@ -888,7 +1030,8 @@ function renderHamburgerDrawerHtmlEdge(shell, activeCanonicalPath = '/') {
   const seenUrls = new Set(['/']);
   for (const link of shell.headerLinks || []) {
     if (!link.label || !link.url) continue;
-    const rawUrl = link.url.trim();
+    const rawUrl = sanitizeSafeUrlEdge(link.url.trim(), { allowHash: true, allowMailto: true });
+    if (!rawUrl) continue;
     const href = rawUrl.startsWith('#') ? `/${rawUrl}` : rawUrl;
     seenUrls.add(rawUrl.toLowerCase());
     seenUrls.add(href.toLowerCase());
@@ -970,7 +1113,11 @@ function renderHamburgerDrawerHtmlEdge(shell, activeCanonicalPath = '/') {
   }
 
   if (ui.showCtaInDrawer !== false && shell.heroCtas?.primaryCta?.label) {
-    const rawPrimaryUrl = shell.heroCtas.primaryCta.url || '#technical-specifications';
+    const rawPrimaryUrl =
+      sanitizeSafeUrlEdge(shell.heroCtas.primaryCta.url || '#technical-specifications', {
+        allowHash: true,
+        allowMailto: true
+      }) || '#technical-specifications';
     const primaryHref = rawPrimaryUrl.startsWith('#') ? `/${rawPrimaryUrl}` : rawPrimaryUrl;
     items.push(`
       <li class="drawer-cta-footer">
@@ -995,18 +1142,22 @@ export function buildPartialRoutePayloadEdge(pathname, config, newsCategory = 'A
   const mainHtml = renderMainContentEdge(route, safe, newsCategory);
   const jsonLd = buildJsonLdEdge(safe, route);
 
-  const secCta = safe?.hero?.secondaryCta || EMPTY_ADMIN_CONFIG.hero.secondaryCta;
+  const rawSecCta = safe?.hero?.secondaryCta || EMPTY_ADMIN_CONFIG.hero.secondaryCta;
+  const secCta = {
+    ...rawSecCta,
+    url: sanitizeSafeUrlEdge(rawSecCta?.url || '', { allowHash: true, allowMailto: true })
+  };
   const rawPriCta = safe?.hero?.primaryCta || EMPTY_ADMIN_CONFIG.hero.primaryCta;
   const rawFlCta = safe?.hero?.floatingCta || EMPTY_ADMIN_CONFIG.hero.floatingCta;
   const priUrl = rawPriCta?.url
     ? safe?.securityGate?.enabled !== false
       ? '/moreinfo'
-      : rawPriCta.url
+      : sanitizeSafeUrlEdge(rawPriCta.url, { allowHash: true, allowMailto: true })
     : '';
   const flUrl = rawFlCta?.url
     ? safe?.securityGate?.enabled !== false
       ? '/moreinfo'
-      : rawFlCta.url
+      : sanitizeSafeUrlEdge(rawFlCta.url, { allowHash: true, allowMailto: true })
     : '';
 
   const hasSecCta = Boolean(secCta?.label && secCta?.url);
@@ -1209,7 +1360,7 @@ export function renderCompleteStaticPageHtmlEdge(indexHtmlTemplate, config, path
   const rawBrand = (safe?.brand?.name || '').trim();
   const brandName = escapeHtmlEdge(rawBrand);
   const logoSrc = escapeHtmlEdge(optimizeCloudinaryUrlEdge(safe?.brand?.logoUrl || ''));
-  const jsonLdStr = JSON.stringify(payload.jsonLd).replace(/<\/script/gi, '<\\/script');
+  const jsonLdStr = JSON.stringify(payload.jsonLd).replace(/</g, '\\u003c');
   const ui = payload.shell.uiConfig || EMPTY_ADMIN_CONFIG.uiConfig;
 
   let html = indexHtmlTemplate || FALLBACK_EDGE_HTML_TEMPLATE;
@@ -1349,9 +1500,12 @@ export function renderCompleteStaticPageHtmlEdge(indexHtmlTemplate, config, path
 
   const quickLinksHtml = (safe?.navigation?.footerQuickLinks || [])
     .map((ql) => {
+      const safeQlUrl = sanitizeSafeUrlEdge(ql.url || '', { allowHash: true, allowMailto: true });
+      if (!safeQlUrl) return '';
       const targetAttr = ql.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : ' data-spa-link';
-      return `<a href="${escapeHtmlEdge(ql.url)}"${targetAttr} class="footer-link">${escapeHtmlEdge(ql.label)}</a>`;
+      return `<a href="${escapeHtmlEdge(safeQlUrl)}"${targetAttr} class="footer-link">${escapeHtmlEdge(ql.label)}</a>`;
     })
+    .filter(Boolean)
     .join('');
   const legalLinksHtml = (payload.shell.footerPages || [])
     .map((pg) => `<a href="/${escapeHtmlEdge(pg.slug)}" data-spa-link class="footer-link" title="${escapeHtmlEdge(pg.metaTitle)}">${escapeHtmlEdge(pg.label)}</a>`)
@@ -1557,6 +1711,18 @@ export function compileEdgeStaticSiteBundle(config, options = {}) {
   files.push({
     path: '_headers',
     content: [
+      '/*',
+      '  X-Content-Type-Options: nosniff',
+      '  Referrer-Policy: strict-origin-when-cross-origin',
+      '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
+      '/assets/*',
+      '  Cache-Control: public, max-age=31536000, immutable',
+      '/uploads/*',
+      '  Content-Security-Policy: default-src \'none\'; sandbox',
+      '  X-Content-Type-Options: nosniff',
+      '  Cache-Control: public, max-age=31536000, immutable',
+      '/static-routes/*',
+      '  Cache-Control: public, max-age=60, stale-while-revalidate=300',
       '/moreinfo*',
       '  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet',
       '  Cache-Control: private, no-store, no-cache, must-revalidate',
@@ -1570,19 +1736,13 @@ export function compileEdgeStaticSiteBundle(config, options = {}) {
       '  Cache-Control: private, no-store, no-cache, must-revalidate'
     ].join('\n') + '\n',
     encoding: 'utf-8',
-    description: 'Cloudflare Pages isolation & cache headers'
+    description: 'Cloudflare Pages edge security, caching, and gateway isolation headers'
   });
 
-  if (safe.domainConfig?.enableSitemapXml !== false) {
-    files.push({ path: 'sitemap.xml', content: generateSitemapXmlEdge(safe), encoding: 'utf-8', description: 'Search Engine XML Sitemap' });
-  }
+  files.push({ path: 'sitemap.xml', content: generateSitemapXmlEdge(safe), encoding: 'utf-8', description: 'Search Engine XML Sitemap' });
   files.push({ path: 'robots.txt', content: generateRobotsTxtEdge(safe), encoding: 'utf-8', description: 'Robots Rules' });
-  if (safe.domainConfig?.enableRssFeed !== false) {
-    files.push({ path: 'feed.xml', content: generateRssFeedXmlEdge(safe), encoding: 'utf-8', description: 'RSS 2.0 News Feed' });
-  }
-  if (safe.domainConfig?.enableWebManifest !== false) {
-    files.push({ path: 'manifest.webmanifest', content: generateWebManifestJsonEdge(safe), encoding: 'utf-8', description: 'W3C Web App Manifest' });
-  }
+  files.push({ path: 'feed.xml', content: generateRssFeedXmlEdge(safe), encoding: 'utf-8', description: 'RSS 2.0 News Feed' });
+  files.push({ path: 'manifest.webmanifest', content: generateWebManifestJsonEdge(safe), encoding: 'utf-8', description: 'W3C Web App Manifest' });
 
   return files;
 }

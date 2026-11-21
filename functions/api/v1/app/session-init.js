@@ -12,6 +12,10 @@ import {
   verifyOrMintDidCookieEdge,
   issueStatelessNonceEdge
 } from '../../../_shared/auth.js';
+import {
+  sanitizeEditorialHtmlEdge,
+  sanitizeSafeUrlEdge
+} from '../../../_shared/static-compiler.js';
 
 function hard404() {
   return jsonResponse({ error: 'Not Found' }, 404, {
@@ -82,10 +86,19 @@ export async function onRequestPost(context) {
         devicePolicyMode: policyMode,
         proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
         unavailableMessage: sec.unavailableMessage || '',
-        helplineWhatsapp: sec.helplineWhatsapp || '',
-        helplineTelegram: sec.helplineTelegram || '',
+        helplineWhatsapp: sanitizeSafeUrlEdge(sec.helplineWhatsapp || '', {
+          allowHash: false,
+          allowMailto: false
+        }),
+        helplineTelegram: sanitizeSafeUrlEdge(sec.helplineTelegram || '', {
+          allowHash: false,
+          allowMailto: false
+        }),
         customHeading: sec.customHeading || '',
-        customNoteHtml: sec.customNoteHtml || '',
+        customNoteHtml: sanitizeEditorialHtmlEdge(
+          sec.customNoteHtml || '',
+          sec.customHeading || siteConfig?.brand?.name || 'Official Notice'
+        ),
         showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
         appName: sec.customHeading || siteConfig?.packageSpecs?.appName || siteConfig?.brand?.name || '',
         version: siteConfig?.packageSpecs?.version || '',

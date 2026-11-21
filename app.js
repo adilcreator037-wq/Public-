@@ -2,7 +2,7 @@
  * ============================================================================
  * PUBLIC STATIC PORTAL RUNTIME (/app.js)
  * 100% Standalone, Zero-Dependency Client Hydration & Static Route Navigator
- * - Strictly isolated from Admin Studio, Firebase SDKs, and Server Compilers
+ * - Strictly standalone static runtime (zero Firebase SDKs or backend bundlers)
  * - Zero DOM re-writes on initial SSR/Static load (< 2ms hydration)
  * - Loads pre-compiled `/static-routes/<route>.json` on internal SPA link clicks
  * ============================================================================
@@ -65,6 +65,23 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function sanitizeSafeUrlClient(rawUrl, options = {}) {
+  const { allowHash = true, allowMailto = false, allowDataImage = false } = options;
+  const trimmed = String(rawUrl || '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) return '';
+  if (trimmed.startsWith('/')) return trimmed;
+  if (allowHash && trimmed.startsWith('#')) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (allowMailto && (/^mailto:/i.test(trimmed) || /^tel:/i.test(trimmed))) return trimmed;
+  if (allowDataImage && /^data:image\/(png|jpe?g|webp|gif|avif);base64,[a-z0-9+/=]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
 }
 
 function generateSlug(input) {
@@ -230,7 +247,9 @@ function buildDrawerHtmlClient(shell, activeCanonicalPath = '/') {
   for (const link of shell?.headerLinks || []) {
     if (!link.label || !link.url) continue;
     const rawUrl = link.url.trim();
-    const href = rawUrl.startsWith('#') ? `/${rawUrl}` : rawUrl;
+    const candidateHref = rawUrl.startsWith('#') ? `/${rawUrl}` : rawUrl;
+    const href = sanitizeSafeUrlClient(candidateHref, { allowHash: true });
+    if (!href) continue;
     seenUrls.add(rawUrl.toLowerCase());
     seenUrls.add(href.toLowerCase());
     const isActive = activeCanonicalPath === href;
@@ -316,7 +335,9 @@ function buildDrawerHtmlClient(shell, activeCanonicalPath = '/') {
 
   if (ui.showCtaInDrawer !== false && shell?.heroCtas?.primaryCta?.label) {
     const rawPrimaryUrl = shell.heroCtas.primaryCta.url || '#technical-specifications';
-    const primaryHref = rawPrimaryUrl.startsWith('#') ? `/${rawPrimaryUrl}` : rawPrimaryUrl;
+    const candidatePrimaryHref = rawPrimaryUrl.startsWith('#') ? `/${rawPrimaryUrl}` : rawPrimaryUrl;
+    const primaryHref =
+      sanitizeSafeUrlClient(candidatePrimaryHref, { allowHash: true }) || '/#technical-specifications';
     items.push(`
       <li class="drawer-cta-footer">
         <a href="${escapeHtml(primaryHref)}" data-spa-link class="drawer-cta-btn">
@@ -414,7 +435,9 @@ function enhanceContainerDom(container, ui = {}) {
         const answerDiv = document.createElement('div');
         answerDiv.className = 'faq-answer';
         const p = document.createElement('p');
-        p.innerHTML = nextEl.innerHTML;
+        while (nextEl.firstChild) {
+          p.appendChild(nextEl.firstChild);
+        }
         answerDiv.appendChild(p);
         details.appendChild(summary);
         details.appendChild(answerDiv);
@@ -590,8 +613,12 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   // Update Header Brand & News Link on SPA navigation
   if (navbarLogoText) navbarLogoText.textContent = brand.name || '';
   if (navbarLogoImg) {
-    if (brand.logoUrl) {
-      navbarLogoImg.src = brand.logoUrl;
+    const safeLogoUrl = sanitizeSafeUrlClient(brand.logoUrl, {
+      allowHash: false,
+      allowDataImage: true
+    });
+    if (safeLogoUrl) {
+      navbarLogoImg.src = safeLogoUrl;
       navbarLogoImg.alt = brand.name ? `${brand.name} Logo` : 'Logo';
       navbarLogoImg.classList.remove('hidden');
     } else {
@@ -674,10 +701,11 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
 
   if (heroCtaSecondary && shell.heroCtas?.secondaryCta) {
     const sec = shell.heroCtas.secondaryCta;
-    const hasSec = Boolean(payload.showHeroCtaGrid && sec.label && sec.url);
+    const secHref = sanitizeSafeUrlClient(sec.url || '', { allowHash: true });
+    const hasSec = Boolean(payload.showHeroCtaGrid && sec.label && secHref);
     heroCtaSecondary.classList.toggle('hidden', !hasSec);
     heroCtaSecondary.textContent = hasSec ? sec.label : '';
-    heroCtaSecondary.setAttribute('href', hasSec ? sec.url : '#');
+    heroCtaSecondary.setAttribute('href', hasSec ? secHref : '#');
     if (hasSec && sec.relSponsored) {
       heroCtaSecondary.setAttribute('rel', 'sponsored noopener');
     } else {
@@ -686,7 +714,7 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   }
   if (heroCtaPrimary && shell.heroCtas?.primaryCta) {
     const pri = shell.heroCtas.primaryCta;
-    const priHref = pri.url || '';
+    const priHref = sanitizeSafeUrlClient(pri.url || '', { allowHash: true });
     const hasPri = Boolean(payload.showHeroCtaGrid && pri.label && priHref);
     heroCtaPrimary.classList.toggle('hidden', !hasPri);
     heroCtaPrimary.textContent = hasPri ? pri.label : '';
@@ -702,8 +730,8 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
 
   if (floatingBottomCta && floatingCtaBtn && shell.heroCtas?.floatingCta) {
     const fl = shell.heroCtas.floatingCta;
-    if (fl.enabled && fl.label && fl.url && payload.viewType === 'home') {
-      const flHref = fl.url;
+    const flHref = sanitizeSafeUrlClient(fl.url || '', { allowHash: true });
+    if (fl.enabled && fl.label && flHref && payload.viewType === 'home') {
       floatingCtaBtn.textContent = fl.label;
       floatingCtaBtn.setAttribute('href', flHref);
       if (flHref === '/moreinfo' || flHref === '/download') {
@@ -768,9 +796,15 @@ function renderPartialRoutePayload(payload, options = { preserveSsrDom: false })
   if (footerLinksList) {
     const quickLinksHtml = (shell.navigation?.footerQuickLinks || [])
       .map((ql) => {
+        const safeQlUrl = sanitizeSafeUrlClient(ql.url || '', {
+          allowHash: true,
+          allowMailto: true
+        });
+        if (!safeQlUrl) return '';
         const targetAttr = ql.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : ' data-spa-link';
-        return `<a href="${escapeHtml(ql.url)}"${targetAttr} class="footer-link">${escapeHtml(ql.label)}</a>`;
+        return `<a href="${escapeHtml(safeQlUrl)}"${targetAttr} class="footer-link">${escapeHtml(ql.label)}</a>`;
       })
+      .filter(Boolean)
       .join('');
     const legalLinksHtml = (shell.footerPages || [])
       .map(
@@ -856,7 +890,18 @@ async function fetchStaticRoutePayload(pathname, newsCat = 'ALL', signal = undef
 async function navigateToUrl(targetHref, pushState = true, newsCat = 'ALL') {
   setDrawerState(false);
 
-  const urlObj = new URL(targetHref, window.location.origin);
+  let urlObj;
+  try {
+    urlObj = new URL(targetHref, window.location.origin);
+  } catch {
+    return;
+  }
+  if (
+    (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') ||
+    urlObj.origin !== window.location.origin
+  ) {
+    return;
+  }
   const targetPath = urlObj.pathname || '/';
   const targetHash = urlObj.hash || '';
 
@@ -909,7 +954,7 @@ async function navigateToUrl(targetHref, pushState = true, newsCat = 'ALL') {
     }
   } catch (err) {
     if (err && err.name === 'AbortError') return;
-    window.location.href = targetHref;
+    window.location.href = targetPath + urlObj.search + targetHash;
   }
 }
 
@@ -934,9 +979,7 @@ document.addEventListener('click', (e) => {
     href === '/moreinfo' ||
     href.startsWith('/moreinfo/') ||
     href === '/download' ||
-    href.startsWith('/download/') ||
-    href === '/admin' ||
-    href.startsWith('/admin')
+    href.startsWith('/download/')
   ) {
     return;
   }
