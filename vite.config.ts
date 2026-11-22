@@ -37,7 +37,19 @@ export default defineConfig(() => {
         closeBundle() {
           const distPublicDir = path.resolve(__dirname, 'dist-public');
           const distDir = path.resolve(__dirname, 'dist');
-          if (fs.existsSync(distPublicDir) && fs.existsSync(distDir)) {
+          if (!fs.existsSync(distDir)) return;
+
+          // Ensure standalone public runtime scripts (/app.js and /moreinfo.js) always exist in dist/
+          // so static pages and Cloudflare Pages Edge ASSETS.fetch('/app.js') never receive an HTML SPA fallback.
+          for (const runtimeScript of ['app.js', 'moreinfo.js']) {
+            const rootSrc = path.resolve(__dirname, runtimeScript);
+            const destFile = path.join(distDir, runtimeScript);
+            if (fs.existsSync(rootSrc) && fs.statSync(rootSrc).isFile()) {
+              fs.copyFileSync(rootSrc, destFile);
+            }
+          }
+
+          if (fs.existsSync(distPublicDir)) {
             // Overlay compiled static public routes (index.html, news/**, <page>/index.html,
             // moreinfo/index.html, static-routes/**, sitemap.xml, robots.txt, app.js, moreinfo.js)
             // into dist/ while preserving Vite's bundled admin.html and dist/assets/*.

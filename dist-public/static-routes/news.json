@@ -155,11 +155,11 @@
       "showFooterBrandSummary": true,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
-      "disclaimerHeading": "",
+      "disclaimerHeading": "Legal Disclaimer",
       "disclaimer": "",
-      "siteLinksHeading": "",
+      "siteLinksHeading": "Legal & Support Pages",
       "copyright": ""
     }
   },
-  "updatedAt": 1794929121834
+  "updatedAt": 1795287970285
 }

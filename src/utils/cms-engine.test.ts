@@ -41,8 +41,19 @@ import {
   resolveAdminSecurityPolicy,
   validateAdminSessionClaims
 } from './cms-engine';
-import { routePathToStaticJsonName, compileStaticSiteBundle } from './static-compiler';
-import { computeGitBlobSha1, diffGitTrees, validateGitHubTargetConfig } from './github-publisher';
+import {
+  routePathToStaticJsonName,
+  compileStaticSiteBundle,
+  normalizeStaticPublicHtmlScripts
+} from './static-compiler';
+import {
+  computeGitBlobSha1,
+  diffGitTrees,
+  validateGitHubTargetConfig,
+  encodeGitRefBranch,
+  verifyGitHubRepoAccess,
+  pushStaticFilesToGitHub
+} from './github-publisher';
 import {
   getLocalSecurityCacheStatsForTests,
   execLocalSecurityCommandForTests
@@ -2456,9 +2467,510 @@ test('gate-core local security memory store stays strictly bounded under sustain
   );
 });
 
+test('Node & Edge encodeGitRefBranch preserve branch slash separators while encoding unsafe characters', async () => {
+  const edgeGh = await import('../../functions/_shared/github.js');
+  for (const [label, fn] of [
+    ['Node encodeGitRefBranch', encodeGitRefBranch],
+    ['Edge encodeGitRefBranchEdge', edgeGh.encodeGitRefBranchEdge]
+  ] as const) {
+    assert.equal(fn('main'), 'main', `${label} keeps simple branch`);
+    assert.equal(fn('deploy/public'), 'deploy/public', `${label} preserves slash in deploy/public`);
+    assert.equal(fn('release/v2.0/prod'), 'release/v2.0/prod', `${label} preserves multi-segment slash`);
+    assert.equal(fn('feat/a#b'), 'feat/a%23b', `${label} encodes # inside segment`);
+  }
+});
 
+test('Node & Edge pushStaticFilesToGitHub handle slashed branch names, fast-fail on 401/403, auto-bootstrap empty repos, and retry 422 non-fast-forward conflicts', async () => {
+  const edgeGh = await import('../../functions/_shared/github.js');
+  const origFetch = globalThis.fetch;
 
+  const sampleFiles = [
+    { path: 'index.html', content: '<!doctype html><html><body>Hello</body></html>', description: 'Home', encoding: 'utf-8' as const }
+  ];
 
+  try {
+    // 1. Slashed branch deploy/public must hit /git/ref/heads/deploy/public (never deploy%2Fpublic)
+    for (const [label, pushFn] of [
+      ['Node pushStaticFilesToGitHub', pushStaticFilesToGitHub],
+      ['Edge pushStaticFilesToGitHubEdge', edgeGh.pushStaticFilesToGitHubEdge]
+    ] as const) {
+      const seenUrls: string[] = [];
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = String(init?.method || 'GET').toUpperCase();
+        seenUrls.push(`${method} ${url}`);
+        if (url.endsWith('/git/ref/heads/deploy/public') && method === 'GET') {
+          return new Response(JSON.stringify({ object: { sha: 'aaaa1111' } }), { status: 200 });
+        }
+        if (url.endsWith('/git/commits/aaaa1111')) {
+          return new Response(JSON.stringify({ tree: { sha: 'bbbb2222' } }), { status: 200 });
+        }
+        if (url.includes('/git/trees/bbbb2222')) {
+          return new Response(JSON.stringify({ tree: [], truncated: false }), { status: 200 });
+        }
+        if (url.endsWith('/git/trees') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: 'cccc3333' }), { status: 201 });
+        }
+        if (url.endsWith('/git/commits') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: 'dddd4444' }), { status: 201 });
+        }
+        if (url.endsWith('/git/refs/heads/deploy/public') && method === 'PATCH') {
+          return new Response(JSON.stringify({ object: { sha: 'dddd4444' } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ message: `Unexpected ${method} ${url}` }), { status: 404 });
+      }) as typeof fetch;
 
+      const res = await pushFn(
+        {
+          ...EMPTY_ADMIN_CONFIG.githubConfig,
+          repoOwner: 'acme',
+          repoName: 'site',
+          branch: 'deploy/public',
+          targetDirectory: 'dist-public',
+          fineGrainedToken: 'github_pat_slashed_branch'
+        },
+        sampleFiles
+      );
+      assert.equal(res.ok, true, `${label} should succeed on deploy/public, got: ${res.message}`);
+      assert.ok(seenUrls.some((u) => u.includes('/git/ref/heads/deploy/public')), `${label} must use unencoded slash`);
+      assert.ok(!seenUrls.some((u) => u.includes('deploy%2Fpublic')), `${label} must never encode slash as %2F`);
+    }
 
+    // 2. Fast-fail on 401 and 403 without creating trees or orphan commits
+    for (const status of [401, 403]) {
+      for (const [label, pushFn] of [
+        ['Node pushStaticFilesToGitHub', pushStaticFilesToGitHub],
+        ['Edge pushStaticFilesToGitHubEdge', edgeGh.pushStaticFilesToGitHubEdge]
+      ] as const) {
+        let calledTreeOrCommit = false;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = String(init?.method || 'GET').toUpperCase();
+          if (method === 'POST' && (url.endsWith('/git/trees') || url.endsWith('/git/commits'))) {
+            calledTreeOrCommit = true;
+          }
+          return new Response(
+            JSON.stringify({ message: status === 401 ? 'Bad credentials' : 'Resource not accessible by personal access token' }),
+            { status }
+          );
+        }) as typeof fetch;
 
+        const res = await pushFn(
+          {
+            ...EMPTY_ADMIN_CONFIG.githubConfig,
+            repoOwner: 'acme',
+            repoName: 'site',
+            branch: 'main',
+            targetDirectory: 'dist-public',
+            fineGrainedToken: 'github_pat_invalid'
+          },
+          sampleFiles
+        );
+        assert.equal(res.ok, false, `${label} must fail on HTTP ${status}`);
+        assert.equal(calledTreeOrCommit, false, `${label} must NOT create trees/commits after HTTP ${status}`);
+        assert.ok(
+          (res.message || '').includes(String(status)) || (res.message || '').toLowerCase().includes('token'),
+          `${label} should explain HTTP ${status} clearly: ${res.message}`
+        );
+      }
+    }
+
+    // 3. Auto-bootstrap empty repository (409 on GET /git/ref) using PUT /contents/README.md commit & tree SHAs directly
+    for (const [label, pushFn] of [
+      ['Node pushStaticFilesToGitHub', pushStaticFilesToGitHub],
+      ['Edge pushStaticFilesToGitHubEdge', edgeGh.pushStaticFilesToGitHubEdge]
+    ] as const) {
+      let bootstrappedPut = false;
+      let commitParents: string[] = [];
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (url.endsWith('/git/ref/heads/main') && method === 'GET') {
+          return new Response(JSON.stringify({ message: 'Git Repository is empty.' }), { status: 409 });
+        }
+        if (url.endsWith('/repos/acme/empty-repo') && method === 'GET') {
+          return new Response(JSON.stringify({ size: 0, default_branch: 'main' }), { status: 200 });
+        }
+        if (url.endsWith('/contents/README.md') && method === 'PUT') {
+          bootstrappedPut = true;
+          return new Response(
+            JSON.stringify({
+              commit: {
+                sha: 'boot1111',
+                tree: { sha: 'boottree2222' }
+              }
+            }),
+            { status: 201 }
+          );
+        }
+        if (url.includes('/git/trees/boottree2222')) {
+          return new Response(JSON.stringify({ tree: [{ path: 'README.md', sha: 'readme00', type: 'blob' }], truncated: false }), {
+            status: 200
+          });
+        }
+        if (url.endsWith('/git/trees') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: 'newtree3333' }), { status: 201 });
+        }
+        if (url.endsWith('/git/commits') && method === 'POST') {
+          const parsed = JSON.parse(String(init?.body || '{}'));
+          commitParents = parsed.parents || [];
+          return new Response(JSON.stringify({ sha: 'newcommit4444' }), { status: 201 });
+        }
+        if (url.endsWith('/git/refs/heads/main') && method === 'PATCH') {
+          return new Response(JSON.stringify({ object: { sha: 'newcommit4444' } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ message: `Unexpected ${method} ${url}` }), { status: 404 });
+      }) as typeof fetch;
+
+      const res = await pushFn(
+        {
+          ...EMPTY_ADMIN_CONFIG.githubConfig,
+          repoOwner: 'acme',
+          repoName: 'empty-repo',
+          branch: 'main',
+          targetDirectory: '',
+          fineGrainedToken: 'github_pat_empty_repo'
+        },
+        sampleFiles
+      );
+      assert.equal(res.ok, true, `${label} should bootstrap empty repo cleanly, got: ${res.message}`);
+      assert.equal(bootstrappedPut, true, `${label} should PUT README.md to bootstrap empty repo`);
+      assert.deepEqual(commitParents, ['boot1111'], `${label} should parent commit on bootstrap commit SHA`);
+    }
+
+    // 4. targetDirectory === 'public' on a Vite repo must NOT emit duplicate paths in POST /git/trees, and targetDirectory === '' pushes to root
+    for (const [label, pushFn] of [
+      ['Node pushStaticFilesToGitHub', pushStaticFilesToGitHub],
+      ['Edge pushStaticFilesToGitHubEdge', edgeGh.pushStaticFilesToGitHubEdge]
+    ] as const) {
+      let submittedTreePaths: string[] = [];
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (url.endsWith('/git/ref/heads/main') && method === 'GET') {
+          return new Response(JSON.stringify({ object: { sha: 'base1111' } }), { status: 200 });
+        }
+        if (url.endsWith('/git/commits/base1111')) {
+          return new Response(JSON.stringify({ tree: { sha: 'basetree2222' } }), { status: 200 });
+        }
+        if (url.includes('/git/trees/basetree2222')) {
+          return new Response(
+            JSON.stringify({
+              tree: [
+                { path: 'vite.config.ts', sha: 'vite00', type: 'blob' },
+                { path: 'package.json', sha: 'pkg00', type: 'blob' }
+              ],
+              truncated: false
+            }),
+            { status: 200 }
+          );
+        }
+        if (url.endsWith('/git/trees') && method === 'POST') {
+          const parsed = JSON.parse(String(init?.body || '{}'));
+          submittedTreePaths = (parsed.tree || []).map((t: any) => t.path);
+          return new Response(JSON.stringify({ sha: 'tree3333' }), { status: 201 });
+        }
+        if (url.endsWith('/git/commits') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: 'commit4444' }), { status: 201 });
+        }
+        if (url.endsWith('/git/refs/heads/main') && method === 'PATCH') {
+          return new Response(JSON.stringify({ object: { sha: 'commit4444' } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }) as typeof fetch;
+
+      const publicRes = await pushFn(
+        {
+          ...EMPTY_ADMIN_CONFIG.githubConfig,
+          repoOwner: 'acme',
+          repoName: 'vite-site',
+          branch: 'main',
+          targetDirectory: 'public',
+          fineGrainedToken: 'github_pat_public_dir'
+        },
+        [
+          { path: 'index.html', content: '<html>1</html>', description: 'Home', encoding: 'utf-8' as const },
+          { path: 'index.html', content: '<html>2</html>', description: 'Home Dup', encoding: 'utf-8' as const },
+          { path: 'robots.txt', content: 'User-agent: *\nAllow: /\n', description: 'Robots', encoding: 'utf-8' as const },
+          { path: 'static-routes/index.json', content: '{}', description: 'Route JSON', encoding: 'utf-8' as const }
+        ]
+      );
+      assert.equal(publicRes.ok, true, `${label} targetDir='public' failed: ${publicRes.message}`);
+      assert.equal(
+        new Set(submittedTreePaths).size,
+        submittedTreePaths.length,
+        `${label} must NEVER submit duplicate paths to POST /git/trees: ${JSON.stringify(submittedTreePaths)}`
+      );
+      assert.ok(submittedTreePaths.includes('public/robots.txt'), `${label} includes public/robots.txt`);
+      assert.ok(submittedTreePaths.includes('public/static-routes/index.json'), `${label} includes public/static-routes/index.json`);
+
+      // Empty targetDirectory pushes directly to repo root
+      const rootRes = await pushFn(
+        {
+          ...EMPTY_ADMIN_CONFIG.githubConfig,
+          repoOwner: 'acme',
+          repoName: 'root-site',
+          branch: 'main',
+          targetDirectory: '',
+          fineGrainedToken: 'github_pat_root_dir'
+        },
+        [{ path: 'index.html', content: '<html>root</html>', description: 'Home', encoding: 'utf-8' as const }]
+      );
+      assert.equal(rootRes.ok, true, `${label} targetDir='' failed: ${rootRes.message}`);
+      assert.ok(submittedTreePaths.includes('index.html'), `${label} root publish emits index.html at root`);
+    }
+
+    // 5. Automatic single retry on HTTP 422 non-fast-forward conflict on PATCH /git/refs/heads/main
+    for (const [label, pushFn] of [
+      ['Node pushStaticFilesToGitHub', pushStaticFilesToGitHub],
+      ['Edge pushStaticFilesToGitHubEdge', edgeGh.pushStaticFilesToGitHubEdge]
+    ] as const) {
+      let patchAttempts = 0;
+      let refReads = 0;
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (url.endsWith('/git/ref/heads/main') && method === 'GET') {
+          refReads++;
+          return new Response(JSON.stringify({ object: { sha: refReads === 1 ? 'headA' : 'headB' } }), { status: 200 });
+        }
+        if (url.endsWith('/git/commits/headA') || url.endsWith('/git/commits/headB')) {
+          return new Response(JSON.stringify({ tree: { sha: 'treeBase' } }), { status: 200 });
+        }
+        if (url.includes('/git/trees/treeBase')) {
+          return new Response(JSON.stringify({ tree: [], truncated: false }), { status: 200 });
+        }
+        if (url.endsWith('/git/trees') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: 'treeNew' }), { status: 201 });
+        }
+        if (url.endsWith('/git/commits') && method === 'POST') {
+          return new Response(JSON.stringify({ sha: `commitAttempt${refReads}` }), { status: 201 });
+        }
+        if (url.endsWith('/git/refs/heads/main') && method === 'PATCH') {
+          patchAttempts++;
+          if (patchAttempts === 1) {
+            return new Response(JSON.stringify({ message: 'Update is not a fast forward' }), { status: 422 });
+          }
+          return new Response(JSON.stringify({ object: { sha: 'commitAttempt2' } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }) as typeof fetch;
+
+      const retryRes = await pushFn(
+        {
+          ...EMPTY_ADMIN_CONFIG.githubConfig,
+          repoOwner: 'acme',
+          repoName: 'busy-repo',
+          branch: 'main',
+          targetDirectory: 'dist-public',
+          fineGrainedToken: 'github_pat_retry'
+        },
+        sampleFiles
+      );
+      assert.equal(retryRes.ok, true, `${label} should recover automatically from 422 fast-forward conflict: ${retryRes.message}`);
+      assert.equal(patchAttempts, 2, `${label} should retry PATCH once`);
+      assert.equal(refReads, 2, `${label} should refresh remote branch HEAD before retrying`);
+    }
+
+    // 6. verifyGitHubRepoAccess & verifyGitHubRepoAccessEdge report branchExists: false for custom non-existent branch
+    for (const [label, verifyFn] of [
+      ['Node verifyGitHubRepoAccess', verifyGitHubRepoAccess],
+      ['Edge verifyGitHubRepoAccessEdge', edgeGh.verifyGitHubRepoAccessEdge]
+    ] as const) {
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/repos/acme/custom-branch-repo')) {
+          return new Response(
+            JSON.stringify({
+              full_name: 'acme/custom-branch-repo',
+              default_branch: 'main',
+              private: false,
+              size: 42,
+              permissions: { push: true, admin: true }
+            }),
+            { status: 200 }
+          );
+        }
+        if (url.endsWith('/git/ref/heads/deploy/public')) {
+          return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }) as typeof fetch;
+
+      const vRes: any = await verifyFn({
+        repoOwner: 'acme',
+        repoName: 'custom-branch-repo',
+        branch: 'deploy/public',
+        fineGrainedToken: 'github_pat_verify_branch'
+      });
+      assert.equal(vRes.success, true, `${label} should succeed when repo is reachable`);
+      assert.equal(vRes.defaultBranch, 'main', `${label} preserves repo defaultBranch`);
+      assert.equal(vRes.branchChecked, 'deploy/public', `${label} preserves requested branch`);
+      assert.equal(vRes.branchExists, false, `${label} reports branchExists: false when branch does not yet exist`);
+    }
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('Node & Edge diffGitTrees prune stale mirrored public/static-routes/*.json without deleting unrelated public files', async () => {
+  const edgeGh = await import('../../functions/_shared/github.js');
+
+  const files = [
+    { path: 'index.html', content: '<html>home</html>', description: 'Home', encoding: 'utf-8' as const },
+    { path: 'static-routes/index.json', content: '{}', description: 'Index JSON', encoding: 'utf-8' as const },
+    { path: 'public/static-routes/index.json', content: '{}', description: 'Mirrored Index JSON', encoding: 'utf-8' as const, rootRelative: true }
+  ];
+  const remoteTree = [
+    { path: 'dist-public/index.html', sha: computeGitBlobSha1('<html>home</html>', 'utf-8'), type: 'blob' },
+    { path: 'dist-public/static-routes/index.json', sha: computeGitBlobSha1('{}', 'utf-8'), type: 'blob' },
+    { path: 'public/static-routes/index.json', sha: computeGitBlobSha1('{}', 'utf-8'), type: 'blob' },
+    // Stale mirrored JSON route that should be pruned
+    { path: 'public/static-routes/old-article.json', sha: 'deadbeef', type: 'blob' },
+    // Unrelated handcrafted file inside public/ MUST NOT be touched
+    { path: 'public/custom-static.txt', sha: 'cafebabe', type: 'blob' }
+  ];
+
+  const nodeDiff = diffGitTrees(files, remoteTree, 'dist-public');
+  const edgeDiff = await edgeGh.diffEdgeGitTrees(files, remoteTree, 'dist-public');
+
+  for (const [label, d] of [
+    ['Node diffGitTrees', nodeDiff],
+    ['Edge diffEdgeGitTrees', edgeDiff]
+  ] as const) {
+    assert.ok(d.deletedPaths.includes('public/static-routes/old-article.json'), `${label} must prune stale mirrored JSON`);
+    assert.ok(!d.deletedPaths.includes('public/custom-static.txt'), `${label} must NOT delete unrelated files in public/`);
+  }
+});
+
+test('Node & Edge static compilers skip reserved slugs, deduplicate routes, normalize Vite-hashed scripts, and render branded Edge moreinfo gateway', async () => {
+  const edgeCompiler = await import('../../functions/_shared/static-compiler.js');
+  const viteBuiltIndexHtml = `<!doctype html><html><head><title>Old</title><link rel="modulepreload" crossorigin href="/assets/vendor-XYZ.js"><script type="module" crossorigin src="/assets/main-AbC12345.js"></script></head><body><main id="app-root"></main></body></html>`;
+  const realMoreinfoHtml = fs.readFileSync(path.join(process.cwd(), 'moreinfo.html'), 'utf-8');
+
+  // Script normalization on both Node and Edge
+  for (const [label, normFn] of [
+    ['Node normalizeStaticPublicHtmlScripts', normalizeStaticPublicHtmlScripts],
+    ['Edge normalizeStaticPublicHtmlScriptsEdge', edgeCompiler.normalizeStaticPublicHtmlScriptsEdge]
+  ] as const) {
+    const fixed = normFn(viteBuiltIndexHtml, '/app.js');
+    assert.ok(fixed.includes('<script type="module" src="/app.js"></script>'), `${label} restores /app.js`);
+    assert.ok(!fixed.includes('/assets/main-AbC12345.js'), `${label} removes Vite-hashed main script`);
+    assert.ok(!fixed.includes('rel="modulepreload"'), `${label} strips stale modulepreload`);
+  }
+
+  const cfgWithCollisions = mergeSiteConfig(
+    {
+      brand: {
+        name: 'NovaPortal',
+        shortName: 'Nova',
+        tagline: 'Verified Edge Distribution',
+        accentColor: '#2563EB'
+      },
+      hero: { h1: 'NovaPortal Official Hub' },
+      domainConfig: { primaryDomain: 'https://novaportal.example' },
+      pages: [
+        { id: 'p-res-1', title: 'News Collision', slug: 'news', visible: true, htmlContent: '<p>bad</p>' },
+        { id: 'p-res-2', title: 'Admin Collision', slug: 'admin', visible: true, htmlContent: '<p>bad</p>' },
+        { id: 'p-res-3', title: 'Moreinfo Collision', slug: 'moreinfo', visible: true, htmlContent: '<p>bad</p>' },
+        { id: 'p-valid-1', title: 'About Us', slug: 'about-us', visible: true, htmlContent: '<p>About NovaPortal</p>' },
+        { id: 'p-valid-dup', title: 'About Us Duplicate', slug: 'about-us', visible: true, htmlContent: '<p>Duplicate</p>' }
+      ]
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  const nodeBundle = compileStaticSiteBundle(cfgWithCollisions, viteBuiltIndexHtml, {
+    moreinfoHtmlTemplate: realMoreinfoHtml
+  });
+  const edgeFiles = edgeCompiler.compileEdgeStaticSiteBundle(cfgWithCollisions, {
+    indexHtmlTemplate: viteBuiltIndexHtml,
+    moreinfoHtmlTemplate: realMoreinfoHtml
+  });
+
+  for (const [label, files] of [
+    ['Node compileStaticSiteBundle', nodeBundle.files],
+    ['Edge compileEdgeStaticSiteBundle', edgeFiles]
+  ] as const) {
+    const paths = files.map((f: any) => f.path);
+    assert.equal(new Set(paths).size, paths.length, `${label} must output strictly unique file paths`);
+    assert.ok(!paths.includes('admin/index.html'), `${label} must never emit reserved admin/index.html`);
+    assert.ok(paths.includes('about-us/index.html'), `${label} includes valid standalone page`);
+
+    const homeHtml = files.find((f: any) => f.path === 'index.html')?.content || '';
+    assert.ok(homeHtml.includes('/app.js'), `${label} home HTML loads /app.js`);
+    assert.ok(!homeHtml.includes('/assets/main-AbC12345.js'), `${label} home HTML strips hashed Vite bundle`);
+
+    const moreinfoHtml = files.find((f: any) => f.path === 'moreinfo/index.html')?.content || '';
+    assert.ok(moreinfoHtml.includes('NovaPortal'), `${label} renders branded moreinfo/index.html`);
+    assert.ok(moreinfoHtml.includes('__GATEWAY_PUBLIC_META__'), `${label} injects gateway public meta in moreinfo/index.html`);
+    assert.ok(moreinfoHtml.includes('#2563EB'), `${label} applies brand accent color in moreinfo/index.html`);
+    assert.ok(moreinfoHtml.includes('noindex, nofollow'), `${label} preserves noindex isolation on moreinfo/index.html`);
+  }
+});
+
+test('Edge loadEdgeTemplates rejects HTML SPA fallback for /app.js & /moreinfo.js and bundles referenced local assets', async () => {
+  const edgeCatchall = await import('../../functions/api/[[catchall]].js');
+
+  const fakeEnv = {
+    ASSETS: {
+      async fetch(req: Request) {
+        const pathname = new URL(req.url).pathname;
+        if (pathname === '/index.html') {
+          return new Response('<!doctype html><html><body>Index</body></html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          });
+        }
+        if (pathname === '/moreinfo.html') {
+          return new Response('<!doctype html><html><body>Moreinfo</body></html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          });
+        }
+        if (pathname === '/app.js') {
+          // Simulate SPA fallback bug returning index.html for missing JS!
+          return new Response('<!doctype html><html><body>SPA Fallback!</body></html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          });
+        }
+        if (pathname === '/moreinfo.js') {
+          return new Response('console.log("real moreinfo js");', {
+            status: 200,
+            headers: { 'Content-Type': 'application/javascript; charset=utf-8' }
+          });
+        }
+        if (pathname === '/assets/brand-logo.svg') {
+          return new Response('<svg xmlns="http://www.w3.org/2000/svg"></svg>', {
+            status: 200,
+            headers: { 'Content-Type': 'image/svg+xml' }
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      }
+    }
+  };
+
+  const cfg = mergeSiteConfig(
+    {
+      brand: {
+        name: 'AssetTest',
+        logoUrl: '/assets/brand-logo.svg'
+      }
+    },
+    EMPTY_ADMIN_CONFIG
+  );
+
+  const loaded: any = await (edgeCatchall as any).loadEdgeTemplates(
+    fakeEnv,
+    'https://cms.example.com/api/github/publish',
+    cfg
+  );
+  assert.ok(loaded.indexHtmlTemplate?.includes('Index'), 'Loads valid index.html');
+  assert.equal(loaded.appJsContent, undefined, 'Must REJECT HTML SPA fallback masquerading as /app.js');
+  assert.ok(loaded.moreinfoJsContent?.includes('real moreinfo js'), 'Accepts real JS for /moreinfo.js');
+  assert.equal(loaded.extraAssetFiles.length, 1, 'Bundles referenced local /assets/brand-logo.svg');
+  assert.equal(loaded.extraAssetFiles[0]?.path, 'assets/brand-logo.svg');
+  assert.equal(loaded.extraAssetFiles[0]?.encoding, 'utf-8');
+});

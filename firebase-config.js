@@ -527,6 +527,9 @@ export async function getSiteConfigRemote() {
  */
 export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules = []) {
   const activeFb = getActiveFirebaseConfig();
+  const hasServerSecretModules = Object.keys(modulesMap || {}).some((k) =>
+    SERVER_ONLY_SECRET_MODULES.has(k)
+  );
   let directFirestoreOk = false;
   let directFirestoreError = null;
 
@@ -547,7 +550,7 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
     }
   }
 
-  // 2. Also notify the backend with X-Firebase-Config attached so backend compiles static files
+  // 2. Also notify the backend with X-Firebase-Config attached so backend encrypts secrets & compiles static files
   try {
     const res = await fetch('/api/config/modules', {
       method: 'PATCH',
@@ -567,7 +570,8 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
       notifyAdminUnauthorized(data?.error);
     }
     if (!res.ok || !data?.success) {
-      if (directFirestoreOk) {
+      // Never claim success if a server-only secret module (githubConfig / securityGate) failed to persist!
+      if (directFirestoreOk && !hasServerSecretModules) {
         return {
           success: true,
           firestoreSaved: true,
@@ -579,7 +583,7 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
         success: false,
         status: res.status,
         firestoreSaved: false,
-        error: directFirestoreError || data?.error || `Failed to save modules batch (HTTP ${res.status}).`
+        error: data?.error || directFirestoreError || `Failed to save modules batch (HTTP ${res.status}).`
       };
     }
     if (data.config) {
@@ -591,7 +595,7 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
       firestoreNotice: directFirestoreOk ? null : (data.firestoreNotice || directFirestoreError || null)
     };
   } catch (err) {
-    if (directFirestoreOk) {
+    if (directFirestoreOk && !hasServerSecretModules) {
       return {
         success: true,
         firestoreSaved: true,
@@ -602,7 +606,7 @@ export async function saveSiteConfigModulesBatchRemote(modulesMap, editedModules
     return {
       success: false,
       firestoreSaved: false,
-      error: directFirestoreError || err?.message || 'Network error saving modules.'
+      error: err?.message || directFirestoreError || 'Network error saving modules.'
     };
   }
 }
@@ -872,7 +876,7 @@ export async function verifyGitHubRepoRemote(ghPayload) {
     const data = await res.json().catch(() => null);
     if (res.status === 401) notifyAdminUnauthorized(data?.error);
     if (data?.config) {
-      inMemoryCachedConfig = mergeSiteConfig(data.config, EMPTY_ADMIN_CONFIG);
+      inMemoryCachedConfig = mergeRemoteConfigPreservingUserContent(data.config, inMemoryCachedConfig);
     }
     return data || { success: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {

@@ -180,12 +180,12 @@ function renderDirtyModulesSummary() {
     ...edited
   ]);
   const pendingArr = Array.from(pendingSyncSet);
-  const pendingTextEl = $('gh-pending-modules-text');
-  const pendingTagEl = $('gh-pending-count-tag');
+  const pendingTextEl = $('pending-sync-badges') || $('gh-pending-modules-text');
+  const pendingTagEl = $('pending-sync-count') || $('gh-pending-count-tag');
   if (pendingTextEl) {
     pendingTextEl.innerHTML =
       pendingArr.length === 0
-        ? '<span style="color:#059669;font-weight:700;">All modules synced to Public</span>'
+        ? '<span class="sync-pill clean">All changes synced</span>'
         : pendingArr.map((m) => `<span class="sync-module-chip" title="${escapeHtml(m)}">${escapeHtml(getHumanModuleLabel(m))}</span>`).join(' ');
   }
   if (pendingTagEl) {
@@ -1461,14 +1461,15 @@ function setChecked(id, bool) {
    ═══════════════════════════════════════════════════════════════════════════ */
 function renderGitHubDeployHistory() {
   const gh = currentConfig.githubConfig || EMPTY_ADMIN_CONFIG.githubConfig;
-  const listEl = $('gh-deploy-history-list');
+  const listEl = $('github-deploy-history-list') || $('gh-deploy-history-list');
   const badgeEl = $('gh-status-badge');
   const tagEl = $('gh-last-commit-tag');
 
   if (badgeEl) {
+    const dirLabel = gh.targetDirectory ? `/${gh.targetDirectory}` : '/ (root)';
     badgeEl.textContent =
       gh.repoOwner && gh.repoName
-        ? `Target: ${gh.repoOwner}/${gh.repoName} (${gh.branch || 'main'})`
+        ? `Target: ${gh.repoOwner}/${gh.repoName}@${gh.branch || 'main'} (${dirLabel})`
         : 'Local /dist-public Compiler Active';
   }
   if (tagEl) {
@@ -3009,8 +3010,8 @@ function updateSerpSimulator() {
 async function handleVerifyGitHubAccess() {
   collectScalarFields();
   const gh = currentConfig.githubConfig;
-  const feedbackEl = $('gh-verify-feedback');
-  const btn = $('btn-verify-github');
+  const feedbackEl = $('gh-push-feedback') || $('gh-verify-feedback');
+  const btn = $('btn-github-test') || $('btn-verify-github');
   const hasTokenAvailable = Boolean(
     gh.fineGrainedToken ||
       gh.hasFineGrainedToken ||
@@ -3018,9 +3019,11 @@ async function handleVerifyGitHubAccess() {
   );
 
   if (!hasTokenAvailable || !gh.repoOwner || !gh.repoName) {
+    const missingMsg = 'Please enter your GitHub Fine-Grained Token, Repository Owner, and Repository Name first.';
+    appendPipelineStep(`⚠️ ${missingMsg}`);
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
-      feedbackEl.innerHTML = `<strong style="color:#b91c1c;">Missing GitHub Details:</strong> Please enter your Fine-Grained Token (or configure GITHUB_FINE_GRAINED_TOKEN), GitHub Owner, and Repository Name above first.`;
+      feedbackEl.innerHTML = `<strong style="color:#b91c1c;">Missing GitHub Details:</strong> ${escapeHtml(missingMsg)}`;
     }
     showToast('Enter GitHub Token, Owner & Repo Name first', 'error');
     return;
@@ -3028,8 +3031,9 @@ async function handleVerifyGitHubAccess() {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Verifying with api.github.com...';
+    btn.textContent = 'Testing Connection...';
   }
+  appendPipelineStep(`Testing GitHub API access to ${gh.repoOwner}/${gh.repoName}@${gh.branch || 'main'}...`);
 
   try {
     const res = await verifyGitHubRepoRemote(gh);
@@ -3037,6 +3041,12 @@ async function handleVerifyGitHubAccess() {
     const fullName = res?.fullName || res?.repoFullName || `${gh.repoOwner}/${gh.repoName}`;
     const isPrivate = Boolean(res?.private ?? res?.privateRepo);
     const canPush = res?.canPush !== undefined ? Boolean(res.canPush) : Boolean(res?.permissions?.push || res?.permissions?.admin || verifiedOk);
+    const checkedBranch = res?.branchChecked || gh.branch || 'main';
+    const branchStatusText = res?.isEmptyRepo
+      ? 'Empty repo (auto-initializes on publish)'
+      : res?.branchExists === false
+        ? `Will auto-create "${checkedBranch}" from "${res?.defaultBranch || 'main'}"`
+        : `Branch "${checkedBranch}" ready`;
     const errMsg = res?.error || res?.message || 'Unable to verify repository.';
     if (verifiedOk) {
       if (res?.config?.githubConfig) {
@@ -3060,27 +3070,31 @@ async function handleVerifyGitHubAccess() {
       const ghTokenStatusTag = $('gh-token-status-tag');
       if (ghTokenStatusTag) {
         ghTokenStatusTag.textContent = '✓ Token Stored Server-Side';
-        ghTokenStatusTag.className = 'card-tag emerald';
+        ghTokenStatusTag.style.background = '#ecfdf5';
+        ghTokenStatusTag.style.color = '#065f46';
       }
       const clearGhBtn = $('btn-clear-gh-token');
       if (clearGhBtn) clearGhBtn.style.display = 'inline-flex';
+      renderGitHubDeployHistory();
       renderDirtyModulesSummary();
     }
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
       if (verifiedOk) {
+        appendPipelineStep(`✓ Connected to ${fullName} — ${branchStatusText}.`);
         feedbackEl.innerHTML = `
           <div style="color:#065f46; font-weight:700;">✓ Connected to GitHub Repository: ${escapeHtml(
             fullName
           )}</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">
-            Visibility: ${isPrivate ? 'Private' : 'Public'} • Default Branch: <code>${escapeHtml(
-          res.defaultBranch || 'main'
-        )}</code> • Fine-Grained Token Write Permission: <strong>${canPush ? 'Verified ✓' : 'Read-Only ⚠️'}</strong>
+            Visibility: ${isPrivate ? 'Private' : 'Public'} • Target Branch: <code>${escapeHtml(
+          checkedBranch
+        )}</code> (${escapeHtml(branchStatusText)}) • Write Permission: <strong>${canPush ? 'Verified ✓' : 'Read-Only ⚠️'}</strong>
           </div>
         `;
         showToast('GitHub repository access verified & saved!', 'success');
       } else {
+        appendPipelineStep(`✗ Verification failed: ${errMsg}`);
         feedbackEl.innerHTML = `<strong style="color:#b91c1c;">GitHub Verification Failed:</strong> ${escapeHtml(
           errMsg
         )}`;
@@ -3090,21 +3104,21 @@ async function handleVerifyGitHubAccess() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = 'Verify GitHub Token & Repo Access';
+      btn.textContent = 'Test GitHub Connection';
     }
   }
 }
 
 function renderStaticBundleInspector(bundleData) {
   const box = $('static-bundle-inspector-box');
-  const tbody = $('static-bundle-tbody');
-  const countTag = $('static-bundle-count-tag');
-  const sourceSummaryEl = $('static-bundle-source-summary');
-  if (!box || !tbody || !bundleData || !Array.isArray(bundleData.filesList)) return;
+  const tbody = $('static-files-tbody') || $('static-bundle-tbody');
+  const countTag = $('static-bundle-count') || $('static-bundle-count-tag');
+  const sourceSummaryEl = $('static-bundle-summary') || $('static-bundle-source-summary');
+  if (!tbody || !bundleData || !Array.isArray(bundleData.filesList)) return;
 
-  box.style.display = 'block';
+  if (box) box.style.display = 'block';
   if (countTag) {
-    countTag.textContent = `${bundleData.totalFiles || bundleData.filesList.length} static public files`;
+    countTag.textContent = `${bundleData.totalFiles || bundleData.filesList.length} files`;
   }
   if (sourceSummaryEl) {
     const srcLabel = bundleData.contentSource || (isRealFirebaseConfig(getActiveFirebaseConfig()) ? 'Live Cloud Firestore' : 'Local Admin Workspace');
@@ -3140,11 +3154,12 @@ function renderStaticBundleInspector(bundleData) {
 }
 
 async function handleInspectStaticBundle() {
-  const btn = $('btn-inspect-static-bundle');
+  const btn = $('btn-compile-static-bundle') || $('btn-inspect-static-bundle');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Inspecting Static Bundle...';
+    btn.textContent = 'Rebuilding Bundle...';
   }
+  appendPipelineStep('Compiling static public website bundle preview...');
   try {
     const res = await fetch('/api/static-bundle', {
       credentials: 'include',
@@ -3157,22 +3172,26 @@ async function handleInspectStaticBundle() {
     }
     if (res.ok && data?.success) {
       renderStaticBundleInspector(data);
-      showToast(`Inspected ${data.totalFiles} compiled public static files`, 'success');
+      appendPipelineStep(`✓ Compiled ${data.totalFiles} static public files (ready for GitHub push).`);
+      showToast(`Compiled ${data.totalFiles} static public files`, 'success');
     } else {
-      showToast(data?.error || 'Could not inspect static bundle.', 'error');
+      const err = data?.error || 'Could not compile static bundle.';
+      appendPipelineStep(`✗ Bundle preview failed: ${err}`);
+      showToast(err, 'error');
     }
   } catch {
+    appendPipelineStep('✗ Network error loading compiled static bundle.');
     showToast('Error loading compiled static bundle.', 'error');
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = 'Inspect Compiled Static Public Files';
+      btn.textContent = 'Rebuild Preview Bundle';
     }
   }
 }
 
 function appendPipelineStep(stepText) {
-  const box = $('gh-sync-pipeline-log');
+  const box = $('deploy-terminal-log') || $('gh-sync-pipeline-log');
   if (!box) return;
   box.classList.add('visible');
   const line = document.createElement('div');
@@ -3193,22 +3212,22 @@ async function handleCompileAndPushToGitHub() {
   const activeGhConfig = JSON.parse(JSON.stringify(currentConfig.githubConfig || {}));
   const configSnapshot = JSON.parse(JSON.stringify(currentConfig));
 
-  const btn = $('btn-publish-github');
-  const feedbackEl = $('gh-verify-feedback');
-  const pipeEl = $('gh-sync-pipeline-log');
+  const btn = $('btn-github-push') || $('btn-publish-github');
+  const feedbackEl = $('gh-push-feedback') || $('gh-verify-feedback');
+  const pipeEl = $('deploy-terminal-log') || $('gh-sync-pipeline-log');
   if (pipeEl) {
     pipeEl.innerHTML = '';
     pipeEl.classList.add('visible');
   }
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Syncing & Pushing to GitHub...';
+    btn.textContent = 'Publishing to GitHub...';
   }
 
   try {
     const pendingEdits = Array.from(dirtyModules).filter((mk) => isCmsModuleKey(mk));
     if (pendingEdits.length > 0) {
-      appendPipelineStep(`1/3 Batch-saving ${pendingEdits.length} edited module(s) [${pendingEdits.join(', ')}] to Live Firebase...`);
+      appendPipelineStep(`1/3 Saving ${pendingEdits.length} edited section(s) [${pendingEdits.join(', ')}] to Live Firebase...`);
       const batchMap = {};
       for (const mk of pendingEdits) {
         batchMap[mk] = extractConfigModule(configSnapshot, mk);
@@ -3216,7 +3235,7 @@ async function handleCompileAndPushToGitHub() {
       const batchRes = await saveSiteConfigModulesBatchRemote(batchMap, pendingEdits);
       if (!batchRes || !batchRes.success) {
         const batchErr = batchRes?.error || 'Failed saving edited modules to Firebase before GitHub publish.';
-        appendPipelineStep(`1/3 ✗ Firebase batch save failed: ${batchErr}`);
+        appendPipelineStep(`1/3 ✗ Firebase save failed: ${batchErr}`);
         if (feedbackEl) {
           feedbackEl.style.display = 'block';
           feedbackEl.innerHTML = `<strong style="color:#b91c1c;">Firebase Save Failed Before GitHub Push:</strong> ${escapeHtml(batchErr)}`;
@@ -3229,7 +3248,8 @@ async function handleCompileAndPushToGitHub() {
       appendPipelineStep('1/3 Verifying live Firebase workspace...');
     }
 
-    appendPipelineStep('2/3 Compiling full static public HTML, assets, sitemap.xml, robots.txt & diffing GitHub blobs...');
+    const targetDirLabel = activeGhConfig.targetDirectory ? `/${activeGhConfig.targetDirectory}` : '/ (repo root)';
+    appendPipelineStep(`2/3 Compiling static public HTML, assets, sitemap.xml & diffing GitHub blobs (${targetDirLabel})...`);
     const res = await publishStaticSiteToGitHubRemote(
       activeGhConfig,
       configSnapshot,
@@ -3255,6 +3275,8 @@ async function handleCompileAndPushToGitHub() {
     const filesCount = res?.filesCount ?? pub.filesPushed ?? res?.compiledBundle?.totalFiles ?? 0;
     const commitSha = res?.commitSha || pub.commitSha || '';
     const commitUrl = res?.commitUrl || pub.commitUrl || '#';
+    const targetRepoDisplay = res?.repo || (activeGhConfig.repoOwner && activeGhConfig.repoName ? `${activeGhConfig.repoOwner}/${activeGhConfig.repoName}` : '');
+    const targetBranchDisplay = res?.branch || pub.branch || activeGhConfig.branch || 'main';
     const compiledLocalCount =
       res?.compiledLocalFiles ??
       res?.compiledBundle?.totalFiles ??
@@ -3265,28 +3287,30 @@ async function handleCompileAndPushToGitHub() {
       pub?.message ||
       pub?.error ||
       res?.syncLog?.errorDetail ||
-      'GitHub credentials missing or incomplete. Check your GitHub Fine-Grained Token, Owner, and Repo Name in the GitHub & Firebase tab.';
+      'GitHub credentials missing or incomplete. Expand "One-Time Connection Settings" below and enter your GitHub Owner, Repo Name, and Fine-Grained Token.';
 
     if (feedbackEl) {
       feedbackEl.style.display = 'block';
       if (res && res.success) {
+        const ghTokenInput = $('gh-token');
+        if (ghTokenInput) ghTokenInput.value = '';
         const diffSummary = `+${addedCount} added, ~${updatedCount} updated, -${deletedCount} deleted, =${unchangedCount} unchanged`;
         if (isSkipped) {
-          appendPipelineStep(`3/3 ≡ Remote GitHub branch already identical (${diffSummary}) — skipped redundant commit.`);
+          appendPipelineStep(`3/3 ≡ ${targetRepoDisplay}@${targetBranchDisplay} already identical (${diffSummary}) — skipped redundant commit.`);
           feedbackEl.innerHTML = `
             <div style="color:#065f46; font-weight:700;">≡ GitHub Static Site Already Up to Date (0 Changed Files)</div>
             <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; font-variant-numeric:tabular-nums;">
-              Tree Diff: ${escapeHtml(diffSummary)} • All live Firebase modules synced.
+              ${escapeHtml(targetRepoDisplay ? `${targetRepoDisplay}@${targetBranchDisplay} • ` : '')}Tree Diff: ${escapeHtml(diffSummary)} • All live Firebase modules synced.
             </div>
           `;
           markClean('Verified live Firebase & confirmed GitHub public site is up to date');
           showToast('GitHub static site already up to date (0 changed files)', 'success');
         } else {
-          appendPipelineStep(`3/3 ✓ Pushed ${filesCount} changed file(s) to GitHub (${commitSha.slice(0, 7)}): ${diffSummary}.`);
+          appendPipelineStep(`3/3 ✓ Pushed ${filesCount} changed file(s) to ${targetRepoDisplay}@${targetBranchDisplay} (${commitSha.slice(0, 7)}): ${diffSummary}.`);
           feedbackEl.innerHTML = `
             <div style="color:#065f46; font-weight:700;">✓ Successfully Compiled &amp; Pushed Static Website to GitHub!</div>
             <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px; font-variant-numeric:tabular-nums;">
-              ${escapeHtml(diffSummary)} • Commit SHA: <code>${escapeHtml(commitSha.slice(0, 10))}</code> •
+              ${escapeHtml(targetRepoDisplay ? `${targetRepoDisplay}@${targetBranchDisplay} • ` : '')}${escapeHtml(diffSummary)} • Commit SHA: <code>${escapeHtml(commitSha.slice(0, 10))}</code> •
               <a href="${escapeHtml(
                 commitUrl
               )}" target="_blank" rel="noopener" style="color:var(--accent); font-weight:700;">Open Commit on GitHub ↗</a>
@@ -3300,7 +3324,7 @@ async function handleCompileAndPushToGitHub() {
         feedbackEl.innerHTML = `
           <div style="color:#b91c1c; font-weight:700;">Local Static Bundle Compiled (${
             compiledLocalCount
-          } files in /dist-public), GitHub Push Notice:</div>
+          } files in ${escapeHtml(targetDirLabel)}), GitHub Push Notice:</div>
           <div style="font-size:0.78rem; color:var(--text-sub); margin-top:4px;">${escapeHtml(
             errText
           )}</div>
@@ -3312,7 +3336,7 @@ async function handleCompileAndPushToGitHub() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = 'Compile & Push Static Website to GitHub Now';
+      btn.textContent = 'Publish Website to GitHub';
     }
   }
 }
@@ -3810,12 +3834,32 @@ function bindWorkspaceDomEvents() {
   });
 
   // GitHub Fine-Grained Token Publisher, Clear Logs, Clear Secret & Static Bundle Inspector Buttons
-  $('btn-verify-github')?.addEventListener('click', handleVerifyGitHubAccess);
-  $('btn-publish-github')?.addEventListener('click', handleCompileAndPushToGitHub);
-  $('btn-inspect-static-bundle')?.addEventListener('click', handleInspectStaticBundle);
+  const verifyBtn = $('btn-github-test') || $('btn-verify-github');
+  const pushBtn = $('btn-github-push') || $('btn-publish-github');
+  const bundleBtn = $('btn-compile-static-bundle') || $('btn-inspect-static-bundle');
+  const clearLogsBtn = $('btn-clear-deploy-logs') || $('btn-clear-sync-logs');
 
-  $('btn-clear-sync-logs')?.addEventListener('click', async () => {
-    const btn = $('btn-clear-sync-logs');
+  verifyBtn?.addEventListener('click', handleVerifyGitHubAccess);
+  pushBtn?.addEventListener('click', handleCompileAndPushToGitHub);
+  bundleBtn?.addEventListener('click', handleInspectStaticBundle);
+
+  $('btn-toggle-gh-token')?.addEventListener('click', () => {
+    const inp = $('gh-token');
+    const toggleBtn = $('btn-toggle-gh-token');
+    if (!inp || !toggleBtn) return;
+    const reveal = inp.type === 'password';
+    inp.type = reveal ? 'text' : 'password';
+    toggleBtn.textContent = reveal ? 'Hide' : 'Show';
+  });
+
+  clearLogsBtn?.addEventListener('click', async () => {
+    const btn = clearLogsBtn;
+    const termEl = $('deploy-terminal-log') || $('gh-sync-pipeline-log');
+    if (termEl) {
+      termEl.textContent = '[Ready] Log cleared. Click "Publish Website to GitHub" when ready to deploy.';
+    }
+    const fbEl = $('gh-push-feedback') || $('gh-verify-feedback');
+    if (fbEl) fbEl.style.display = 'none';
     if (btn) {
       btn.disabled = true;
       btn.textContent = 'Clearing...';
@@ -3852,7 +3896,7 @@ function bindWorkspaceDomEvents() {
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Clear Logs';
+        btn.textContent = 'Clear Log';
       }
     }
   });

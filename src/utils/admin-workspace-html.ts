@@ -840,11 +840,11 @@ export const ADMIN_WORKSPACE_SHELL_HTML: string = `<!-- Top Header Bar -->
                     </div>
                     <div class="field">
                       <label class="field-label" for="gh-dir">Output Folder</label>
-                      <input type="text" id="gh-dir" class="input" value="dist-public" placeholder="dist-public" autocomplete="off" />
+                      <input type="text" id="gh-dir" class="input" value="dist-public" placeholder="dist-public (or leave blank for repo root)" autocomplete="off" />
                     </div>
                     <div class="field span-full">
                       <label class="field-label" for="gh-token">
-                        <span>GitHub Fine-Grained Token</span>
+                        <span>GitHub Fine-Grained Token <span class="field-tag" id="gh-token-status-tag" style="margin-left:6px;">Not Configured</span></span>
                         <button type="button" id="btn-clear-gh-token" class="btn btn-sm">Clear Token</button>
                       </label>
                       <div class="password-input-wrap">

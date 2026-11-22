@@ -58,12 +58,62 @@ export async function computeGitBlobSha1Edge(content, encoding = 'utf-8') {
     .join('');
 }
 
+export function encodeGitRefBranchEdge(branch) {
+  return String(branch || 'main')
+    .trim()
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/');
+}
+
+function formatGitHubApiErrorEdge(status, apiMessage, context) {
+  const detail = String(apiMessage || '').trim();
+  if (status === 401) {
+    return `${context}: GitHub rejected the token (HTTP 401 ${detail || 'Bad credentials'}). Generate a valid Fine-Grained Personal Access Token and save it again.`;
+  }
+  if (status === 403) {
+    if (/rate limit/i.test(detail)) {
+      return `${context}: GitHub API rate limit exceeded (HTTP 403). Wait a moment and retry.`;
+    }
+    return `${context}: GitHub denied write permission (HTTP 403 ${detail || 'Forbidden'}). Ensure your Fine-Grained Token has "Contents: Read and write" access for this repository and that the target branch is not locked by branch protection rules.`;
+  }
+  if (status === 404) {
+    return `${context}: Repository or branch not found (HTTP 404 ${detail || 'Not Found'}). Verify Owner/Repo spelling and ensure your Fine-Grained Token is authorized for this repository.`;
+  }
+  if (status === 422) {
+    return `${context}: GitHub validation error (HTTP 422 ${detail || 'Unprocessable Entity'}).`;
+  }
+  return `${context}: ${detail || `HTTP ${status}`}`;
+}
+
+function resolveFullGitPathEdge(file, prefix) {
+  const cleanRel = String(file?.path || '').replace(/^\/+/, '');
+  if (file?.rootRelative) return cleanRel;
+  return prefix ? `${prefix}${cleanRel}` : cleanRel;
+}
+
+export function dedupeFilesByGitPathEdge(files, targetDir = '') {
+  const cleanTarget = String(targetDir || '').trim().replace(/^\/+|\/+$/g, '');
+  const prefix = cleanTarget ? `${cleanTarget}/` : '';
+  const seen = new Set();
+  const deduped = [];
+  for (const file of files || []) {
+    if (!file || !file.path) continue;
+    const fullPath = resolveFullGitPathEdge(file, prefix);
+    if (!fullPath || seen.has(fullPath)) continue;
+    seen.add(fullPath);
+    deduped.push(file);
+  }
+  return deduped;
+}
+
 /**
  * Deterministically compare compiled CMS files against the remote Git tree.
  */
 export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '') {
   const cleanTarget = String(targetDir || '').trim().replace(/^\/+|\/+$/g, '');
   const prefix = cleanTarget ? `${cleanTarget}/` : '';
+  const uniqueFiles = dedupeFilesByGitPathEdge(files, cleanTarget);
 
   const remoteBlobMap = new Map();
   const remoteKnownHtmlFromJson = new Set();
@@ -86,16 +136,14 @@ export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '')
   const added = [];
   const updated = [];
   const unchanged = [];
+  let hasPublicStaticRoutesMirror = false;
 
-  const resolveFullGitPath = (file) => {
-    const cleanRel = String(file.path || '').replace(/^\/+/, '');
-    if (file.rootRelative) return cleanRel;
-    return prefix ? `${prefix}${cleanRel}` : cleanRel;
-  };
-
-  for (const file of files) {
-    const fullPath = resolveFullGitPath(file);
+  for (const file of uniqueFiles) {
+    const fullPath = resolveFullGitPathEdge(file, prefix);
     desiredFullPaths.add(fullPath);
+    if (fullPath.startsWith('public/static-routes/')) {
+      hasPublicStaticRoutesMirror = true;
+    }
 
     const existingSha = remoteBlobMap.get(fullPath);
     if (!existingSha) {
@@ -120,8 +168,18 @@ export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '')
 
   const deletedPaths = [];
   for (const [remotePath] of remoteBlobMap.entries()) {
-    if (prefix && !remotePath.startsWith(prefix)) continue;
     if (desiredFullPaths.has(remotePath)) continue;
+
+    if (
+      hasPublicStaticRoutesMirror &&
+      cleanTarget !== 'public' &&
+      /^public\/static-routes\/[^/]+\.json$/.test(remotePath)
+    ) {
+      deletedPaths.push(remotePath);
+      continue;
+    }
+
+    if (prefix && !remotePath.startsWith(prefix)) continue;
 
     const rel = prefix ? remotePath.slice(prefix.length) : remotePath;
     const isOrphanedStaticJson = /^static-routes\/[^/]+\.json$/.test(rel);
@@ -135,8 +193,8 @@ export async function diffEdgeGitTrees(files, remoteTreeEntries, targetDir = '')
   }
 
   const changedPaths = [
-    ...added.map((f) => resolveFullGitPath(f)),
-    ...updated.map((f) => resolveFullGitPath(f)),
+    ...added.map((f) => resolveFullGitPathEdge(f, prefix)),
+    ...updated.map((f) => resolveFullGitPathEdge(f, prefix)),
     ...deletedPaths
   ];
 
@@ -240,22 +298,20 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
     };
   }
 
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'Master-CMS-Edge-Publisher/2.1'
+  };
+  const baseUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+
   try {
-    const res = await fetchWithTimeoutEdge(
-      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'Master-CMS-Edge-Publisher/2.0'
-        }
-      }
-    );
+    const res = await fetchWithTimeoutEdge(baseUrl, { headers });
 
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
-      const msg = `GitHub returned ${res.status}: ${errJson?.message || res.statusText}`;
+      const msg = formatGitHubApiErrorEdge(res.status, errJson?.message || res.statusText, 'GitHub Verification Failed');
       return {
         success: false,
         ok: false,
@@ -268,19 +324,42 @@ export async function verifyGitHubRepoAccessEdge(ghConfig = {}) {
     const canPush = repoData?.permissions
       ? Boolean(repoData.permissions.push || repoData.permissions.admin)
       : true;
-    const isEmptyRepo = Number(repoData?.size) === 0;
+    const defaultBranch = repoData.default_branch || 'main';
+    let isEmptyRepo = Number(repoData?.size) === 0;
+    let branchExists = false;
+
+    if (!isEmptyRepo) {
+      const refCheck = await fetchWithTimeoutEdge(
+        `${baseUrl}/git/ref/heads/${encodeGitRefBranchEdge(branch)}`,
+        { headers }
+      ).catch(() => null);
+      if (refCheck) {
+        if (refCheck.ok) {
+          branchExists = true;
+        } else if (refCheck.status === 409) {
+          isEmptyRepo = true;
+        }
+      }
+    }
+
     const fullName = repoData.full_name || `${owner}/${repo}`;
     const isPrivate = Boolean(repoData.private);
+    const branchNote = isEmptyRepo
+      ? 'empty repo auto-initializes on publish'
+      : branchExists
+        ? `target branch "${branch}" exists`
+        : `target branch "${branch}" will be auto-created from "${defaultBranch}" on first publish`;
     const msg = canPush
-      ? `Verified write access to ${fullName} (branch: ${branch}${isEmptyRepo ? ' — empty repo auto-initializes on publish' : ''}).`
+      ? `Verified write access to ${fullName} (${branchNote}).`
       : `Read access to ${fullName} succeeded, but Contents write permission is missing.`;
     return {
       success: canPush,
       ok: canPush,
       fullName,
       repoFullName: fullName,
-      defaultBranch: repoData.default_branch || 'main',
+      defaultBranch,
       branchChecked: branch,
+      branchExists,
       private: isPrivate,
       privateRepo: isPrivate,
       permissions: repoData.permissions,
@@ -313,9 +392,17 @@ async function bootstrapEmptyRepoEdge(baseUrl, headers, branch, repo) {
     });
     if (!putRes.ok) {
       const err = await putRes.json().catch(() => ({}));
-      return { bootstrapped: false, error: err?.message || `HTTP ${putRes.status}` };
+      return {
+        bootstrapped: false,
+        error: formatGitHubApiErrorEdge(putRes.status, err?.message || '', 'Empty repo bootstrap failed')
+      };
     }
-    return { bootstrapped: true };
+    const putData = await putRes.json().catch(() => ({}));
+    return {
+      bootstrapped: true,
+      commitSha: putData?.commit?.sha || '',
+      treeSha: putData?.commit?.tree?.sha || ''
+    };
   } catch (err) {
     return { bootstrapped: false, error: err?.message || 'Failed bootstrapping repository' };
   }
@@ -351,238 +438,353 @@ export async function pushStaticFilesToGitHubEdge(ghConfig = {}, files = [], cus
     Accept: 'application/vnd.github+json',
     'Content-Type': 'application/json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'Master-CMS-Edge-Publisher/2.0'
+    'User-Agent': 'Master-CMS-Edge-Publisher/2.1'
   };
   const baseUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const encodedBranch = encodeGitRefBranchEdge(branch);
 
   try {
-    let refRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
-    let latestCommitSha = '';
-    let baseTreeSha = '';
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const refRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodedBranch}`, { headers });
+      let latestCommitSha = '';
+      let baseTreeSha = '';
 
-    if (refRes.status === 409 || refRes.status === 404) {
-      const repoInfoRes = await fetchWithTimeoutEdge(baseUrl, { headers });
-      if (!repoInfoRes.ok) {
-        const repoErr = await repoInfoRes.json().catch(() => ({}));
+      if (refRes.ok) {
+        const refData = await refRes.json();
+        latestCommitSha = refData?.object?.sha || '';
+      } else if (refRes.status === 409 || refRes.status === 404) {
+        const repoInfoRes = await fetchWithTimeoutEdge(baseUrl, { headers });
+        if (!repoInfoRes.ok) {
+          const repoErr = await repoInfoRes.json().catch(() => ({}));
+          return {
+            ok: false,
+            status: 'error',
+            branch,
+            filesPushed: 0,
+            message: formatGitHubApiErrorEdge(
+              repoInfoRes.status,
+              repoErr?.message || '',
+              `Cannot access repository ${owner}/${repo}`
+            )
+          };
+        }
+        const repoInfo = await repoInfoRes.json();
+        const defaultBranch = repoInfo.default_branch || 'main';
+        if (refRes.status === 404 && branch !== defaultBranch) {
+          const defaultRefRes = await fetchWithTimeoutEdge(
+            `${baseUrl}/git/ref/heads/${encodeGitRefBranchEdge(defaultBranch)}`,
+            { headers }
+          );
+          if (defaultRefRes.ok) {
+            const defData = await defaultRefRes.json();
+            const defSha = defData?.object?.sha || '';
+            if (defSha) {
+              const createRef = await fetchWithTimeoutEdge(`${baseUrl}/git/refs`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: defSha })
+              });
+              if (createRef.ok) {
+                latestCommitSha = defSha;
+              } else {
+                const createErr = await createRef.json().catch(() => ({}));
+                return {
+                  ok: false,
+                  status: 'error',
+                  branch,
+                  filesPushed: 0,
+                  message: formatGitHubApiErrorEdge(
+                    createRef.status,
+                    createErr?.message || '',
+                    `Failed creating branch "${branch}" from "${defaultBranch}"`
+                  )
+                };
+              }
+            }
+          }
+        }
+        if (!latestCommitSha) {
+          const boot = await bootstrapEmptyRepoEdge(baseUrl, headers, branch, repo);
+          if (!boot.bootstrapped) {
+            return {
+              ok: false,
+              status: 'error',
+              branch,
+              filesPushed: 0,
+              message: `Repository initialization failed: ${boot.error}`
+            };
+          }
+          latestCommitSha = boot.commitSha || '';
+          baseTreeSha = boot.treeSha || '';
+          if (!latestCommitSha) {
+            const afterBootRef = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodedBranch}`, { headers });
+            if (afterBootRef.ok) {
+              const afterBootData = await afterBootRef.json();
+              latestCommitSha = afterBootData?.object?.sha || '';
+            }
+          }
+        }
+      } else {
+        const refErr = await refRes.json().catch(() => ({}));
         return {
           ok: false,
           status: 'error',
           branch,
           filesPushed: 0,
-          message: `Cannot access repository ${owner}/${repo}: ${repoErr?.message || `HTTP ${repoInfoRes.status}`}`
+          message: formatGitHubApiErrorEdge(
+            refRes.status,
+            refErr?.message || '',
+            `Failed reading branch "${branch}" on ${owner}/${repo}`
+          )
         };
       }
-      const repoInfo = await repoInfoRes.json();
-      const defaultBranch = repoInfo.default_branch || 'main';
-      if (refRes.status === 404 && branch !== defaultBranch) {
-        const defaultRefRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, { headers });
-        if (defaultRefRes.ok) {
-          const defData = await defaultRefRes.json();
-          const defSha = defData?.object?.sha || '';
-          if (defSha) {
-            const createRef = await fetchWithTimeoutEdge(`${baseUrl}/git/refs`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: defSha })
-            });
-            if (createRef.ok) latestCommitSha = defSha;
-          }
-        }
-      }
-      if (!latestCommitSha) {
-        const boot = await bootstrapEmptyRepoEdge(baseUrl, headers, branch, repo);
-        if (!boot.bootstrapped) {
+
+      if (latestCommitSha && !baseTreeSha) {
+        const commitRes = await fetchWithTimeoutEdge(`${baseUrl}/git/commits/${latestCommitSha}`, { headers });
+        if (!commitRes.ok) {
+          const commitErr = await commitRes.json().catch(() => ({}));
           return {
             ok: false,
             status: 'error',
             branch,
             filesPushed: 0,
-            message: `Repository initialization failed: ${boot.error}`
+            message: formatGitHubApiErrorEdge(
+              commitRes.status,
+              commitErr?.message || '',
+              `Failed loading commit ${latestCommitSha.slice(0, 7)}`
+            )
           };
         }
-        refRes = await fetchWithTimeoutEdge(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
-      }
-    }
-
-    if (!latestCommitSha && refRes.ok) {
-      const refData = await refRes.json();
-      latestCommitSha = refData?.object?.sha || '';
-    }
-
-    if (latestCommitSha) {
-      const commitRes = await fetchWithTimeoutEdge(`${baseUrl}/git/commits/${latestCommitSha}`, { headers });
-      if (commitRes.ok) {
         const commitData = await commitRes.json();
         baseTreeSha = commitData?.tree?.sha || '';
       }
-    }
 
-    let remoteEntries = [];
-    if (baseTreeSha) {
-      const remoteTreeRes = await fetchWithTimeoutEdge(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, { headers });
-      if (remoteTreeRes.ok) {
-        const remoteTreeData = await remoteTreeRes.json();
-        if (Array.isArray(remoteTreeData?.tree) && !remoteTreeData.truncated) {
-          remoteEntries = remoteTreeData.tree;
+      let remoteEntries = [];
+      let remoteTreeTruncated = false;
+      if (baseTreeSha) {
+        const remoteTreeRes = await fetchWithTimeoutEdge(`${baseUrl}/git/trees/${baseTreeSha}?recursive=1`, { headers });
+        if (remoteTreeRes.ok) {
+          const remoteTreeData = await remoteTreeRes.json();
+          if (remoteTreeData?.truncated) {
+            remoteTreeTruncated = true;
+          } else if (Array.isArray(remoteTreeData?.tree)) {
+            remoteEntries = remoteTreeData.tree;
+          }
         }
       }
-    }
 
-    const isViteCloudflareRepo = remoteEntries.some(
-      (e) => e.path === 'vite.config.ts' || e.path.startsWith('public/')
-    );
-    const effectiveFiles = [...files];
-    if (isViteCloudflareRepo && targetDir) {
-      const PUBLIC_MIRROR_FILES = new Set([
-        'sitemap.xml',
-        'robots.txt',
-        'feed.xml',
-        'manifest.webmanifest',
-        '_headers'
-      ]);
-      for (const f of files) {
-        if (f.rootRelative) continue;
-        const cleanRel = String(f.path || '').replace(/^\/+/, '');
-        if (cleanRel.startsWith('static-routes/') || PUBLIC_MIRROR_FILES.has(cleanRel)) {
-          effectiveFiles.push({
-            ...f,
-            path: `public/${cleanRel}`,
-            rootRelative: true
+      const isViteCloudflareRepo = remoteEntries.some(
+        (e) => e.path === 'vite.config.ts' || e.path === 'admin.html' || e.path.startsWith('functions/')
+      );
+      let effectiveFiles = [...files];
+      if (isViteCloudflareRepo && targetDir && targetDir !== 'public') {
+        const existingRootPaths = new Set(
+          effectiveFiles.filter((f) => f.rootRelative).map((f) => String(f.path || '').replace(/^\/+/, ''))
+        );
+        const PUBLIC_MIRROR_FILES = new Set([
+          'sitemap.xml',
+          'robots.txt',
+          'feed.xml',
+          'manifest.webmanifest',
+          '_headers'
+        ]);
+        for (const f of files) {
+          if (f.rootRelative) continue;
+          const cleanRel = String(f.path || '').replace(/^\/+/, '');
+          if (cleanRel.startsWith('static-routes/') || PUBLIC_MIRROR_FILES.has(cleanRel)) {
+            const pubPath = `public/${cleanRel}`;
+            if (!existingRootPaths.has(pubPath)) {
+              effectiveFiles.push({
+                ...f,
+                path: pubPath,
+                rootRelative: true
+              });
+              existingRootPaths.add(pubPath);
+            }
+          }
+        }
+      }
+
+      effectiveFiles = dedupeFilesByGitPathEdge(effectiveFiles, targetDir);
+
+      const diff = await diffEdgeGitTrees(effectiveFiles, remoteEntries, targetDir);
+      const totalChanged = diff.added.length + diff.updated.length + diff.deletedPaths.length;
+
+      if (baseTreeSha && !remoteTreeTruncated && remoteEntries.length > 0 && totalChanged === 0) {
+        return {
+          ok: true,
+          status: 'success',
+          skipped: true,
+          commitSha: latestCommitSha,
+          commitUrl: latestCommitSha ? `https://github.com/${owner}/${repo}/commit/${latestCommitSha}` : undefined,
+          branch,
+          filesPushed: 0,
+          addedCount: 0,
+          updatedCount: 0,
+          deletedCount: 0,
+          unchangedCount: diff.unchanged.length,
+          changedPaths: [],
+          message: `Repository ${owner}/${repo}@${branch} is already up to date (${diff.unchanged.length} static files unchanged — skipped empty commit).`
+        };
+      }
+
+      const filesToUpload =
+        !remoteTreeTruncated && remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : effectiveFiles;
+      const treeItems = [];
+      const seenTreePaths = new Set();
+      const prefix = targetDir ? `${targetDir}/` : '';
+
+      for (const file of filesToUpload) {
+        const finalPath = resolveFullGitPathEdge(file, prefix);
+        if (!finalPath || seenTreePaths.has(finalPath)) continue;
+        seenTreePaths.add(finalPath);
+        if (file.encoding === 'base64') {
+          const blobRes = await fetchWithTimeoutEdge(`${baseUrl}/git/blobs`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ content: file.content, encoding: 'base64' })
           });
+          if (!blobRes.ok) {
+            const errBlob = await blobRes.json().catch(() => ({}));
+            return {
+              ok: false,
+              status: 'error',
+              branch,
+              filesPushed: 0,
+              message: formatGitHubApiErrorEdge(
+                blobRes.status,
+                errBlob?.message || blobRes.statusText,
+                `Blob upload failed for ${finalPath}`
+              )
+            };
+          }
+          const blobJson = await blobRes.json();
+          treeItems.push({ path: finalPath, mode: '100644', type: 'blob', sha: blobJson.sha });
+        } else {
+          treeItems.push({ path: finalPath, mode: '100644', type: 'blob', content: file.content });
         }
       }
-    }
 
-    const diff = await diffEdgeGitTrees(effectiveFiles, remoteEntries, targetDir);
-    const totalChanged = diff.added.length + diff.updated.length + diff.deletedPaths.length;
+      for (const delPath of diff.deletedPaths) {
+        if (!delPath || seenTreePaths.has(delPath)) continue;
+        seenTreePaths.add(delPath);
+        treeItems.push({ path: delPath, mode: '100644', type: 'blob', sha: null });
+      }
 
-    if (baseTreeSha && remoteEntries.length > 0 && totalChanged === 0) {
+      const treeBody = { tree: treeItems };
+      if (baseTreeSha) treeBody.base_tree = baseTreeSha;
+      const treeRes = await fetchWithTimeoutEdge(
+        `${baseUrl}/git/trees`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(treeBody)
+        },
+        30000
+      );
+      if (!treeRes.ok) {
+        const errTree = await treeRes.json().catch(() => ({}));
+        return {
+          ok: false,
+          status: 'error',
+          branch,
+          filesPushed: 0,
+          message: formatGitHubApiErrorEdge(
+            treeRes.status,
+            errTree?.message || treeRes.statusText,
+            `Failed creating Git Tree on ${owner}/${repo}`
+          )
+        };
+      }
+      const treeJson = await treeRes.json();
+
+      const commitMsg =
+        (customMessage || ghConfig.commitMessageTemplate || 'chore(static-publish): sync static public site from Admin Studio').trim() +
+        ` (+${diff.added.length}/~${diff.updated.length}/-${diff.deletedPaths.length})`;
+
+      const newCommitBody = { message: commitMsg, tree: treeJson.sha };
+      if (latestCommitSha) newCommitBody.parents = [latestCommitSha];
+      const newCommitRes = await fetchWithTimeoutEdge(`${baseUrl}/git/commits`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(newCommitBody)
+      });
+      if (!newCommitRes.ok) {
+        const errNewCommit = await newCommitRes.json().catch(() => ({}));
+        return {
+          ok: false,
+          status: 'error',
+          branch,
+          filesPushed: 0,
+          message: formatGitHubApiErrorEdge(
+            newCommitRes.status,
+            errNewCommit?.message || newCommitRes.statusText,
+            'Commit creation failed'
+          )
+        };
+      }
+      const newCommitJson = await newCommitRes.json();
+
+      const refMethod = latestCommitSha ? 'PATCH' : 'POST';
+      const refEndpoint = latestCommitSha
+        ? `${baseUrl}/git/refs/heads/${encodedBranch}`
+        : `${baseUrl}/git/refs`;
+      const refPayload = latestCommitSha
+        ? { sha: newCommitJson.sha, force: false }
+        : { ref: `refs/heads/${branch}`, sha: newCommitJson.sha };
+
+      const updateRefRes = await fetchWithTimeoutEdge(refEndpoint, {
+        method: refMethod,
+        headers,
+        body: JSON.stringify(refPayload)
+      });
+      if (!updateRefRes.ok) {
+        const errUpd = await updateRefRes.json().catch(() => ({}));
+        if (
+          attempt < maxAttempts &&
+          (updateRefRes.status === 422 || updateRefRes.status === 409) &&
+          /fast.?forward|reference|already exists|update/i.test(String(errUpd?.message || ''))
+        ) {
+          continue;
+        }
+        return {
+          ok: false,
+          status: 'error',
+          branch,
+          filesPushed: 0,
+          message: formatGitHubApiErrorEdge(
+            updateRefRes.status,
+            errUpd?.message || updateRefRes.statusText,
+            `Branch ref update failed for heads/${branch}`
+          )
+        };
+      }
+
+      const commitUrl = `https://github.com/${owner}/${repo}/commit/${newCommitJson.sha}`;
       return {
         ok: true,
         status: 'success',
-        skipped: true,
-        commitSha: latestCommitSha,
-        commitUrl: latestCommitSha ? `https://github.com/${owner}/${repo}/commit/${latestCommitSha}` : undefined,
+        skipped: false,
+        commitSha: newCommitJson.sha,
+        commitUrl,
         branch,
-        filesPushed: 0,
-        addedCount: 0,
-        updatedCount: 0,
-        deletedCount: 0,
+        filesPushed: filesToUpload.length + diff.deletedPaths.length,
+        addedCount: diff.added.length,
+        updatedCount: diff.updated.length,
+        deletedCount: diff.deletedPaths.length,
         unchangedCount: diff.unchanged.length,
-        changedPaths: [],
-        message: `Repository ${owner}/${repo}@${branch} is already up to date (${diff.unchanged.length} static files unchanged — skipped empty commit).`
+        changedPaths: diff.changedPaths.slice(0, 32),
+        message: `Published to ${owner}/${repo}@${branch} (${newCommitJson.sha.slice(0, 7)}): +${diff.added.length} added, ~${diff.updated.length} updated, -${diff.deletedPaths.length} pruned (${diff.unchanged.length} unchanged skipped).`
       };
     }
 
-    const filesToUpload = remoteEntries.length > 0 ? [...diff.added, ...diff.updated] : effectiveFiles;
-    const treeItems = [];
-    for (const file of filesToUpload) {
-      const cleanRel = String(file.path || '').replace(/^\/+/, '');
-      const finalPath = file.rootRelative ? cleanRel : targetDir ? `${targetDir}/${cleanRel}` : cleanRel;
-      if (file.encoding === 'base64') {
-        const blobRes = await fetchWithTimeoutEdge(`${baseUrl}/git/blobs`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ content: file.content, encoding: 'base64' })
-        });
-        if (!blobRes.ok) {
-          const errBlob = await blobRes.json().catch(() => ({}));
-          return {
-            ok: false,
-            status: 'error',
-            branch,
-            filesPushed: 0,
-            message: `Blob upload failed for ${finalPath}: ${errBlob?.message || blobRes.statusText}`
-          };
-        }
-        const blobJson = await blobRes.json();
-        treeItems.push({ path: finalPath, mode: '100644', type: 'blob', sha: blobJson.sha });
-      } else {
-        treeItems.push({ path: finalPath, mode: '100644', type: 'blob', content: file.content });
-      }
-    }
-
-    for (const delPath of diff.deletedPaths) {
-      treeItems.push({ path: delPath, mode: '100644', type: 'blob', sha: null });
-    }
-
-    const treeBody = { tree: treeItems };
-    if (baseTreeSha) treeBody.base_tree = baseTreeSha;
-    const treeRes = await fetchWithTimeoutEdge(
-      `${baseUrl}/git/trees`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(treeBody)
-      },
-      30000
-    );
-    if (!treeRes.ok) {
-      const errTree = await treeRes.json().catch(() => ({}));
-      return { ok: false, status: 'error', branch, filesPushed: 0, message: `Tree failed: ${errTree?.message || treeRes.statusText}` };
-    }
-    const treeJson = await treeRes.json();
-
-    const commitMsg =
-      (customMessage || ghConfig.commitMessageTemplate || 'chore(static-publish): sync static public site from Admin Studio').trim() +
-      ` (+${diff.added.length}/~${diff.updated.length}/-${diff.deletedPaths.length})`;
-
-    const newCommitBody = { message: commitMsg, tree: treeJson.sha };
-    if (latestCommitSha) newCommitBody.parents = [latestCommitSha];
-    const newCommitRes = await fetchWithTimeoutEdge(`${baseUrl}/git/commits`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(newCommitBody)
-    });
-    if (!newCommitRes.ok) {
-      const errNewCommit = await newCommitRes.json().catch(() => ({}));
-      return {
-        ok: false,
-        status: 'error',
-        branch,
-        filesPushed: 0,
-        message: `Commit creation failed: ${errNewCommit?.message || newCommitRes.statusText}`
-      };
-    }
-    const newCommitJson = await newCommitRes.json();
-
-    const refMethod = latestCommitSha ? 'PATCH' : 'POST';
-    const refEndpoint = latestCommitSha ? `${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}` : `${baseUrl}/git/refs`;
-    const refPayload = latestCommitSha
-      ? { sha: newCommitJson.sha, force: false }
-      : { ref: `refs/heads/${branch}`, sha: newCommitJson.sha };
-
-    const updateRefRes = await fetchWithTimeoutEdge(refEndpoint, {
-      method: refMethod,
-      headers,
-      body: JSON.stringify(refPayload)
-    });
-    if (!updateRefRes.ok) {
-      const errUpd = await updateRefRes.json().catch(() => ({}));
-      return {
-        ok: false,
-        status: 'error',
-        branch,
-        filesPushed: 0,
-        message: `Branch ref update failed: ${errUpd?.message || updateRefRes.statusText}`
-      };
-    }
-
-    const commitUrl = `https://github.com/${owner}/${repo}/commit/${newCommitJson.sha}`;
     return {
-      ok: true,
-      status: 'success',
-      skipped: false,
-      commitSha: newCommitJson.sha,
-      commitUrl,
+      ok: false,
+      status: 'error',
       branch,
-      filesPushed: filesToUpload.length + diff.deletedPaths.length,
-      addedCount: diff.added.length,
-      updatedCount: diff.updated.length,
-      deletedCount: diff.deletedPaths.length,
-      unchangedCount: diff.unchanged.length,
-      changedPaths: diff.changedPaths.slice(0, 32),
-      message: `Published to ${owner}/${repo}@${branch} (${newCommitJson.sha.slice(0, 7)}): +${diff.added.length} added, ~${diff.updated.length} updated, -${diff.deletedPaths.length} pruned (${diff.unchanged.length} unchanged skipped).`
+      filesPushed: 0,
+      message: `Unable to fast-forward branch "${branch}" after retrying concurrent updates. Please try again.`
     };
   } catch (err) {
     return {

@@ -167,11 +167,11 @@
     "showFooterBrandSummary": true,
     "showFooterContactEmail": true,
     "footerQuickLinks": [],
-    "disclaimerHeading": "",
+    "disclaimerHeading": "Legal Disclaimer",
     "disclaimerMetaTitle": "",
     "disclaimerMetaDescription": "",
     "disclaimer": "",
-    "siteLinksHeading": "",
+    "siteLinksHeading": "Legal & Support Pages",
     "copyright": "",
     "showAdminLink": false
   },
@@ -195,5 +195,5 @@
   },
   "syncLogs": [],
   "dirtyModulesSinceSync": [],
-  "updatedAt": 1794929121834
+  "updatedAt": 1795287970285
 }

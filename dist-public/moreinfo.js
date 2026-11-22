@@ -1,11 +1,125 @@
-import {
-  TURNSTILE_ACTION,
-  CLIENT_TAP_HOLD_MS,
-  TOKEN_V,
-  inspectClientGate,
-  collectEnv,
-  bytesToBase64Url
-} from './src/utils/cms-engine';
+const TURNSTILE_ACTION = 'session_clearance';
+const CLIENT_TAP_HOLD_MS = 650;
+const TOKEN_V = 12;
+
+function bytesToBase64Url(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function inspectClientGate(gpuRenderer = '', policyMode = 'universal_human') {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return { wb: 0, hl: 0, dk: 0, failed: false };
+  }
+  const host = (window.location?.hostname || '').toLowerCase();
+  const isLocalUniversal =
+    (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.run.app')) &&
+    policyMode === 'universal_human';
+
+  const ua = navigator.userAgent || '';
+  const wb = navigator.webdriver === true && !isLocalUniversal ? 1 : 0;
+
+  const win = window;
+  const hasAutomationGlobals = Boolean(
+    win.__nightmare ||
+      win._phantom ||
+      win.callPhantom ||
+      win.__selenium_unwrapped ||
+      win.__webdriver_evaluate ||
+      win.__driver_evaluate ||
+      win.domAutomation ||
+      win.domAutomationController ||
+      (!isLocalUniversal && (win.__playwright__binding__ || win.__pwInitScripts))
+  );
+
+  const isHeadlessUa = !isLocalUniversal && /HeadlessChrome|PhantomJS|SlimerJS| Electron\//i.test(ua);
+  const isBadGpu =
+    !isLocalUniversal &&
+    Boolean(gpuRenderer) &&
+    /SwiftShader|llvmpipe|Mesa OffScreen|Software Rasterizer|VirtualBox/i.test(gpuRenderer);
+
+  const hl = hasAutomationGlobals || isHeadlessUa || isBadGpu ? 1 : 0;
+
+  let dk = 0;
+  if (policyMode === 'strict_mobile_only') {
+    const isIpadOs = /Macintosh/.test(ua) && Number(navigator.maxTouchPoints || 0) >= 2;
+    const isMobileUa = /Android|iPhone|iPad|iPod/i.test(ua) || isIpadOs;
+    const isDesktopPlatform =
+      /^(Win32|Win64|Windows|MacIntel|Linux x86_64|Linux i686)$/i.test(navigator.platform || '') &&
+      !isIpadOs &&
+      !/Android/i.test(ua);
+    const noTouch = Number(navigator.maxTouchPoints || 0) < 1;
+    if (!isMobileUa || isDesktopPlatform || noTouch) {
+      dk = 1;
+    }
+  }
+
+  return {
+    wb,
+    hl,
+    dk,
+    failed: Boolean(wb || hl || dk)
+  };
+}
+
+function probeWebGlGpu() {
+  if (typeof document === 'undefined') return 'unknown-gpu';
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return 'no-webgl';
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (debugInfo) {
+      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+      if (renderer) return String(renderer).trim();
+    }
+    const fallbackRenderer = gl.getParameter(gl.RENDERER);
+    return fallbackRenderer ? String(fallbackRenderer).trim() : 'webgl-generic';
+  } catch {
+    return 'webgl-blocked';
+  }
+}
+
+async function sha256HexTruncated16(input) {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest).slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function collectEnv(policyMode = 'universal_human') {
+  const sw = typeof screen !== 'undefined' ? Number(screen.width || 390) : 390;
+  const sh = typeof screen !== 'undefined' ? Number(screen.height || 844) : 844;
+  const dpr =
+    typeof window !== 'undefined' ? Math.round(Number(window.devicePixelRatio || 2) * 100) / 100 : 2;
+  const cores = typeof navigator !== 'undefined' ? Number(navigator.hardwareConcurrency || 4) : 4;
+  const mem = typeof navigator !== 'undefined' ? Number(navigator.deviceMemory || 4) : 4;
+  const touchPts = typeof navigator !== 'undefined' ? Number(navigator.maxTouchPoints || 0) : 0;
+  const tz =
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      : 'UTC';
+  const lang = typeof navigator !== 'undefined' ? String(navigator.language || 'en-US') : 'en-US';
+  const gpu = probeWebGlGpu();
+
+  const hardStr = [Math.min(sw, sh), Math.max(sw, sh), dpr, cores, touchPts].join('|');
+  const softStr = [gpu, tz, lang, mem].join('|');
+  const hw = await sha256HexTruncated16(hardStr);
+  const gate = inspectClientGate(gpu, policyMode);
+
+  return {
+    hard: { sw, sh, dpr, cores, touchPts },
+    soft: { gpu, tz, lang, mem },
+    hardStr,
+    softStr,
+    hw,
+    gate
+  };
+}
 
 const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
@@ -90,6 +204,50 @@ function updateClearanceButtonUi() {
   label.textContent = nonceData ? 'VERIFYING…' : 'PLEASE WAIT…';
 }
 
+function sanitizeSafeUrlClient(rawUrl, httpOnly = false) {
+  const trimmed = String(rawUrl || '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .trim();
+  if (!trimmed || trimmed.startsWith('//')) return '';
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('https://') || lower.startsWith('http://')) return trimmed;
+  if (!httpOnly && trimmed.startsWith('/')) return trimmed;
+  if (
+    !httpOnly &&
+    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  return '';
+}
+
+function sanitizeGatewayNoteHtml(rawHtml) {
+  if (!rawHtml || !String(rawHtml).trim()) return '';
+  let html = String(rawHtml);
+  const blocked = 'script|iframe|object|embed|applet|style|svg|math|noscript|template|textarea|title|xmp|form';
+  html = html.replace(new RegExp(`<(${blocked})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`, 'gi'), '');
+  html = html.replace(new RegExp(`<\\/?(${blocked}|base|meta|link|frame|frameset|input|button|select|option)\\b[^>]*>`, 'gi'), '');
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+  html = html.replace(/<([a-zA-Z][a-zA-Z0-9:-]*)(\s[^>]*?)?(\/?)>/g, (_full, tag, rawAttrs = '', selfClose = '') => {
+    let attrs = String(rawAttrs || '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    attrs = attrs.replace(/\s+on[a-z0-9_-]*(?=\s|$|\/)/gi, '');
+    attrs = attrs.replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    attrs = attrs.replace(
+      /\s+(href|src|action|formaction|poster|xlink:href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+      (_m, attrName, dq, sq, uq) => {
+        const val = dq ?? sq ?? uq ?? '';
+        const lowerAttr = String(attrName).toLowerCase();
+        const safe = sanitizeSafeUrlClient(val, false);
+        if (!safe) return lowerAttr === 'href' ? ' href="#"' : '';
+        return ` ${lowerAttr}="${safe.replace(/"/g, '&quot;')}"`;
+      }
+    );
+    return `<${tag}${attrs}${selfClose}>`;
+  });
+  return html;
+}
+
 function showGatewayNotice(message, type = 'amber', helpline = null) {
   const box = document.getElementById('gw-notice-box');
   const textEl = document.getElementById('gw-notice-text');
@@ -102,8 +260,8 @@ function showGatewayNotice(message, type = 'amber', helpline = null) {
 
   if (helplineRow) {
     helplineRow.innerHTML = '';
-    const wa = helpline?.whatsapp || gatewayConfig.helplineWhatsapp || '';
-    const tg = helpline?.telegram || gatewayConfig.helplineTelegram || '';
+    const wa = sanitizeSafeUrlClient(helpline?.whatsapp || gatewayConfig.helplineWhatsapp || '', true);
+    const tg = sanitizeSafeUrlClient(helpline?.telegram || gatewayConfig.helplineTelegram || '', true);
     if (wa) {
       const a = document.createElement('a');
       a.href = wa;
@@ -153,10 +311,11 @@ function applyGatewayMetadata(meta) {
   const footerCopy = document.getElementById('gw-footer-copyright');
 
   const displayTitle = meta.customHeading || meta.appName || meta.brandName || '';
+  const safeLogoUrl = sanitizeSafeUrlClient(meta.logoUrl || '', false);
   if (brandNameEl) brandNameEl.textContent = meta.brandName || '';
   if (brandLogoEl) {
-    if (meta.logoUrl) {
-      brandLogoEl.src = meta.logoUrl;
+    if (safeLogoUrl) {
+      brandLogoEl.src = safeLogoUrl;
       brandLogoEl.alt = meta.brandName ? `${meta.brandName} Logo` : 'Logo';
       brandLogoEl.classList.remove('hidden');
     } else {
@@ -165,8 +324,8 @@ function applyGatewayMetadata(meta) {
     }
   }
   if (appIconEl) {
-    if (meta.logoUrl) {
-      appIconEl.src = meta.logoUrl;
+    if (safeLogoUrl) {
+      appIconEl.src = safeLogoUrl;
       appIconEl.alt = displayTitle || 'Icon';
       appIconEl.classList.remove('hidden');
     } else {
@@ -180,9 +339,9 @@ function applyGatewayMetadata(meta) {
   if (appMetaDotEl) appMetaDotEl.classList.toggle('hidden', !(meta.version && meta.fileSize));
 
   if (customNoteEl) {
-    const note = (meta.customNoteHtml || '').trim();
-    if (note) {
-      customNoteEl.innerHTML = note;
+    const safeNote = sanitizeGatewayNoteHtml((meta.customNoteHtml || '').trim());
+    if (safeNote) {
+      customNoteEl.innerHTML = safeNote;
       customNoteEl.classList.remove('hidden');
     } else {
       customNoteEl.innerHTML = '';
@@ -479,7 +638,14 @@ async function handleClearanceSubmit(e) {
     const data = await res.json().catch(() => null);
 
     if (res.ok && data && (data.status === 'available' || data.status === 'ok') && data.url) {
-      window.location.replace(data.url);
+      const safeDestUrl = sanitizeSafeUrlClient(data.url, true);
+      if (safeDestUrl) {
+        window.location.replace(safeDestUrl);
+        return;
+      }
+      isSubmitting = false;
+      showGatewayNotice('Invalid destination link configured. Please contact support.', 'amber');
+      updateClearanceButtonUi();
       return;
     }
 

@@ -167,6 +167,41 @@ const DEFAULT_STATIC_HTML_TEMPLATE = `<!doctype html>
   </body>
 </html>`;
 
+const RESERVED_PUBLIC_SLUGS = new Set([
+  'news',
+  'moreinfo',
+  'download',
+  'admin',
+  'api',
+  'assets',
+  'uploads',
+  'static-routes',
+  'public',
+  'functions'
+]);
+
+/**
+ * Normalize Vite-bundled `<script type="module" src="/assets/main-*.js">` (or `moreinfo-*.js`)
+ * back to stable `/app.js` (or `/moreinfo.js`) when compiling portable static public HTML.
+ */
+export function normalizeStaticPublicHtmlScripts(html: string, targetScriptPath: '/app.js' | '/moreinfo.js'): string {
+  if (!html) return html;
+  const chunkPrefix = targetScriptPath === '/moreinfo.js' ? 'moreinfo' : 'main';
+  let out = html.replace(
+    new RegExp(
+      `<script\\s+[^>]*src=["']\\/?assets\\/${chunkPrefix}-[a-zA-Z0-9_-]+\\.js["'][^>]*>\\s*<\\/script>`,
+      'gi'
+    ),
+    `<script type="module" src="${targetScriptPath}"></script>`
+  );
+  // Strip stale Vite modulepreload hints referencing old hashed chunks
+  out = out.replace(
+    /<link\s+[^>]*rel=["']modulepreload["'][^>]*href=["']\/?assets\/[^"']+\.js["'][^>]*\/?>\s*/gi,
+    ''
+  );
+  return out;
+}
+
 export function compileStaticSiteBundle(
   config: SiteConfig,
   indexHtmlTemplate: string = DEFAULT_STATIC_HTML_TEMPLATE,
@@ -182,14 +217,25 @@ export function compileStaticSiteBundle(
 ): StaticBundleCompilationResult {
   const files: CompiledStaticFile[] = [];
   const routesCompiled: string[] = [];
+  const seenFilePaths = new Set<string>();
+  const normalizedIndexTemplate = normalizeStaticPublicHtmlScripts(indexHtmlTemplate, '/app.js');
+
+  const pushUniqueFile = (file: CompiledStaticFile) => {
+    const clean = file.path.replace(/^\/+/, '');
+    if (!clean || seenFilePaths.has(clean)) return;
+    seenFilePaths.add(clean);
+    files.push({ ...file, path: clean });
+  };
 
   const registerRoute = (routePath: string, htmlOutputPath: string, label: string) => {
+    const cleanHtmlPath = htmlOutputPath.replace(/^\/+/, '');
+    if (seenFilePaths.has(cleanHtmlPath)) return;
     routesCompiled.push(routePath);
 
     // 1. Pre-compiled standalone HTML file for this route
-    const fullHtml = renderCompleteStaticPageHtml(indexHtmlTemplate, config, routePath);
-    files.push({
-      path: htmlOutputPath,
+    const fullHtml = renderCompleteStaticPageHtml(normalizedIndexTemplate, config, routePath);
+    pushUniqueFile({
+      path: cleanHtmlPath,
       content: fullHtml,
       encoding: 'utf-8',
       description: `Static HTML page for ${label} (${routePath})`
@@ -198,7 +244,7 @@ export function compileStaticSiteBundle(
     // 2. Pre-compiled static JSON route payload for zero-Firebase client navigation
     const payload = buildPartialRoutePayload(routePath, config);
     const jsonFileName = routePathToStaticJsonName(routePath);
-    files.push({
+    pushUniqueFile({
       path: `static-routes/${jsonFileName}`,
       content: JSON.stringify(payload, null, 2),
       encoding: 'utf-8',
@@ -223,7 +269,7 @@ export function compileStaticSiteBundle(
   // 4. Standalone Legal & Support Pages (`/:pageSlug`)
   for (const page of config.pages || []) {
     const slug = generateSlug(page.slug || page.label);
-    if (slug) {
+    if (slug && !RESERVED_PUBLIC_SLUGS.has(slug)) {
       registerRoute(`/${slug}`, `${slug}/index.html`, `Standalone Page: ${page.label}`);
     }
   }
@@ -231,14 +277,15 @@ export function compileStaticSiteBundle(
   // 5. Isolated Protected Security & Download Gateway (`/moreinfo` & `/download`)
   // Note: Never registered in routesCompiled for sitemap.xml! Strictly isolated with noindex, nofollow.
   if (config.securityGate?.enabled !== false && options?.moreinfoHtmlTemplate) {
-    const gatewayHtml = renderGatewayPageHtml(options.moreinfoHtmlTemplate, config);
-    files.push({
+    const normalizedMoreinfoTemplate = normalizeStaticPublicHtmlScripts(options.moreinfoHtmlTemplate, '/moreinfo.js');
+    const gatewayHtml = renderGatewayPageHtml(normalizedMoreinfoTemplate, config);
+    pushUniqueFile({
       path: 'moreinfo/index.html',
       content: gatewayHtml,
       encoding: 'utf-8',
       description: 'Isolated v12 7-Gate Security & Download Gateway (/moreinfo)'
     });
-    files.push({
+    pushUniqueFile({
       path: 'download/index.html',
       content: gatewayHtml,
       encoding: 'utf-8',
@@ -246,7 +293,7 @@ export function compileStaticSiteBundle(
     });
   }
   if (options?.moreinfoJsContent) {
-    files.push({
+    pushUniqueFile({
       path: 'moreinfo.js',
       content: options.moreinfoJsContent,
       encoding: 'utf-8',

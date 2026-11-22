@@ -1645,23 +1645,200 @@ export function renderCompleteStaticPageHtmlEdge(indexHtmlTemplate, config, path
   return html;
 }
 
+const RESERVED_PUBLIC_SLUGS_EDGE = new Set([
+  'news',
+  'moreinfo',
+  'download',
+  'admin',
+  'api',
+  'assets',
+  'uploads',
+  'static-routes',
+  'public',
+  'functions'
+]);
+
+/**
+ * Normalize Vite-bundled `<script type="module" src="/assets/main-*.js">` (or `moreinfo-*.js`)
+ * back to stable `/app.js` (or `/moreinfo.js`) when compiling portable static public HTML on Edge.
+ */
+export function normalizeStaticPublicHtmlScriptsEdge(html, targetScriptPath) {
+  if (!html) return html;
+  const chunkPrefix = targetScriptPath === '/moreinfo.js' ? 'moreinfo' : 'main';
+  let out = String(html).replace(
+    new RegExp(
+      `<script\\s+[^>]*src=["']\\/?assets\\/${chunkPrefix}-[a-zA-Z0-9_-]+\\.js["'][^>]*>\\s*<\\/script>`,
+      'gi'
+    ),
+    `<script type="module" src="${targetScriptPath}"></script>`
+  );
+  out = out.replace(
+    /<link\s+[^>]*rel=["']modulepreload["'][^>]*href=["']\/?assets\/[^"']+\.js["'][^>]*\/?>\s*/gi,
+    ''
+  );
+  return out;
+}
+
+/**
+ * Render the isolated Protected Security & Download Gateway HTML (`/moreinfo` & `/download`)
+ * on Cloudflare Edge with 100% parity to Node `renderGatewayPageHtml`.
+ */
+export function renderGatewayPageHtmlEdge(moreinfoHtmlTemplate, config) {
+  const safe = config || EMPTY_ADMIN_CONFIG;
+  const brand = safe.brand || EMPTY_ADMIN_CONFIG.brand;
+  const specs = safe.packageSpecs || EMPTY_ADMIN_CONFIG.packageSpecs;
+  const sec = safe.securityGate || EMPTY_ADMIN_CONFIG.securityGate;
+
+  const rawBrandName = String(brand.name || '').trim();
+  const displayTitle = String(sec.customHeading || specs.appName || rawBrandName || '').trim();
+  const logoUrlClean = optimizeImageUrlEdge(brand.logoUrl || '', 256);
+  const faviconUrlClean = optimizeImageUrlEdge(brand.faviconUrl || brand.logoUrl || '', 128);
+
+  const safeCustomNoteHtml = sanitizeEditorialHtmlEdge(
+    String(sec.customNoteHtml || '').trim(),
+    displayTitle || 'Official Notice'
+  );
+  const safeWhatsapp = sanitizeSafeUrlEdge(sec.helplineWhatsapp || '', {
+    allowHash: false,
+    allowMailto: false
+  });
+  const safeTelegram = sanitizeSafeUrlEdge(sec.helplineTelegram || '', {
+    allowHash: false,
+    allowMailto: false
+  });
+
+  const publicGatewayMeta = {
+    brandName: rawBrandName,
+    logoUrl: logoUrlClean,
+    accentColor: brand.accentColor || '#EF4444',
+    appSlug: sec.appSlug || generateSlugEdge(brand.shortName || rawBrandName || 'package') || 'package',
+    appSerialId: sec.appSerialId || 'PKG-001',
+    proceedButtonLabel: sec.proceedButtonLabel || 'PROCEED',
+    unavailableMessage: sec.unavailableMessage || '',
+    helplineWhatsapp: safeWhatsapp,
+    helplineTelegram: safeTelegram,
+    customHeading: sec.customHeading || '',
+    customNoteHtml: safeCustomNoteHtml,
+    showSpecsOnGateway: Boolean(sec.showSpecsOnGateway),
+    appName: displayTitle,
+    version: specs.version || '',
+    fileSize: specs.fileSize || '',
+    operatingSystem: specs.operatingSystem || '',
+    securityStatus: specs.securityStatus || '',
+    sha256: specs.sha256 || ''
+  };
+
+  let html = String(moreinfoHtmlTemplate || '');
+  const faviconHref = escapeHtmlEdge(faviconUrlClean);
+  const logoHref = escapeHtmlEdge(logoUrlClean);
+  html = html.replace(
+    /<link\s+rel="icon"\s+id="gateway-favicon"\s+href="[^"]*"\s*\/?>/i,
+    `<link rel="icon" id="gateway-favicon" href="${faviconHref}" />`
+  );
+  html = html.replace(
+    /<title>[\s\S]*?<\/title>/i,
+    `<title>${escapeHtmlEdge(displayTitle || 'Verification')}</title>`
+  );
+  html = html.replace(
+    /<span\s+id="gw-brand-name">[\s\S]*?<\/span>/i,
+    `<span id="gw-brand-name">${escapeHtmlEdge(rawBrandName)}</span>`
+  );
+  html = html.replace(
+    /<img\b[^>]*id="gw-brand-logo"[^>]*>/i,
+    `<img id="gw-brand-logo" class="gateway-brand-logo${logoHref ? '' : ' hidden'}" src="${logoHref}" alt="${escapeHtmlEdge(rawBrandName ? `${rawBrandName} Logo` : '')}" width="30" height="30" />`
+  );
+  html = html.replace(
+    /<img\b[^>]*id="gw-app-icon"[^>]*>/i,
+    `<img id="gw-app-icon" class="app-summary-icon${logoHref ? '' : ' hidden'}" src="${logoHref}" alt="${escapeHtmlEdge(displayTitle)}" width="64" height="64" />`
+  );
+  html = html.replace(
+    /<h1\s+class="app-summary-title"\s+id="gw-app-title">[\s\S]*?<\/h1>/i,
+    `<h1 class="app-summary-title" id="gw-app-title">${escapeHtmlEdge(displayTitle)}</h1>`
+  );
+  html = html.replace(
+    /<span\s+id="gw-app-version">[\s\S]*?<\/span>/i,
+    `<span id="gw-app-version">${escapeHtmlEdge(specs.version || '')}</span>`
+  );
+  html = html.replace(
+    /<span\s+id="gw-app-meta-dot"[^>]*>[\s\S]*?<\/span>/i,
+    `<span id="gw-app-meta-dot"${specs.version && specs.fileSize ? '' : ' class="hidden"'}>·</span>`
+  );
+  html = html.replace(
+    /<span\s+id="gw-app-size">[\s\S]*?<\/span>/i,
+    `<span id="gw-app-size">${escapeHtmlEdge(specs.fileSize || '')}</span>`
+  );
+  html = html.replace(
+    /<span\s+id="gw-footer-copyright">[\s\S]*?<\/span>/i,
+    `<span id="gw-footer-copyright">${rawBrandName ? `© ${new Date().getFullYear()} ${escapeHtmlEdge(rawBrandName)}. All rights reserved.` : ''}</span>`
+  );
+
+  if (safeCustomNoteHtml) {
+    html = html.replace(
+      /<div\s+id="gw-custom-note"\s+class="custom-note-box\s+hidden">[\s\S]*?<\/div>/i,
+      `<div id="gw-custom-note" class="custom-note-box">${safeCustomNoteHtml}</div>`
+    );
+  }
+
+  if (sec.showSpecsOnGateway) {
+    html = html.replace(
+      /<section\s+class="specs-card\s+hidden"\s+id="gw-specs-card">/i,
+      '<section class="specs-card" id="gw-specs-card">'
+    );
+    html = html.replace(
+      /<td\s+id="gw-spec-name">[\s\S]*?<\/td>/i,
+      `<td id="gw-spec-name">${escapeHtmlEdge(displayTitle || '—')}</td>`
+    );
+    html = html.replace(
+      /<td\s+id="gw-spec-ver-size">[\s\S]*?<\/td>/i,
+      `<td id="gw-spec-ver-size">${escapeHtmlEdge([specs.version, specs.fileSize].filter(Boolean).join(' · ') || '—')}</td>`
+    );
+    html = html.replace(
+      /<td\s+id="gw-spec-os">[\s\S]*?<\/td>/i,
+      `<td id="gw-spec-os">${escapeHtmlEdge(specs.operatingSystem || '—')}</td>`
+    );
+    html = html.replace(
+      /<code\s+id="gw-spec-sha256">[\s\S]*?<\/code>/i,
+      `<code id="gw-spec-sha256">${escapeHtmlEdge(specs.sha256 || '')}</code>`
+    );
+  }
+
+  const metaScript = `
+  <script>
+    window.__GATEWAY_PUBLIC_META__ = ${JSON.stringify(publicGatewayMeta).replace(/<\//g, '<\\/')};
+  </script>
+</head>`;
+  html = html.replace('</head>', metaScript);
+  return html;
+}
+
 /**
  * Compile the full static public website bundle on Cloudflare Edge.
  */
 export function compileEdgeStaticSiteBundle(config, options = {}) {
   const safe = config || EMPTY_ADMIN_CONFIG;
-  const template = options.indexHtmlTemplate || FALLBACK_EDGE_HTML_TEMPLATE;
+  const rawTemplate = options.indexHtmlTemplate || FALLBACK_EDGE_HTML_TEMPLATE;
+  const template = normalizeStaticPublicHtmlScriptsEdge(rawTemplate, '/app.js');
   const files = [];
+  const seenFilePaths = new Set();
+
+  const pushUniqueFile = (file) => {
+    const clean = String(file?.path || '').replace(/^\/+/, '');
+    if (!clean || seenFilePaths.has(clean)) return;
+    seenFilePaths.add(clean);
+    files.push({ ...file, path: clean });
+  };
 
   const registerRoute = (routePath, htmlPath, label) => {
-    files.push({
-      path: htmlPath,
+    const cleanHtmlPath = String(htmlPath || '').replace(/^\/+/, '');
+    if (!cleanHtmlPath || seenFilePaths.has(cleanHtmlPath)) return;
+    pushUniqueFile({
+      path: cleanHtmlPath,
       content: renderCompleteStaticPageHtmlEdge(template, safe, routePath),
       encoding: 'utf-8',
       description: `Static HTML page for ${label} (${routePath})`
     });
     const payload = buildPartialRoutePayloadEdge(routePath, safe);
-    files.push({
+    pushUniqueFile({
       path: `static-routes/${routePathToStaticJsonNameEdge(routePath)}`,
       content: JSON.stringify(payload, null, 2),
       encoding: 'utf-8',
@@ -1681,34 +1858,44 @@ export function compileEdgeStaticSiteBundle(config, options = {}) {
 
   for (const pg of safe.pages || []) {
     const slug = generateSlugEdge(pg.slug || pg.label);
-    if (slug) {
+    if (slug && !RESERVED_PUBLIC_SLUGS_EDGE.has(slug)) {
       registerRoute(`/${slug}`, `${slug}/index.html`, `Standalone Page: ${pg.label}`);
     }
   }
 
   if (safe.securityGate?.enabled !== false && options.moreinfoHtmlTemplate) {
-    files.push({
+    const normalizedMoreinfoTpl = normalizeStaticPublicHtmlScriptsEdge(options.moreinfoHtmlTemplate, '/moreinfo.js');
+    const renderedGatewayHtml = renderGatewayPageHtmlEdge(normalizedMoreinfoTpl, safe);
+    pushUniqueFile({
       path: 'moreinfo/index.html',
-      content: options.moreinfoHtmlTemplate,
+      content: renderedGatewayHtml,
       encoding: 'utf-8',
       description: 'Isolated Security & Download Gateway (/moreinfo)'
     });
-    files.push({
+    pushUniqueFile({
       path: 'download/index.html',
-      content: options.moreinfoHtmlTemplate,
+      content: renderedGatewayHtml,
       encoding: 'utf-8',
       description: 'Isolated Security & Download Gateway Alias (/download)'
     });
   }
 
   if (options.appJsContent) {
-    files.push({ path: 'app.js', content: options.appJsContent, encoding: 'utf-8', description: 'Zero-Firebase static public router script' });
+    pushUniqueFile({ path: 'app.js', content: options.appJsContent, encoding: 'utf-8', description: 'Zero-Firebase static public router script' });
   }
   if (options.moreinfoJsContent) {
-    files.push({ path: 'moreinfo.js', content: options.moreinfoJsContent, encoding: 'utf-8', description: 'Client-side Security Gateway script' });
+    pushUniqueFile({ path: 'moreinfo.js', content: options.moreinfoJsContent, encoding: 'utf-8', description: 'Client-side Security Gateway script' });
   }
 
-  files.push({
+  if (Array.isArray(options.extraAssetFiles)) {
+    for (const assetFile of options.extraAssetFiles) {
+      if (assetFile && assetFile.path && assetFile.content !== undefined) {
+        pushUniqueFile(assetFile);
+      }
+    }
+  }
+
+  pushUniqueFile({
     path: '_headers',
     content: [
       '/*',
@@ -1739,10 +1926,16 @@ export function compileEdgeStaticSiteBundle(config, options = {}) {
     description: 'Cloudflare Pages edge security, caching, and gateway isolation headers'
   });
 
-  files.push({ path: 'sitemap.xml', content: generateSitemapXmlEdge(safe), encoding: 'utf-8', description: 'Search Engine XML Sitemap' });
-  files.push({ path: 'robots.txt', content: generateRobotsTxtEdge(safe), encoding: 'utf-8', description: 'Robots Rules' });
-  files.push({ path: 'feed.xml', content: generateRssFeedXmlEdge(safe), encoding: 'utf-8', description: 'RSS 2.0 News Feed' });
-  files.push({ path: 'manifest.webmanifest', content: generateWebManifestJsonEdge(safe), encoding: 'utf-8', description: 'W3C Web App Manifest' });
+  if (safe.domainConfig?.enableSitemapXml !== false) {
+    pushUniqueFile({ path: 'sitemap.xml', content: generateSitemapXmlEdge(safe), encoding: 'utf-8', description: 'Search Engine XML Sitemap' });
+  }
+  pushUniqueFile({ path: 'robots.txt', content: generateRobotsTxtEdge(safe), encoding: 'utf-8', description: 'Robots Rules' });
+  if (safe.domainConfig?.enableRssFeed !== false) {
+    pushUniqueFile({ path: 'feed.xml', content: generateRssFeedXmlEdge(safe), encoding: 'utf-8', description: 'RSS 2.0 News Feed' });
+  }
+  if (safe.domainConfig?.enableWebManifest !== false) {
+    pushUniqueFile({ path: 'manifest.webmanifest', content: generateWebManifestJsonEdge(safe), encoding: 'utf-8', description: 'W3C Web App Manifest' });
+  }
 
   return files;
 }

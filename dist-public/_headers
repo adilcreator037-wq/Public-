@@ -1,3 +1,15 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/uploads/*
+  Content-Security-Policy: default-src 'none'; sandbox
+  X-Content-Type-Options: nosniff
+  Cache-Control: public, max-age=31536000, immutable
+/static-routes/*
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
 /moreinfo*
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
   Cache-Control: private, no-store, no-cache, must-revalidate

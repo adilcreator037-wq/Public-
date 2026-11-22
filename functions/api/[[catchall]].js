@@ -35,25 +35,114 @@ import {
 } from '../_shared/github.js';
 import { buildPartialRoutePayloadEdge } from '../_shared/static-compiler.js';
 
-async function loadEdgeTemplates(env, reqUrl) {
-  const fetchAsset = async (assetPath) => {
+function arrayBufferToBase64Edge(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function collectReferencedLocalAssetPathsEdge(config) {
+  const paths = new Set();
+  const addIfLocal = (raw) => {
+    const val = String(raw || '').trim();
+    if (!val || val.includes('..')) return;
+    if (/^\/(assets|uploads)\/[a-zA-Z0-9._/-]+$/.test(val)) {
+      paths.add(val);
+    }
+  };
+  if (config && typeof config === 'object') {
+    addIfLocal(config.brand?.logoUrl);
+    addIfLocal(config.brand?.faviconUrl);
+    addIfLocal(config.brand?.searchLogoUrl);
+    addIfLocal(config.brand?.appleTouchIconUrl);
+    addIfLocal(config.hero?.bannerImageUrl);
+    addIfLocal(config.seo?.ogImage);
+    for (const a of config.newsSection?.articles || []) {
+      addIfLocal(a?.coverImageUrl);
+    }
+    for (const pg of config.pages || []) {
+      addIfLocal(pg?.bannerImageUrl);
+    }
+  }
+  return Array.from(paths);
+}
+
+export async function loadEdgeTemplates(env, reqUrl, config = null) {
+  const fetchTypedAsset = async (assetPath, expectedKind) => {
     if (!env?.ASSETS?.fetch) return undefined;
     try {
       const url = new URL(assetPath, reqUrl);
       const res = await env.ASSETS.fetch(new Request(url.toString()));
-      if (res && res.ok) return await res.text();
+      if (!res || !res.ok) return undefined;
+      const contentType = String(res.headers?.get('content-type') || '').toLowerCase();
+      const text = await res.text();
+      if (!text || !text.trim()) return undefined;
+      const trimmed = text.trimStart();
+
+      if (expectedKind === 'js') {
+        // Guard against Cloudflare Pages SPA fallback returning index.html with HTTP 200
+        if (contentType.includes('text/html') || trimmed.startsWith('<!') || /^<html\b/i.test(trimmed)) {
+          return undefined;
+        }
+      } else if (expectedKind === 'html') {
+        if (contentType && !contentType.includes('text/html') && !trimmed.startsWith('<!') && !/^<html\b/i.test(trimmed)) {
+          return undefined;
+        }
+      }
+      return text;
     } catch {
       // fallback to internal template
     }
     return undefined;
   };
-  const [indexHtmlTemplate, moreinfoHtmlTemplate, appJsContent, moreinfoJsContent] = await Promise.all([
-    fetchAsset('/index.html'),
-    fetchAsset('/moreinfo.html'),
-    fetchAsset('/app.js'),
-    fetchAsset('/moreinfo.js')
+
+  const fetchBinaryOrSvgAsset = async (assetPath) => {
+    if (!env?.ASSETS?.fetch) return null;
+    try {
+      const url = new URL(assetPath, reqUrl);
+      const res = await env.ASSETS.fetch(new Request(url.toString()));
+      if (!res || !res.ok) return null;
+      const contentType = String(res.headers?.get('content-type') || '').toLowerCase();
+      if (contentType.includes('text/html')) return null;
+      const cleanRel = assetPath.replace(/^\/+/, '');
+      if (cleanRel.endsWith('.svg') || contentType.includes('image/svg+xml')) {
+        const svgText = await res.text();
+        if (!svgText || svgText.trimStart().startsWith('<!')) return null;
+        return {
+          path: cleanRel,
+          content: svgText,
+          encoding: 'utf-8',
+          description: `Static brand/public asset (/${cleanRel})`
+        };
+      }
+      const buf = await res.arrayBuffer();
+      if (!buf || buf.byteLength === 0) return null;
+      return {
+        path: cleanRel,
+        content: arrayBufferToBase64Edge(buf),
+        encoding: 'base64',
+        description: `Static brand/public asset (/${cleanRel})`
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const localAssetPaths = collectReferencedLocalAssetPathsEdge(config);
+  const [indexHtmlTemplate, moreinfoHtmlTemplate, appJsContent, moreinfoJsContent, ...rawAssets] = await Promise.all([
+    fetchTypedAsset('/index.html', 'html'),
+    fetchTypedAsset('/moreinfo.html', 'html'),
+    fetchTypedAsset('/app.js', 'js'),
+    fetchTypedAsset('/moreinfo.js', 'js'),
+    ...localAssetPaths.map((p) => fetchBinaryOrSvgAsset(p))
   ]);
-  return { indexHtmlTemplate, moreinfoHtmlTemplate, appJsContent, moreinfoJsContent };
+
+  const extraAssetFiles = rawAssets.filter(Boolean);
+  return { indexHtmlTemplate, moreinfoHtmlTemplate, appJsContent, moreinfoJsContent, extraAssetFiles };
 }
 
 async function readJsonBodySafe(request) {
@@ -899,11 +988,16 @@ export async function onRequest(context) {
     const repoOwner = ghCfg.repoOwner || persisted?.githubConfig?.repoOwner || cleanEnvVal(env.GITHUB_REPO_OWNER);
     const repoName = ghCfg.repoName || persisted?.githubConfig?.repoName || cleanEnvVal(env.GITHUB_REPO_NAME);
     const branch = ghCfg.branch || persisted?.githubConfig?.branch || cleanEnvVal(env.GITHUB_BRANCH) || 'main';
+    const hasExplicitTargetDir = Object.prototype.hasOwnProperty.call(ghCfg, 'targetDirectory');
+    const targetDirectory = hasExplicitTargetDir
+      ? String(ghCfg.targetDirectory ?? '').trim()
+      : (persisted?.githubConfig?.targetDirectory ?? 'dist-public');
 
     const result = await verifyGitHubRepoAccessEdge({
       repoOwner,
       repoName,
       branch,
+      targetDirectory,
       fineGrainedToken: token
     });
 
@@ -913,7 +1007,10 @@ export async function onRequest(context) {
         ...(baseCfg.githubConfig || {}),
         repoOwner,
         repoName,
-        branch: result.defaultBranch || branch,
+        branch,
+        targetDirectory,
+        ...(ghCfg.commitMessageTemplate ? { commitMessageTemplate: String(ghCfg.commitMessageTemplate).trim() } : {}),
+        ...(typeof ghCfg.autoPushOnPublish === 'boolean' ? { autoPushOnPublish: ghCfg.autoPushOnPublish } : {}),
         fineGrainedToken: token,
         hasFineGrainedToken: true
       });
@@ -948,7 +1045,7 @@ export async function onRequest(context) {
     const cfg = fbEnv.isConfigured
       ? (await readSiteConfigFromFirestoreRest(fbEnv.config, env)) || EMPTY_ADMIN_CONFIG
       : EMPTY_ADMIN_CONFIG;
-    const templates = await loadEdgeTemplates(env, request.url);
+    const templates = await loadEdgeTemplates(env, request.url, cfg);
     const files = buildEdgeStaticFiles(cfg, templates);
     const distinctIcons = new Set(
       [
@@ -1053,7 +1150,7 @@ export async function onRequest(context) {
 
     const customFiles =
       Array.isArray(body?.bundleFiles) && body.bundleFiles.length > 0 ? body.bundleFiles : null;
-    const templates = customFiles ? {} : await loadEdgeTemplates(env, request.url);
+    const templates = customFiles ? {} : await loadEdgeTemplates(env, request.url, merged);
     const files = customFiles || buildEdgeStaticFiles(merged, templates);
     const modulesChanged = Array.isArray(body?.modulesChanged)
       ? body.modulesChanged
@@ -1134,6 +1231,17 @@ export async function onRequest(context) {
       firestoreNotice = 'Firebase is not configured; sync log was returned for this session only.';
     }
 
+    const distinctIcons = new Set(
+      [
+        merged.brand?.logoUrl,
+        merged.brand?.faviconUrl,
+        merged.brand?.searchLogoUrl,
+        merged.brand?.appleTouchIconUrl
+      ]
+        .map((u) => String(u || '').trim())
+        .filter(Boolean)
+    );
+
     return jsonResponse(
       {
         success: pushResult.ok,
@@ -1147,6 +1255,12 @@ export async function onRequest(context) {
         skipped: Boolean(pushResult.skipped),
         filesCount: pushResult.filesPushed ?? files.length,
         compiledLocalFiles: files.length,
+        branch: effectiveGhCfg.branch,
+        repo:
+          effectiveGhCfg.repoOwner && effectiveGhCfg.repoName
+            ? `${effectiveGhCfg.repoOwner}/${effectiveGhCfg.repoName}`
+            : '',
+        targetDirectory: effectiveGhCfg.targetDirectory ?? 'dist-public',
         commitSha: pushResult.commitSha,
         commitUrl: pushResult.commitUrl,
         message: pushResult.message,
@@ -1155,6 +1269,20 @@ export async function onRequest(context) {
         compiledBundle: {
           compiledAt: Date.now(),
           totalFiles: files.length,
+          contentSource: fbEnv.isConfigured ? 'Live Cloud Firestore' : 'Local Admin Workspace',
+          brandSummary: {
+            name: merged.brand?.name || '',
+            logoUrl: merged.brand?.logoUrl || '',
+            faviconUrl: merged.brand?.faviconUrl || '',
+            primaryDomain: merged.domainConfig?.primaryDomain || merged.seo?.canonicalUrl || ''
+          },
+          seoManifestSummary: {
+            manifestEnabled: merged.domainConfig?.enableWebManifest !== false,
+            sitemapEnabled: merged.domainConfig?.enableSitemapXml !== false,
+            robotsEnabled: true,
+            rssEnabled: merged.domainConfig?.enableRssFeed !== false,
+            manifestIconsCount: distinctIcons.size
+          },
           filesList: files.map((f) => ({
             path: f.path,
             sizeBytes: String(f.content || '').length,

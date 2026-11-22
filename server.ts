@@ -1993,7 +1993,14 @@ async function startServer() {
   // 12. Verify GitHub Fine-Grained Token & Repository Write Access (`POST /api/github/verify`)
   app.post('/api/github/verify', requireAdminAuth, async (req, res) => {
     const ghCfg = req.body?.githubConfig || req.body || {};
-    const persisted = loadPersistedSiteConfig();
+    let persisted = loadPersistedSiteConfig();
+    const fbEnv = getFirebaseEnvConfig();
+    if (fbEnv.isConfigured && fbEnv.config) {
+      const remoteRead = await readSiteConfigWithStatusNode(fbEnv.config);
+      if (remoteRead.status === 'ok' && remoteRead.config) {
+        persisted = mergeRemoteConfigPreservingUserContent(remoteRead.config, persisted);
+      }
+    }
     const envToken = cleanEnvVal(
       process.env.GITHUB_FINE_GRAINED_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
     );
@@ -2009,11 +2016,16 @@ async function startServer() {
       ghCfg.repoName || persisted.githubConfig?.repoName || cleanEnvVal(process.env.GITHUB_REPO_NAME);
     const branch =
       ghCfg.branch || persisted.githubConfig?.branch || cleanEnvVal(process.env.GITHUB_BRANCH) || 'main';
+    const hasExplicitTargetDir = Object.prototype.hasOwnProperty.call(ghCfg, 'targetDirectory');
+    const targetDirectory = hasExplicitTargetDir
+      ? String(ghCfg.targetDirectory ?? '').trim()
+      : (persisted.githubConfig?.targetDirectory ?? 'dist-public');
 
     const result = await verifyGitHubRepoAccess({
       repoOwner,
       repoName,
       branch,
+      targetDirectory,
       fineGrainedToken: effectiveToken
     });
 
@@ -2025,14 +2037,16 @@ async function startServer() {
           ...persisted.githubConfig,
           repoOwner,
           repoName,
-          branch: result.defaultBranch || branch,
+          branch,
+          targetDirectory,
+          ...(ghCfg.commitMessageTemplate ? { commitMessageTemplate: String(ghCfg.commitMessageTemplate).trim() } : {}),
+          ...(typeof ghCfg.autoPushOnPublish === 'boolean' ? { autoPushOnPublish: ghCfg.autoPushOnPublish } : {}),
           fineGrainedToken: effectiveToken,
           hasFineGrainedToken: true
         },
         EMPTY_ADMIN_CONFIG
       );
       const saved = savePersistedSiteConfig(patched.config);
-      const fbEnv = getFirebaseEnvConfig();
       if (fbEnv.isConfigured && fbEnv.config) {
         await writeBatchToFirestoreRestNode(
           fbEnv.config,
@@ -2101,7 +2115,14 @@ async function startServer() {
   // 13. Compile Static Public Website & Push Atomic Commit to GitHub (`POST /api/github/publish`)
   app.post('/api/github/publish', requireAdminAuth, async (req, res) => {
     const startTime = Date.now();
-    const persisted = loadPersistedSiteConfig();
+    let persisted = loadPersistedSiteConfig();
+    const fbEnvInit = getFirebaseEnvConfig();
+    if (fbEnvInit.isConfigured && fbEnvInit.config) {
+      const remoteRead = await readSiteConfigWithStatusNode(fbEnvInit.config);
+      if (remoteRead.status === 'ok' && remoteRead.config) {
+        persisted = mergeRemoteConfigPreservingUserContent(remoteRead.config, persisted);
+      }
+    }
     let incomingConfig = req.body?.config
       ? mergeRemoteConfigPreservingUserContent(preserveSecretsOnSave(req.body.config, persisted), persisted)
       : persisted;
@@ -2251,6 +2272,9 @@ async function startServer() {
       skipped: Boolean(pushResult.skipped),
       filesCount: pushResult.filesPushed ?? bundle.totalFiles,
       compiledLocalFiles: bundle.totalFiles,
+      branch: effectiveBranch,
+      repo: effectiveOwner && effectiveRepo ? `${effectiveOwner}/${effectiveRepo}` : '',
+      targetDirectory: effectiveGhCfg.targetDirectory ?? 'dist-public',
       commitSha: pushResult.commitSha,
       commitUrl: pushResult.commitUrl,
       message: pushResult.message,
