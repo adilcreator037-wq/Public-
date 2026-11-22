@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /moreinfo
+Disallow: /moreinfo/
+Disallow: /download
+Disallow: /download/
+Disallow: /api/v1/app/
+
+Sitemap: https://officialdaman.com/sitemap.xml

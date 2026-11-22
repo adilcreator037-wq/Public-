@@ -1,0 +1,19 @@
+{
+  "name": "Daman",
+  "short_name": "Daman",
+  "description": "",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#EA580C",
+  "icons": [
+    {
+      "src": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

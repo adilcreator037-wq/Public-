@@ -1,0 +1,191 @@
+{
+  "path": "/privacy-policy",
+  "viewType": "standalone-page",
+  "isConfigured": true,
+  "canonicalPath": "/privacy-policy",
+  "canonicalUrl": "https://officialdaman.com/privacy-policy",
+  "metaTitle": "Privacy Policy – Daman Game Official Portal | Daman",
+  "metaDescription": "Privacy Policy – Daman Game Official Portal — official verified documentation, updates, and resources from Daman.",
+  "ogImage": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794983318/njqnrnuvvobyasjenjcs.webp",
+  "heroH1": "Privacy Policy – Daman Game Official Portal",
+  "showHeroSection": true,
+  "showHeroCtaGrid": false,
+  "renderedMainHtml": "\n      <p class=\"news-meta-line\" style=\"margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid var(--border-color);\">\n        Privacy Policy · Last Updated: <strong>November 2026</strong>\n      </p>\n      \n      <section class=\"privacy-policy-page\">\n  <h2 id=\"privacy-policy\">Privacy Policy</h2>\n  <p><strong>Effective Date:</strong> November 18, 2026</p>\n  <p><strong>Website:</strong> https://officialdaman.com</p>\n<h3 id=\"1-overview-amp-privacy-first-commitment\">1. Overview &amp; Privacy-First Commitment</h3>\n  <p>\n    Welcome to <strong>Daman Game</strong> (accessible at <strong>https://officialdaman.com</strong>). We built Daman Game as a pure, skill-based reflex arcade game with a strict commitment to minimal data collection. <strong>No personal information, user registration, phone number, or financial data is required to access or play the game.</strong> This Privacy Policy explains what limited data is processed on your device and our servers when you use our web portal and Progressive Web App (PWA).\n  </p>\n<h3 id=\"2-information-we-do-not-collect\">2. Information We Do NOT Collect</h3>\n  <p>\n    Because Daman Game is strictly a casual skill arcade game with zero real-money gambling, wagering, deposits, or cash withdrawals, we <strong>never</strong> request, collect, or store:\n  </p>\n  <ul>\n    <li>Bank account details, UPI IDs, credit/debit card numbers, or payment wallet credentials.</li>\n    <li>Government-issued identity documents (such as Aadhaar, PAN, or passports).</li>\n    <li>Real-time GPS location data, contact lists, camera/microphone access, or SMS logs.</li>\n  </ul>\n<h3 id=\"3-local-device-storage-indexeddb-amp-browser-cache\">3. Local Device Storage (IndexedDB &amp; Browser Cache)</h3>\n  <p>\n    To give you an instant, offline-capable gaming experience without forcing you to create an account, your gameplay state is saved directly on your own device using your browser's native <strong>IndexedDB</strong> and local storage. This local data includes:\n  </p>\n  <ul>\n    <li><strong>Gameplay Progress:</strong> Personal-best scores, survival times, best streaks, Slice accuracy, Pure Slice counts, and completed Trial stars.</li>\n    <li><strong>Cosmetic Unlocks:</strong> Blade Mastery levels, unlocked blade finishes (such as Brushed Steel, Enamel, Neon Glass, and Stained Glass), arena themes, hub styles, and sound kits.</li>\n    <li><strong>Device Preferences &amp; Accessibility Settings:</strong> Audio and touch latency calibration offsets, Timing Assist toggles, Color-Blind Symbol mode, Reduced Motion/Flashes settings, and volume controls.</li>\n  </ul>\n  <p>\n    <em>Note: Because this data resides locally on your device, clearing your browser cache or site data will permanently reset your local progress unless you have linked an optional cloud sync account.</em>\n  </p>\n<h3 id=\"4-privacy-respecting-gameplay-telemetry-amp-anti-cheat-logs\">4. Privacy-Respecting Gameplay Telemetry &amp; Anti-Cheat Logs</h3>\n  <p>\n    To balance difficulty waves across our five tiers (Warm-up, Rhythm, Pressure, Frenzy, and Eclipse) and maintain fair leaderboards, our system processes anonymous, non-identifiable gameplay telemetry:\n  </p>\n  <ul>\n    <li><strong>Session Metrics:</strong> Run length, survival time, difficulty tier reached, in-game cause of run end (e.g., clock drain or Direct Strike on the Dark Slate blade), and retry latency.</li>\n    <li><strong>Deterministic Verification Logs:</strong> When you participate in the shared <strong>Daily Wheel</strong> leaderboard, the game records the run seed along with a log of timestamped thumb-tap inputs. Our server replays this mathematical log to verify that your score was achieved through genuine human timing rather than automated scripts or speed hacks.</li>\n  </ul>\n<h3 id=\"5-optional-cloud-accounts-amp-leaderboards\">5. Optional Cloud Accounts &amp; Leaderboards</h3>\n  <p>\n    Playing Classic Runs, Trials, and Practice mode requires no account. If you choose to create an optional account to back up your progress across devices or appear on the Daily Wheel friends leaderboard, we collect only the basic authentication details you provide (such as a display username and email address). You may request the deletion of your optional account and associated leaderboard entries at any time.\n  </p>\n<h3 id=\"6-progressive-web-app-pwa-amp-cookies\">6. Progressive Web App (PWA) &amp; Cookies</h3>\n  <p>\n    <strong>officialdaman.com</strong> operates as an installable Progressive Web App (PWA). We use service workers and essential functional storage to cache vector graphics, WebGL shaders, and adaptive Web Audio layers on your device so the game loads in under 2.5 seconds and runs smoothly offline. We do not use intrusive cross-site tracking cookies or sell user behavior profiles to third-party ad networks.\n  </p>\n<h3 id=\"7-third-party-infrastructure-amp-security\">7. Third-Party Infrastructure &amp; Security</h3>\n  <p>\n    Our web portal is delivered through secure cloud infrastructure (including Cloudflare edge routing and Firebase backend services). Standard server logs may temporarily process anonymized IP addresses and browser user-agent strings strictly for DDoS mitigation, rate limiting, and preventing automated bot abuse. All data transmitted between your browser and our servers is encrypted via HTTPS/TLS.\n  </p>\n<h3 id=\"8-childrens-privacy\">8. Children's Privacy</h3>\n  <p>\n    Daman Game is a family-friendly skill arcade game containing no real-money mechanics, loot boxes, or chat rooms. We do not knowingly collect personal identifiable information from children. If a parent or guardian believes a minor has submitted personal details through an optional account or support inquiry, please contact us and we will promptly remove the information.\n  </p>\n<h3 id=\"9-your-privacy-rights\">9. Your Privacy Rights</h3>\n  <p>\n    You have full control over your data:\n  </p>\n  <ul>\n    <li><strong>Clear Local Data:</strong> You can erase all locally stored game progress and settings at any time by clearing your browser's site data for <strong>officialdaman.com</strong>.</li>\n    <li><strong>Access &amp; Deletion:</strong> If you have registered an optional account or contacted us via email, you may request a copy of your data or ask us to permanently delete your records.</li>\n  </ul>\n<h3 id=\"10-changes-to-this-privacy-policy\">10. Changes to This Privacy Policy</h3>\n  <p>\n    We may update this Privacy Policy periodically as we introduce new game features, modes, or app-store wrappers. Any updates will be posted directly on this page with a revised \"Effective Date\" at the top.\n  </p>\n<h3 id=\"11-contact-us\">11. Contact Us</h3>\n  <p>\n    If you have any questions, concerns, or data requests regarding this Privacy Policy, please contact our support team at:\n  </p>\n  <p>\n    <strong>Email:</strong> support@officialdaman.com<br>\n    <strong>Official Website:</strong> https://officialdaman.com\n  </p>\n</section>\n    ",
+  "jsonLd": {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://officialdaman.com/#website",
+        "url": "https://officialdaman.com/",
+        "name": "Daman",
+        "alternateName": "Daman",
+        "publisher": {
+          "@id": "https://officialdaman.com/#organization"
+        }
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://officialdaman.com/#organization",
+        "name": "Daman",
+        "url": "https://officialdaman.com/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+          "width": 512,
+          "height": 512
+        },
+        "image": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png"
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://officialdaman.com/privacy-policy#webpage",
+        "url": "https://officialdaman.com/privacy-policy",
+        "name": "Privacy Policy – Daman Game Official Portal | Daman",
+        "description": "Privacy Policy – Daman Game Official Portal — official verified documentation, updates, and resources from Daman.",
+        "isPartOf": {
+          "@id": "https://officialdaman.com/#website"
+        }
+      }
+    ]
+  },
+  "shell": {
+    "brand": {
+      "name": "Daman",
+      "shortName": "Daman",
+      "tagline": "",
+      "logoUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "faviconUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "searchLogoUrl": "https://res.cloudinary.com/potup3yi/image/upload/v1794981224/znzdu5m6h9538yyareem.png",
+      "appleTouchIconUrl": "https://res.cloudinary.com/potup3yi/image/upload/v1794981224/znzdu5m6h9538yyareem.png",
+      "accentColor": "#EA580C",
+      "themeColor": "#EA580C",
+      "contactEmail": "support@officialdaman.com"
+    },
+    "brandName": "Daman",
+    "logoUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+    "faviconUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+    "accentColor": "#EA580C",
+    "buttonTextColor": "#FFFFFF",
+    "uiConfig": {
+      "maxContainerWidth": "768px",
+      "pageBackgroundColor": "#FFFBEB",
+      "surfaceBackgroundColor": "#FFFFFF",
+      "headerBackgroundColor": "#FFFFFF",
+      "headerTextColor": "#1C1917",
+      "footerBackgroundColor": "#0F172A",
+      "footerTextColor": "#FEF3C7",
+      "borderColor": "#FDE68A",
+      "cardBorderRadius": "12px",
+      "buttonTextColor": "#FFFFFF",
+      "textColor": "#292524",
+      "headingColor": "#1C1917",
+      "fontFamily": "system",
+      "baseFontSize": "16px",
+      "showHeaderNewsButton": true,
+      "headerNewsButtonLabel": "News",
+      "showNewsCountInHeader": true,
+      "autoIncludeSectionsInDrawer": true,
+      "showNewsInDrawer": true,
+      "showLegalLinksInDrawer": true,
+      "showCtaInDrawer": true,
+      "showHeroSection": true,
+      "showHeroCtaButtons": false,
+      "homepageNewsLimit": 5,
+      "newsReadMoreLabel": "Read Full Article →",
+      "newsViewAllLabel": "View All News →",
+      "backToHomeLabel": "← Back to Home",
+      "allNewsBreadcrumbLabel": "All News →",
+      "showSubpageSwitcherPills": true,
+      "showFooterDisclaimer": true,
+      "showFooterLinksHeading": true,
+      "stickyHeader": true,
+      "showBreadcrumbs": true,
+      "enableFaqAccordion": true,
+      "showTocJumpBar": true,
+      "homepageSectionOrder": [
+        "specs",
+        "sections",
+        "rawHtml",
+        "news",
+        "faqs"
+      ]
+    },
+    "heroCtas": {
+      "secondaryCta": {
+        "label": "",
+        "url": "",
+        "relSponsored": false
+      },
+      "primaryCta": {
+        "label": "",
+        "url": "",
+        "relSponsored": false
+      },
+      "floatingCta": {
+        "enabled": false,
+        "label": "",
+        "url": ""
+      }
+    },
+    "packageVersion": "",
+    "headerLinks": [],
+    "autoSectionLinks": [
+      {
+        "label": "How to Play Daman Game",
+        "url": "#item",
+        "metaTitle": "New Content Section 1 | Daman"
+      },
+      {
+        "label": "Meet the Eight Blades ",
+        "url": "#content-section-2",
+        "metaTitle": "New Content Section 2 | Daman"
+      },
+      {
+        "label": "Nodes, Hazards & Full Spectrum Overdrive",
+        "url": "#content-section-3",
+        "metaTitle": "New Content Section 3 | Daman"
+      }
+    ],
+    "recentNewsDrawerItems": [],
+    "headerPages": [],
+    "footerPages": [
+      {
+        "label": "Privacy Policy",
+        "slug": "privacy-policy",
+        "metaTitle": "Privacy Policy – Daman Game Official Portal | Daman"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "slug": "disclaimer",
+        "metaTitle": "Disclaimer – Daman Game Official Web Portal"
+      }
+    ],
+    "allSubpagePills": [
+      {
+        "label": "News",
+        "href": "/news"
+      },
+      {
+        "label": "Privacy Policy",
+        "href": "/privacy-policy"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "href": "/disclaimer"
+      }
+    ],
+    "newsCount": 0,
+    "navigation": {
+      "footerSummary": "",
+      "showFooterBrandSummary": false,
+      "showFooterContactEmail": true,
+      "footerQuickLinks": [],
+      "disclaimerHeading": "Legal Disclaimer",
+      "disclaimer": "",
+      "siteLinksHeading": "Legal & Support Pages",
+      "copyright": "© 2026 officialdaman. All rights reserved."
+    }
+  },
+  "updatedAt": 1795319726236
+}

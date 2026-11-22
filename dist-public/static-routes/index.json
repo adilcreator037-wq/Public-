@@ -1,90 +1,85 @@
 {
   "path": "/",
-  "canonicalPath": "/",
   "viewType": "home",
-  "isConfigured": false,
-  "metaTitle": "Coming Soon",
+  "isConfigured": true,
+  "canonicalPath": "/",
+  "canonicalUrl": "https://officialdaman.com/",
+  "metaTitle": "Daman Game: Play Smart, Master the Arcade & Explore Official Guides",
   "metaDescription": "",
-  "ogImage": "",
-  "heroH1": "",
-  "showHeroSection": false,
+  "ogImage": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794983318/njqnrnuvvobyasjenjcs.webp",
+  "heroH1": "Daman Game – Official App Guide, Features & Casual Arcade Portal",
+  "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "<section class=\"site-coming-soon\"><h1>Coming Soon</h1><p>This website is currently being prepared.</p></section>",
+  "renderedMainHtml": "<div class=\"hero-intro-block\"><section class=\"intro-section\">\n  <h2 id=\"precision-rhythm-amp-reflex-arcade-gameplay\">Precision Rhythm &amp; Reflex Arcade Gameplay</h2>\n  <h3 id=\"master-the-eight-bladed-wheel-against-the-clock\">Master the Eight-Bladed Wheel Against the Clock</h3>\n  <p>\n    <strong>Daman Game</strong> is a <strong>skill-based reflex arcade game</strong> built around an <strong>eight-bladed wheel</strong> and a live <strong>countdown clock</strong> inside its hollow core</div>\n\n\n      <figure class=\"media-figure\">\n        <img src=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_1200,c_limit/v1794983318/njqnrnuvvobyasjenjcs.webp\" srcset=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_480,c_limit/v1794983318/njqnrnuvvobyasjenjcs.webp 480w, https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_768,c_limit/v1794983318/njqnrnuvvobyasjenjcs.webp 768w, https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_1200,c_limit/v1794983318/njqnrnuvvobyasjenjcs.webp 1200w\" sizes=\"(max-width: 768px) 100vw, 720px\" alt=\"Daman Game – Official App Guide, Features &amp; Casual Arcade Portal\" width=\"1200\" height=\"675\" loading=\"eager\" fetchpriority=\"high\" decoding=\"async\" referrerpolicy=\"no-referrer\" />\n        \n      </figure>\n    \n\n\n      <nav class=\"toc-jump-bar\" aria-label=\"On-page table of contents\">\n        <span class=\"toc-jump-label\">On this page</span>\n        <div class=\"toc-jump-links\">\n          <a href=\"#item\" class=\"toc-jump-chip\">How to Play Daman Game</a><a href=\"#content-section-2\" class=\"toc-jump-chip\">Meet the Eight Blades </a><a href=\"#content-section-3\" class=\"toc-jump-chip\">Nodes, Hazards &amp; Full Spectrum Overdrive</a>\n        </div>\n      </nav>\n    \n\n\n          <section id=\"item\">\n            \n            <h2 id=\"item-heading\">How to Play Daman Game</h2>\n            <figure class=\"media-figure\">\n              <img src=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_800,c_limit/v1794992395/vu4vjfxpukfd7tr5gont.webp\" srcset=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_400,c_limit/v1794992395/vu4vjfxpukfd7tr5gont.webp 400w, https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_768,c_limit/v1794992395/vu4vjfxpukfd7tr5gont.webp 768w\" sizes=\"(max-width: 768px) 100vw, 720px\" alt=\"How to Play Daman Game\" width=\"1200\" height=\"675\" loading=\"lazy\" fetchpriority=\"low\" decoding=\"async\" referrerpolicy=\"no-referrer\" />\n              \n            </figure>\n            <section class=\"daman-game-guide\">\n  <h2 id=\"daman-game-gameplay-mechanics-amp-strategy-guide\">Daman Game: Gameplay Mechanics &amp; Strategy Guide</h2>\n<p>\n    At the center of <strong>Daman Game</strong> sits an eight-bladed wheel suspended inside a dark arena, with a live countdown clock ticking inside its hollow core. Eight lanes radiate outward around the wheel at 45-degree angles, and all eight blades stay locked in one fixed color order. Every time you turn the wheel to line up one blade, the other seven shift right along with it. Your goal is to stay ahead of incoming glowing nodes, build your streak multiplier up to <strong>&times;8</strong>, and keep the clock running.\n  </p>\n<h3 id=\"1-reading-the-arena-before-nodes-arrive\">1. Reading the Arena Before Nodes Arrive</h3>\n  <p>\n    You are never caught off guard by random spawns. The arena provides clear visual and rhythmic cues before every impact:\n  </p>\n  <ul>\n    <li><strong>Warning Ring Telegraphing:</strong> Before any node launches down a lane, a marker on the outer Warning Ring charges up for one full musical beat, giving you clear notice of where the next threat is coming from.</li>\n    <li><strong>Beat-Synced Travel:</strong> As the node travels inward toward the Contact Ring trailing a colored comet tail, it is timed to land right on the beat of the music—allowing you to feel the rhythm of every arrival rather than relying on eyesight alone.</li>\n    <li><strong>Quiet Lane Guarantee:</strong> To keep the action fair even at high speeds, at least one lane stays open at every moment so your vulnerable <em>Dark Slate</em> blade always has a safe spot within two turns or fewer.</li>\n  </ul>\n<h3 id=\"2-two-thumb-controls-built-for-precision\">2. Two-Thumb Controls Built for Precision</h3>\n  <p>\n    Daman Game is built for effortless portrait play on mobile screens without clunky buttons blocking your view. The wheel sits in the upper-middle area of the screen while the entire lower third serves as your thumb zone:\n  </p>\n  <ul>\n    <li><strong>Tap Left Half:</strong> Snaps the wheel 45 degrees counter-clockwise.</li>\n    <li><strong>Tap Right Half:</strong> Snaps the wheel 45 degrees clockwise.</li>\n    <li><strong>Double-Tap Buffering:</strong> Up to two rapid taps are buffered simultaneously so quick two-lane turns never drop an input.</li>\n    <li><strong>Hold to Spin:</strong> Holding either side after a brief pause smoothly auto-steps the wheel across multiple lanes—ideal for quick half-turns—though auto-stepping can only <em>Catch</em> nodes and never <em>Slice</em> them.</li>\n    <li><strong>Desktop Controls:</strong> On a computer, press <code>A</code> and <code>D</code> or the <code>Left</code> and <code>Right</code> arrow keys for the exact same crisp response.</li>\n  </ul>\n<h3 id=\"3-timing-over-speed-catch-slice-and-pure-slice\">3. Timing Over Speed: Catch, Slice, and Pure Slice</h3>\n  <p>\n    Winning in Daman Game is about <em>when</em> you turn, not how fast you tap. Depending on your timing at the Contact Ring, each hit resolves in one of three ways:\n  </p>\n  <ol>\n    <li>\n      <strong>Catch (+10 Points | +0.4 Seconds):</strong> When the matching colored blade is already waiting in the lane as a node arrives, the blade absorbs the hit with a spray of sparks and keeps your streak moving.\n    </li>\n    <li>\n      <strong>Slice (+50 Points | +0.8 Seconds):</strong> Tapping to swing the matching blade through the node inside the Slice Window (from <code>120 ms</code> before contact to <code>40 ms</code> after) cuts the node cleanly in two, flares white-hot, and lights up one of your six <em>Full Spectrum</em> pips.\n    </li>\n    <li>\n      <strong>Pure Slice (+100 Points | +1.2 Seconds):</strong> Nailing that swing within <code>&plusmn;35 ms</code> of contact triggers a golden flash, a deep bell overtone, and a sharp double haptic pulse for maximum points and clock time.\n    </li>\n  </ol>\n<h3 id=\"4-playing-with-or-against-the-grain\">4. Playing With or Against the Grain</h3>\n  <p>\n    Every blade on the wheel curves clockwise like a saw tooth, making your rotation direction a strategic choice:\n  </p>\n  <ul>\n    <li><strong>Forehand Slice (Clockwise):</strong> Turning clockwise swings the sharp cutting edge forward into the node, granting the standard Slice timing window.</li>\n    <li><strong>Backhand Slice (Counter-Clockwise):</strong> Turning counter-clockwise leads with the spine of the blade—narrowing your timing window by <strong>25%</strong>, while rewarding your precision with a <strong>+25% bonus</strong> on points.</li>\n  </ul>\n<h3 id=\"5-mistakes-streaks-and-last-breath\">5. Mistakes, Streaks, and Last Breath</h3>\n  <p>\n    Managing your clock and protecting your multiplier are essential for surviving high-speed phases:\n  </p>\n  <ul>\n    <li><strong>Clock &amp; Multipliers:</strong> Your countdown clock starts at <strong>30.0 seconds</strong> (capped at <strong>60.0 seconds</strong>) and drains steadily every second. Every four consecutive scoring hits raises your multiplier by one level, up to <strong>&times;8</strong>.</li>\n    <li><strong>Glancing Deflections:</strong> Hitting a wrong-colored blade or a cracked blade bounces the node off harmlessly and resets your streak without costing clock time, giving you room to recover.</li>\n    <li><strong>Direct Strike Penalty:</strong> Letting anything hit the <em>Dark Slate</em> blade causes a Direct Strike that deducts <strong>3.0 seconds</strong>, shatters your multiplier, and clears your <em>Full Spectrum</em> pips.</li>\n    <li><strong>Last Breath Mechanic:</strong> Even when the clock finally hits <code>0.0</code>, <em>Last Breath</em> keeps controls active for one final heartbeat second—land a single Slice in that window to reignite the clock for <strong>+2.0 seconds</strong> and keep your run alive.</li>\n  </ul>\n</section>\n            \n            \n          </section>\n        \n\n          <section id=\"content-section-2\">\n            \n            <h2 id=\"content-section-2-heading\">Meet the Eight Blades </h2>\n            <figure class=\"media-figure\">\n              <img src=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_800,c_limit/v1794992448/nbovyhsvngroejotruxp.webp\" srcset=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_400,c_limit/v1794992448/nbovyhsvngroejotruxp.webp 400w, https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_768,c_limit/v1794992448/nbovyhsvngroejotruxp.webp 768w\" sizes=\"(max-width: 768px) 100vw, 720px\" alt=\"Meet the Eight Blades \" width=\"1200\" height=\"675\" loading=\"lazy\" fetchpriority=\"low\" decoding=\"async\" referrerpolicy=\"no-referrer\" />\n              \n            </figure>\n            <section class=\"daman-wheel-anatomy\">\n  <h2 id=\"understanding-the-eight-bladed-wheel\">Understanding the Eight-Bladed Wheel</h2>\n<p>\n    Your wheel isn't just a pretty icon—it's the whole puzzle. Eight curved blades wrap around the hollow center where your countdown clock lives, and their order never changes. Because every blade is bolted to the same hub, spinning the wheel to catch a node on the left shifts every blade on the right at the exact same time. Once you memorize how the blades sit—especially where the <strong>Silver</strong> bumper and the <strong>Dark Slate</strong> weak spot sit side by side—you stop panicking and start planning two moves ahead.\n  </p>\n<h3 id=\"1-the-six-color-blades-yellow-pink-red-blue-cyan-green\">1. The Six Color Blades (Yellow, Pink, Red, Blue, Cyan, Green)</h3>\n  <p>\n    Six of your eight blades are built to score. Mastering their interactions is the foundation of every high-scoring run:\n  </p>\n  <ul>\n    <li><strong>Color Matching:</strong> Match a colored node to its own blade to earn points, add extra seconds to the clock, and step closer to a higher multiplier.</li>\n    <li><strong>Full Spectrum Pips:</strong> Time your turn into a <em>Slice</em> to light up that blade's corresponding color pip around the center ring.</li>\n    <li><strong>Wrong-Color Bounce:</strong> Hit the wrong color, and the node simply bounces off with a dull clink—resetting your streak without deducting clock time.</li>\n    <li><strong>Breaker Orb Vulnerability:</strong> If a white <em>Breaker Orb</em> hits a color blade, that blade cracks and goes dark for <strong>5 seconds</strong>, acting as a dead spot until its countdown ring finishes repairing it.</li>\n  </ul>\n<h3 id=\"2-silver-grey-the-iron-bumper\">2. Silver-Grey: The Iron Bumper</h3>\n  <p>\n    Parked right beside the Dark Slate blade is your heavy hitter and safety net:\n  </p>\n  <ul>\n    <li><strong>Breaker Orb Smash (+200 Points | +1.5 Seconds):</strong> Swing the Silver-Grey blade into an incoming white Breaker Orb to smash it straight back down its lane, instantly repairing any cracked color blades on the wheel.</li>\n    <li><strong>Ricochet Bonus (+100 Points):</strong> If a rebounding Breaker Orb slams into another node trailing behind it, both detonate for a <strong>+100 Ricochet bonus</strong>.</li>\n    <li><strong>Streak-Safe Deflection:</strong> Against regular colored nodes, Silver deflects impacts cleanly with zero penalty. While you earn no points for a deflect, your streak stays alive—making Silver the smartest place to park trouble when lanes get crowded.</li>\n  </ul>\n<h3 id=\"3-dark-slate-the-exposed-core\">3. Dark Slate: The Exposed Core</h3>\n  <p>\n    Right next to Silver sits the Dark Slate blade, governed by one strict rule: <strong>keep it away from everything</strong>. It cannot catch, slice, or block. Letting a single node or orb touch Dark Slate triggers a devastating <em>Direct Strike</em>:\n  </p>\n  <ol>\n    <li><strong>Clock Penalty:</strong> <strong>3.0 seconds</strong> vanish immediately from your countdown clock.</li>\n    <li><strong>Progress Wipe:</strong> Your streak multiplier and all lit <em>Full Spectrum</em> pips reset completely.</li>\n    <li><strong>Wheel Stagger:</strong> Your screen shakes and the wheel staggers for a split second, disrupting your rhythm.</li>\n  </ol>\n  <p>\n    No matter how fast the tempo climbs, half your focus must always track where Dark Slate is pointing.\n  </p>\n</section>\n            \n            \n          </section>\n        \n\n          <section id=\"content-section-3\">\n            \n            <h2 id=\"content-section-3-heading\">Nodes, Hazards &amp; Full Spectrum Overdrive</h2>\n            <figure class=\"media-figure\">\n              <img src=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_800,c_limit/v1794992480/ywyb1lxhnjc7nae1g1eq.webp\" srcset=\"https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_400,c_limit/v1794992480/ywyb1lxhnjc7nae1g1eq.webp 400w, https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto,w_768,c_limit/v1794992480/ywyb1lxhnjc7nae1g1eq.webp 768w\" sizes=\"(max-width: 768px) 100vw, 720px\" alt=\"Nodes, Hazards &amp; Full Spectrum Overdrive\" width=\"1200\" height=\"675\" loading=\"lazy\" fetchpriority=\"low\" decoding=\"async\" referrerpolicy=\"no-referrer\" />\n              \n            </figure>\n            <section class=\"daman-nodes-and-overdrive\">\n  <h2 id=\"node-types-hazards-amp-full-spectrum-overdrive\">Node Types, Hazards &amp; Full Spectrum Overdrive</h2>\n<p>\n    Every run starts with simple colored nodes, so your thumbs can settle into the rhythm. The longer you survive, though, the more variety the arena throws down the eight lanes. Nothing spawns by accident—every object has a distinct silhouette, comet tail, and Warning Ring telegraph so you can read the lane and line up your response before it arrives.\n  </p>\n<h3 id=\"1-arena-node-amp-hazard-types\">1. Arena Node &amp; Hazard Types</h3>\n  <p>\n    Recognize each incoming silhouette early to choose between a passive Catch, an active Slice, or an emergency Silver deflection:\n  </p>\n  <ul>\n    <li>\n      <strong>Standard Nodes:</strong> Your bread-and-butter targets. These glowing colored orbs travel straight down a single lane trailing a matching comet tail. Line up their matching color blade to <em>Catch</em> them, or swing into them right on the beat for a <em>Slice</em> or <em>Pure Slice</em>.\n    </li>\n    <li>\n      <strong>Breaker Orbs:</strong> Larger white orbs wrapped in a pulsing, crack-lit halo with a double-ringed lane marker. They travel at <strong>1.5&times;</strong> normal travel time so you have a clear window to react. Let a Breaker Orb hit a color blade and it fractures that blade for <strong>5 seconds</strong>; let it touch Dark Slate and you take a <em>Direct Strike</em>. Rotate your Silver-Grey Iron Bumper into its path instead to smash it back out its lane for <strong>+200 points</strong>, <strong>+1.5 seconds</strong>, instant blade repairs, and a <strong>+100 Ricochet</strong> explosion if it collides with another incoming node.\n    </li>\n    <li>\n      <strong>Mainspring Gold Rings:</strong> Rare golden rings that enter the mix once the pace picks up. Any of your six color blades can accept a Mainspring—landing one rewards <strong>+150 points</strong> and adds a massive <strong>+3.0 seconds</strong> straight onto your countdown clock, giving you breathing room when the timer runs low.\n    </li>\n    <li>\n      <strong>Twin Nodes:</strong> Two colored nodes traveling down adjacent lanes joined by a thin glowing line, arriving on the exact same beat. Whenever their two colors sit side by side on your wheel, a single smart rotation lines up both blades at once so you can clear the pair in one move.\n    </li>\n    <li>\n      <strong>Chain Nodes:</strong> Three same-colored nodes lined up in a single lane, spaced an eighth-note apart. Park the matching blade in that lane to catch all three in rapid succession and pocket a <strong>+100 Chain</strong> completion bonus.\n    </li>\n    <li>\n      <strong>Ghost Nodes:</strong> Hollow silhouettes that hide their true color across the first two-thirds of their flight. A Ghost reveals its color only in the final <strong>35%</strong> of its path, forcing you to keep your Dark Slate core clear and snap your turn at the last second.\n    </li>\n    <li>\n      <strong>Prism Orbs:</strong> Shifting, color-cycling orbs that appear in deeper tiers. Any of your six color blades can catch or slice a Prism, and whichever blade takes it immediately lights up its corresponding <em>Full Spectrum</em> pip around the hub.\n    </li>\n  </ul>\n<h3 id=\"2-full-spectrum-overdrive\">2. Full Spectrum Overdrive</h3>\n  <p>\n    Six small pips ring the hollow hub—one for each color blade. Every active <em>Slice</em> (not a passive Catch) lights up that blade's pip. Lighting all six pips automatically triggers <strong>Full Spectrum Overdrive</strong> for <strong>6 seconds</strong>:\n  </p>\n  <ol>\n    <li><strong>Visual Surge:</strong> The wheel flares prism-white and floods the arena with every color of the logo.</li>\n    <li><strong>Universal Slicing:</strong> Any blade slices any ordinary node, regardless of its color.</li>\n    <li><strong>Core Immunity:</strong> The Dark Slate blade becomes armored and immune to Direct Strikes.</li>\n    <li><strong>Double Scoring:</strong> All points are doubled on top of your active streak multiplier.</li>\n  </ol>\n  <p>\n    Once the <strong>6 seconds</strong> finish—or if you take a Direct Strike before filling all six—the pips reset, rewarding players who master the entire wheel instead of camping on one favorite blade.\n  </p>\n</section>\n            \n            \n          </section>\n        ",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://example.com/#website",
-        "url": "https://example.com",
-        "name": "Website",
-        "alternateName": "Website",
-        "description": "",
+        "@id": "https://officialdaman.com/#website",
+        "url": "https://officialdaman.com/",
+        "name": "Daman",
+        "alternateName": "Daman",
         "publisher": {
-          "@id": "https://example.com/#organization"
-        },
-        "inLanguage": "en-US"
+          "@id": "https://officialdaman.com/#organization"
+        }
       },
       {
         "@type": "Organization",
-        "@id": "https://example.com/#organization",
-        "name": "Organization",
-        "url": "https://example.com"
+        "@id": "https://officialdaman.com/#organization",
+        "name": "Daman",
+        "url": "https://officialdaman.com/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+          "width": 512,
+          "height": 512
+        },
+        "image": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png"
       },
       {
         "@type": "WebPage",
-        "@id": "https://example.com/#webpage",
-        "url": "https://example.com",
-        "name": "Coming Soon",
+        "@id": "https://officialdaman.com/#webpage",
+        "url": "https://officialdaman.com/",
+        "name": "Daman Game: Play Smart, Master the Arcade & Explore Official Guides",
         "description": "",
         "isPartOf": {
-          "@id": "https://example.com/#website"
-        },
-        "about": {
-          "@id": "https://example.com/#organization"
-        },
-        "inLanguage": "en-US"
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://example.com/#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Home",
-            "item": "https://example.com"
-          }
-        ]
+          "@id": "https://officialdaman.com/#website"
+        }
       }
     ]
   },
   "shell": {
     "brand": {
-      "name": "",
-      "shortName": "",
+      "name": "Daman",
+      "shortName": "Daman",
       "tagline": "",
-      "logoUrl": "",
-      "faviconUrl": "",
-      "searchLogoUrl": "",
-      "appleTouchIconUrl": "",
-      "accentColor": "#EF4444",
-      "themeColor": "#EF4444",
-      "contactEmail": ""
+      "logoUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "faviconUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "searchLogoUrl": "https://res.cloudinary.com/potup3yi/image/upload/v1794981224/znzdu5m6h9538yyareem.png",
+      "appleTouchIconUrl": "https://res.cloudinary.com/potup3yi/image/upload/v1794981224/znzdu5m6h9538yyareem.png",
+      "accentColor": "#EA580C",
+      "themeColor": "#EA580C",
+      "contactEmail": "support@officialdaman.com"
     },
+    "brandName": "Daman",
+    "logoUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+    "faviconUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+    "accentColor": "#EA580C",
+    "buttonTextColor": "#FFFFFF",
     "uiConfig": {
       "maxContainerWidth": "768px",
-      "pageBackgroundColor": "#F8FAFC",
+      "pageBackgroundColor": "#FFFBEB",
       "surfaceBackgroundColor": "#FFFFFF",
       "headerBackgroundColor": "#FFFFFF",
-      "headerTextColor": "#111827",
+      "headerTextColor": "#1C1917",
       "footerBackgroundColor": "#0F172A",
-      "footerTextColor": "#F8FAFC",
-      "borderColor": "#E2E8F0",
+      "footerTextColor": "#FEF3C7",
+      "borderColor": "#FDE68A",
       "cardBorderRadius": "12px",
       "buttonTextColor": "#FFFFFF",
-      "textColor": "#1F2937",
-      "headingColor": "#111827",
+      "textColor": "#292524",
+      "headingColor": "#1C1917",
       "fontFamily": "system",
       "baseFontSize": "16px",
       "showHeaderNewsButton": true,
@@ -95,7 +90,7 @@
       "showLegalLinksInDrawer": true,
       "showCtaInDrawer": true,
       "showHeroSection": true,
-      "showHeroCtaButtons": true,
+      "showHeroCtaButtons": false,
       "homepageNewsLimit": 5,
       "newsReadMoreLabel": "Read Full Article →",
       "newsViewAllLabel": "View All News →",
@@ -135,22 +130,62 @@
     },
     "packageVersion": "",
     "headerLinks": [],
-    "autoSectionLinks": [],
+    "autoSectionLinks": [
+      {
+        "label": "How to Play Daman Game",
+        "url": "#item",
+        "metaTitle": "New Content Section 1 | Daman"
+      },
+      {
+        "label": "Meet the Eight Blades ",
+        "url": "#content-section-2",
+        "metaTitle": "New Content Section 2 | Daman"
+      },
+      {
+        "label": "Nodes, Hazards & Full Spectrum Overdrive",
+        "url": "#content-section-3",
+        "metaTitle": "New Content Section 3 | Daman"
+      }
+    ],
     "recentNewsDrawerItems": [],
     "headerPages": [],
-    "footerPages": [],
-    "allSubpagePills": [],
+    "footerPages": [
+      {
+        "label": "Privacy Policy",
+        "slug": "privacy-policy",
+        "metaTitle": "Privacy Policy – Daman Game Official Portal | Daman"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "slug": "disclaimer",
+        "metaTitle": "Disclaimer – Daman Game Official Web Portal"
+      }
+    ],
+    "allSubpagePills": [
+      {
+        "label": "News",
+        "href": "/news"
+      },
+      {
+        "label": "Privacy Policy",
+        "href": "/privacy-policy"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "href": "/disclaimer"
+      }
+    ],
     "newsCount": 0,
     "navigation": {
       "footerSummary": "",
-      "showFooterBrandSummary": true,
+      "showFooterBrandSummary": false,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
       "disclaimerHeading": "Legal Disclaimer",
       "disclaimer": "",
       "siteLinksHeading": "Legal & Support Pages",
-      "copyright": ""
+      "copyright": "© 2026 officialdaman. All rights reserved."
     }
   },
-  "updatedAt": 1795287970285
+  "updatedAt": 1795319726236
 }

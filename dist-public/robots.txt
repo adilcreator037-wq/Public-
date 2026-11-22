@@ -6,4 +6,4 @@ Disallow: /download
 Disallow: /download/
 Disallow: /api/v1/app/
 
-Sitemap: https://example.com/sitemap.xml
+Sitemap: https://officialdaman.com/sitemap.xml

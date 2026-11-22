@@ -1,99 +1,85 @@
 {
   "path": "/news",
-  "canonicalPath": "/news",
   "viewType": "news-hub",
-  "isConfigured": false,
-  "metaTitle": "Daily News & Updates",
-  "metaDescription": "Browse published news updates and announcements.",
-  "ogImage": "",
+  "isConfigured": true,
+  "canonicalPath": "/news",
+  "canonicalUrl": "https://officialdaman.com/news",
+  "metaTitle": "Daily News & Updates | Daman",
+  "metaDescription": "Browse all daily news updates, release changelogs, and announcements for Daman.",
+  "ogImage": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794983318/njqnrnuvvobyasjenjcs.webp",
   "heroH1": "Latest News & Updates",
   "showHeroSection": true,
   "showHeroCtaGrid": false,
-  "renderedMainHtml": "\n    <p class=\"news-summary-text\">\n      Official daily news updates, software changelogs, and announcements from our team.\n    </p>\n    <div class=\"news-filter-bar\">\n      <button type=\"button\" class=\"news-filter-btn active\" data-news-cat=\"ALL\">\n        All News (0)\n      </button>\n    </div>\n    <div id=\"news-hub-articles-container\"><p>No news articles found in this category.</p></div>\n  ",
+  "renderedMainHtml": "\n    <p class=\"news-summary-text\">\n      Official daily news updates, software changelogs, and announcements from Daman.\n    </p>\n    <div class=\"news-filter-bar\">\n      <button type=\"button\" class=\"news-filter-btn active\" data-news-cat=\"ALL\">\n        All News (0)\n      </button>\n    </div>\n    <div id=\"news-hub-articles-container\"><p>No news articles found in this category.</p></div>\n  ",
   "jsonLd": {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://example.com/#website",
-        "url": "https://example.com",
-        "name": "Website",
-        "alternateName": "Website",
-        "description": "",
+        "@id": "https://officialdaman.com/#website",
+        "url": "https://officialdaman.com/",
+        "name": "Daman",
+        "alternateName": "Daman",
         "publisher": {
-          "@id": "https://example.com/#organization"
-        },
-        "inLanguage": "en-US"
+          "@id": "https://officialdaman.com/#organization"
+        }
       },
       {
         "@type": "Organization",
-        "@id": "https://example.com/#organization",
-        "name": "Organization",
-        "url": "https://example.com"
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://example.com/news/#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Home",
-            "item": "https://example.com"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Latest News & Updates",
-            "item": "https://example.com/news"
-          }
-        ]
+        "@id": "https://officialdaman.com/#organization",
+        "name": "Daman",
+        "url": "https://officialdaman.com/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+          "width": 512,
+          "height": 512
+        },
+        "image": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png"
       },
       {
         "@type": "CollectionPage",
-        "@id": "https://example.com/news/#news-collection",
-        "url": "https://example.com/news",
-        "name": "Daily News & Updates",
-        "description": "Browse published news updates and announcements.",
+        "@id": "https://officialdaman.com/news#webpage",
+        "url": "https://officialdaman.com/news",
+        "name": "Daily News & Updates | Daman",
+        "description": "Browse all daily news updates, release changelogs, and announcements for Daman.",
         "isPartOf": {
-          "@id": "https://example.com/#website"
-        },
-        "breadcrumb": {
-          "@id": "https://example.com/news/#breadcrumb"
-        },
-        "mainEntity": {
-          "@type": "ItemList",
-          "itemListElement": []
+          "@id": "https://officialdaman.com/#website"
         }
       }
     ]
   },
   "shell": {
     "brand": {
-      "name": "",
-      "shortName": "",
+      "name": "Daman",
+      "shortName": "Daman",
       "tagline": "",
-      "logoUrl": "",
-      "faviconUrl": "",
-      "searchLogoUrl": "",
-      "appleTouchIconUrl": "",
-      "accentColor": "#EF4444",
-      "themeColor": "#EF4444",
-      "contactEmail": ""
+      "logoUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "faviconUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+      "searchLogoUrl": "https://res.cloudinary.com/potup3yi/image/upload/v1794981224/znzdu5m6h9538yyareem.png",
+      "appleTouchIconUrl": "https://res.cloudinary.com/potup3yi/image/upload/v1794981224/znzdu5m6h9538yyareem.png",
+      "accentColor": "#EA580C",
+      "themeColor": "#EA580C",
+      "contactEmail": "support@officialdaman.com"
     },
+    "brandName": "Daman",
+    "logoUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+    "faviconUrl": "https://res.cloudinary.com/potup3yi/image/upload/f_auto,q_auto/v1794981224/znzdu5m6h9538yyareem.png",
+    "accentColor": "#EA580C",
+    "buttonTextColor": "#FFFFFF",
     "uiConfig": {
       "maxContainerWidth": "768px",
-      "pageBackgroundColor": "#F8FAFC",
+      "pageBackgroundColor": "#FFFBEB",
       "surfaceBackgroundColor": "#FFFFFF",
       "headerBackgroundColor": "#FFFFFF",
-      "headerTextColor": "#111827",
+      "headerTextColor": "#1C1917",
       "footerBackgroundColor": "#0F172A",
-      "footerTextColor": "#F8FAFC",
-      "borderColor": "#E2E8F0",
+      "footerTextColor": "#FEF3C7",
+      "borderColor": "#FDE68A",
       "cardBorderRadius": "12px",
       "buttonTextColor": "#FFFFFF",
-      "textColor": "#1F2937",
-      "headingColor": "#111827",
+      "textColor": "#292524",
+      "headingColor": "#1C1917",
       "fontFamily": "system",
       "baseFontSize": "16px",
       "showHeaderNewsButton": true,
@@ -104,7 +90,7 @@
       "showLegalLinksInDrawer": true,
       "showCtaInDrawer": true,
       "showHeroSection": true,
-      "showHeroCtaButtons": true,
+      "showHeroCtaButtons": false,
       "homepageNewsLimit": 5,
       "newsReadMoreLabel": "Read Full Article →",
       "newsViewAllLabel": "View All News →",
@@ -144,22 +130,62 @@
     },
     "packageVersion": "",
     "headerLinks": [],
-    "autoSectionLinks": [],
+    "autoSectionLinks": [
+      {
+        "label": "How to Play Daman Game",
+        "url": "#item",
+        "metaTitle": "New Content Section 1 | Daman"
+      },
+      {
+        "label": "Meet the Eight Blades ",
+        "url": "#content-section-2",
+        "metaTitle": "New Content Section 2 | Daman"
+      },
+      {
+        "label": "Nodes, Hazards & Full Spectrum Overdrive",
+        "url": "#content-section-3",
+        "metaTitle": "New Content Section 3 | Daman"
+      }
+    ],
     "recentNewsDrawerItems": [],
     "headerPages": [],
-    "footerPages": [],
-    "allSubpagePills": [],
+    "footerPages": [
+      {
+        "label": "Privacy Policy",
+        "slug": "privacy-policy",
+        "metaTitle": "Privacy Policy – Daman Game Official Portal | Daman"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "slug": "disclaimer",
+        "metaTitle": "Disclaimer – Daman Game Official Web Portal"
+      }
+    ],
+    "allSubpagePills": [
+      {
+        "label": "News",
+        "href": "/news"
+      },
+      {
+        "label": "Privacy Policy",
+        "href": "/privacy-policy"
+      },
+      {
+        "label": "Disclaimer | Daman",
+        "href": "/disclaimer"
+      }
+    ],
     "newsCount": 0,
     "navigation": {
       "footerSummary": "",
-      "showFooterBrandSummary": true,
+      "showFooterBrandSummary": false,
       "showFooterContactEmail": true,
       "footerQuickLinks": [],
       "disclaimerHeading": "Legal Disclaimer",
       "disclaimer": "",
       "siteLinksHeading": "Legal & Support Pages",
-      "copyright": ""
+      "copyright": "© 2026 officialdaman. All rights reserved."
     }
   },
-  "updatedAt": 1795287970285
+  "updatedAt": 1795319726236
 }
